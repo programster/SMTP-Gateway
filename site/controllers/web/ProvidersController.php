@@ -30,6 +30,8 @@ class ProvidersController extends AbstractController
         $group->get('/providers/{name}/edit', [self::class, 'showEdit'])->setName('providers.edit');
         $group->post('/providers/{name}/edit', [self::class, 'saveEdit'])->setName('providers.saveEdit');
         $group->post('/providers/{name}/remove', [self::class, 'remove'])->setName('providers.remove');
+        $group->post('/providers/{name}/enable', [self::class, 'enable'])->setName('providers.enable');
+        $group->post('/providers/{name}/disable', [self::class, 'disable'])->setName('providers.disable');
     }
 
 
@@ -67,14 +69,18 @@ class ProvidersController extends AbstractController
             ProvidersFormService::add($entry, $version);
             self::logChange('A provider was added', (string)$entry['name']);
             WebSession::flash("The provider \"{$entry['name']}\" was added.");
-            $result = self::redirect($response, '/providers');
+            $result = self::respondSaved($request, $response, '/providers');
         }
         catch (InvalidInputException | ConflictException | ConfigurationException $e)
         {
-            $values = ProviderFormValues::createFromForm($getField);
-            $limits = self::readRateLimitsOrNone($getField);
-            $page = ViewProviderFormPage::createForAdding($values, $limits, $version, $e->getMessage());
-            $result = self::renderPage($response, 'Add a provider', $page, 400);
+            $renderForm = function () use ($getField, $version, $e, $response) : Response {
+                $values = ProviderFormValues::createFromForm($getField);
+                $limits = self::readRateLimitsOrNone($getField);
+                $page = ViewProviderFormPage::createForAdding($values, $limits, $version, $e->getMessage());
+                return self::renderPage($response, 'Add a provider', $page, 400);
+            };
+
+            $result = self::respondNotSaved($request, $response, $e, $renderForm);
         }
 
         return $result;
@@ -111,15 +117,20 @@ class ProvidersController extends AbstractController
             ProvidersFormService::edit($provider->getName(), $entry, $version);
             self::logChange('A provider was changed', (string)$entry['name']);
             WebSession::flash("The provider \"{$entry['name']}\" was saved.");
-            $result = self::redirect($response, '/providers/' . rawurlencode((string)$entry['name']));
+            $result = self::respondSaved($request, $response, '/providers/' . rawurlencode((string)$entry['name']));
         }
         catch (InvalidInputException | ConflictException | ConfigurationException $e)
         {
-            $values = ProviderFormValues::createFromForm($getField);
-            $values['type'] = $provider->getType()->value;
-            $limits = self::readRateLimitsOrNone($getField);
-            $page = ViewProviderFormPage::createForEditing($provider, $values, $limits, $version, $e->getMessage());
-            $result = self::renderPage($response, "Edit {$provider->getName()}", $page, 400);
+            $renderForm = function () use ($getField, $provider, $version, $e, $response) : Response {
+                $values = ProviderFormValues::createFromForm($getField);
+                $values['type'] = $provider->getType()->value;
+                $limits = self::readRateLimitsOrNone($getField);
+                $error = $e->getMessage();
+                $page = ViewProviderFormPage::createForEditing($provider, $values, $limits, $version, $error);
+                return self::renderPage($response, "Edit {$provider->getName()}", $page, 400);
+            };
+
+            $result = self::respondNotSaved($request, $response, $e, $renderForm);
         }
 
         return $result;
@@ -140,6 +151,28 @@ class ProvidersController extends AbstractController
         };
 
         return self::changeFromList($response, $remove);
+    }
+
+
+    /**
+     * Enable a provider again, with the settings it had, and go back to its page.
+     *
+     * @throws NotFoundException - if there's no such provider.
+     */
+    public function enable(Request $request, Response $response, array $args) : Response
+    {
+        return self::setEnabled($request, $response, (string)$args['name'], true);
+    }
+
+
+    /**
+     * Disable a provider, keeping its settings so it can be enabled again, and go back to its page.
+     *
+     * @throws NotFoundException - if there's no such provider.
+     */
+    public function disable(Request $request, Response $response, array $args) : Response
+    {
+        return self::setEnabled($request, $response, (string)$args['name'], false);
     }
 
 
@@ -387,6 +420,106 @@ class ProvidersController extends AbstractController
         }
 
         return self::redirect($response, '/providers');
+    }
+
+
+    /**
+     * Respond to a provider being saved: with where to go next, as JSON, when the form was posted by its script
+     * (ProviderForm.js), or by going there.
+     *
+     * @param Request $request - the request.
+     *
+     * @param Response $response - the response.
+     *
+     * @param string $path - where to go next, e.g. "/providers".
+     *
+     * @return Response
+     */
+    private static function respondSaved(Request $request, Response $response, string $path) : Response
+    {
+        $result = self::wantsJson($request)
+            ? self::json($response, ['redirect' => $path])
+            : self::redirect($response, $path);
+
+        return $result;
+    }
+
+
+    /**
+     * Respond to a provider that couldn't be saved. When the form was posted by its script (ProviderForm.js), that's
+     * a JSON error, so the form stays as it was, with every secret still entered. Otherwise, it's the form again,
+     * with the error, which can't fill the secrets back in, as they're never sent back to the browser.
+     *
+     * @param Request $request - the request.
+     *
+     * @param Response $response - the response.
+     *
+     * @param Exception $error - why it couldn't be saved.
+     *
+     * @param Closure(): Response $renderForm - renders the form again, with the error.
+     *
+     * @return Response
+     */
+    private static function respondNotSaved(
+        Request $request,
+        Response $response,
+        Exception $error,
+        Closure $renderForm
+    ) : Response
+    {
+        if (self::wantsJson($request))
+        {
+            $isConflict = ($error instanceof ConflictException);
+            $status = $isConflict ? 409 : 400;
+            $code = $isConflict ? ErrorCodeEnum::CONFLICT : ErrorCodeEnum::INVALID_INPUT;
+            $body = (new ApiException($status, $code, $error->getMessage()))->toArray();
+            $result = self::json($response, $body, $status);
+        }
+        else
+        {
+            $result = $renderForm();
+        }
+
+        return $result;
+    }
+
+
+    /**
+     * Enable or disable a provider, and go back to its page, saying what was done, or why it couldn't be (e.g. that
+     * the last enabled provider can't be disabled).
+     *
+     * @param Request $request - the request, with the version of the providers it's based on.
+     *
+     * @param Response $response - the response.
+     *
+     * @param string $name - the provider's name.
+     *
+     * @param bool $isEnabled - whether it's to be enabled.
+     *
+     * @return Response
+     *
+     * @throws NotFoundException - if there's no such provider.
+     */
+    private static function setEnabled(Request $request, Response $response, string $name, bool $isEnabled) : Response
+    {
+        try
+        {
+            ProvidersFormService::setEnabled($name, $isEnabled, self::getFormField($request, 'version'));
+            $done = $isEnabled ? 'enabled' : 'disabled';
+            self::logChange("A provider was {$done}", $name);
+
+            $message = $isEnabled
+                ? "The provider \"{$name}\" was enabled: emails can be sent through it again."
+                : "The provider \"{$name}\" was disabled. Its settings are kept, so it can be enabled again.";
+
+            WebSession::flash($message);
+        }
+        catch (InvalidInputException | ConflictException | ConfigurationException $e)
+        {
+            WebSession::flash($e->getMessage(), true);
+        }
+
+        return self::redirect($response, '/providers/' . rawurlencode($name));
     }
 
 

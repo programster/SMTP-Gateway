@@ -14,7 +14,9 @@ when it's clicked, and the section of the page you're on starts open.
   * **API keys**: the keys for the management API, each restricted to IP addresses. Each key's age is
     shown in days, in yellow from 9 months old and red from a year, as a reminder to replace it.
   * **Email tokens**: create them (each is only shown once, as only a hash of its secret is stored), see
-    their restrictions and activity, and revoke them.
+    their restrictions and activity, edit them, and revoke them. Editing changes a token's name,
+    restrictions, priority and rate limits, but never its ID or secret, so whatever uses it carries on
+    working (see [Changing an email token](sending-email.md#changing-an-email-token)).
   * **Users**: the accounts that can log in to the web interface. There can be any number of them.
     A new account is emailed a link to choose its own password (which works for 72 hours, and needs
     `PUBLIC_URL` and the address in the Sending part of **Settings > General**), or given one by whoever adds it. A

@@ -20,7 +20,7 @@ SMTPS_PORT = int(os.environ.get('SMTPS_HOST_PORT', '14565'))
 SUBMISSION_PORT = int(os.environ.get('SUBMISSION_HOST_PORT', '14687'))
 ADMIN_EMAIL = os.environ.get('ADMIN_EMAIL', 'admin@example.org')
 # The default account's password, whose hash is ADMIN_PASSWORD_HASH in tests/test.env.
-ADMIN_PASSWORD = 'correct-horse-battery'
+ADMIN_PASSWORD = 'Correct-horse-battery-1'
 SYSTEM_EMAIL_FROM = os.environ.get('SYSTEM_EMAIL_FROM', 'noreply@example.org')
 GOOGLE_SSO_CLIENT_ID = os.environ.get('GOOGLE_SSO_CLIENT_ID', 'test-client.apps.googleusercontent.com')
 # Where the app keeps its settings, which a stack can move (e.g. to start with none, as a fresh install does).

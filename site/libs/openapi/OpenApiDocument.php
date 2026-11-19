@@ -198,7 +198,9 @@ final class OpenApiDocument
 
         $createDescription =
             'Creates an email token with a new secret. Its `conditions` are optional: only the fields given are'
-            . ' restricted, so leave one out to allow anyone (or, for `clientIp`, anywhere).';
+            . ' restricted, so leave one out to allow anyone (or, for `clientIp`, anywhere). Fields it doesn\'t have'
+            . ' (e.g. a misspelt `conditons`, which would leave it unrestricted), or that the service sets (such as'
+            . ' `id`), are refused.';
 
         $create = new Operation(
             method: Method::POST,
@@ -237,6 +239,88 @@ final class OpenApiDocument
             operationId: 'getEmailToken',
         );
 
+        $changedSuccess = self::createJsonResponse(ResponseCode::OK, 'The email token, as it is now.', $keySchema);
+        $nameDescription = 'A name to recognise the email token by, e.g. the service that will use it.';
+
+        $replaceConditionsDescription =
+            'What the email token is restricted to from now on, one condition per field, each at most once. A field'
+            . ' with no condition has no restriction, so an empty list allows anyone, from anywhere.';
+
+        $replaceConditions = self::createConditionsSchema($replaceConditionsDescription, ConditionRemoval::REFUSED);
+
+        $replaceSchema = self::createObject(
+            new Property('name', new SchemaString($nameDescription, maxLength: 255), required: true),
+            new Property('conditions', $replaceConditions, required: true),
+            new Property('rateLimits', self::createRateLimitsSchema(), required: true),
+            new Property('priority', self::createPrioritySchema(''), required: true),
+        );
+
+        $changeEffect =
+            ' Its ID and secret stay the same, so whatever uses it carries on working, with its new restrictions from'
+            . ' its next request, or its next SMTP login (a connection that\'s already logged in keeps the ones it'
+            . ' logged in with). New rate limits apply to its emails already in the queue too, but a new priority only'
+            . ' applies to emails queued from then on. A revoked email token can\'t be changed (409).';
+
+        $replaceDescription =
+            'Replaces the email token\'s name, conditions, rate limits and priority. Every one of them must be given'
+            . ' (an empty list for no conditions, or no rate limits), so leaving one out can\'t remove its restriction'
+            . ' by mistake. Fields it doesn\'t have, or that can\'t be changed (such as `id`), are refused. To change'
+            . ' only some of them, use PATCH.' . $changeEffect;
+
+        $replace = new Operation(
+            method: Method::PUT,
+            responses: self::createResponses(
+                $changedSuccess,
+                ResponseCode::BAD_REQUEST,
+                ResponseCode::UNAUTHORIZED,
+                ResponseCode::FORBIDDEN,
+                ResponseCode::NOT_FOUND,
+                ResponseCode::CONFLICT
+            ),
+            summary: 'Replace an email token\'s restrictions',
+            description: $replaceDescription,
+            requestBody: self::createJsonRequestBody($replaceSchema),
+            tags: ['Email tokens'],
+            operationId: 'replaceEmailToken',
+        );
+
+        $patchConditionsDescription =
+            'The conditions to change. Each one given replaces the email token\'s condition on that field, and the'
+            . ' others are kept as they are. Give a condition "allowed": null to remove it, so that field has no'
+            . ' restriction.';
+
+        $patchConditions = self::createConditionsSchema($patchConditionsDescription, ConditionRemoval::ALLOWED);
+
+        $patchSchema = self::createObject(
+            new Property('name', new SchemaString($nameDescription, maxLength: 255)),
+            new Property('conditions', $patchConditions),
+            new Property('rateLimits', self::createRateLimitsSchema()),
+            new Property('priority', self::createPrioritySchema('')),
+        );
+
+        $patchDescription =
+            'Changes only what\'s given, and keeps the rest: `name`, `rateLimits` and `priority` replace the email'
+            . ' token\'s, and each condition in `conditions` replaces its condition on that field, so changing the'
+            . ' allowed senders keeps the allowed IP addresses, for example. Fields it doesn\'t have, or that can\'t be'
+            . ' changed (such as `id`), are refused.' . $changeEffect;
+
+        $patch = new Operation(
+            method: Method::PATCH,
+            responses: self::createResponses(
+                $changedSuccess,
+                ResponseCode::BAD_REQUEST,
+                ResponseCode::UNAUTHORIZED,
+                ResponseCode::FORBIDDEN,
+                ResponseCode::NOT_FOUND,
+                ResponseCode::CONFLICT
+            ),
+            summary: 'Change some of an email token\'s restrictions',
+            description: $patchDescription,
+            requestBody: self::createJsonRequestBody($patchSchema),
+            tags: ['Email tokens'],
+            operationId: 'patchEmailToken',
+        );
+
         $cancelledDescription = 'How many of the email token\'s emails were still queued, and were cancelled.';
 
         $revokedSchema = self::createObject(
@@ -265,7 +349,7 @@ final class OpenApiDocument
         );
 
         $parameters = self::createEmailTokenIdParameter();
-        $operations = new OperationCollection($get, $revoke);
+        $operations = new OperationCollection($get, $replace, $patch, $revoke);
         return new Path('/email-tokens/{id}', new PathItem($operations, parameters: $parameters));
     }
 
@@ -693,25 +777,49 @@ final class OpenApiDocument
             . ' condition has no restriction, so leave out the whole list to allow anyone, from anywhere. An empty'
             . ' "allowed" list is refused, as it would allow nobody.';
 
-        $conditions = new SchemaArray(self::createConditionSchema(), $conditionsDescription);
+        return new PropertyCollection(
+            new Property('conditions', self::createConditionsSchema($conditionsDescription, ConditionRemoval::REFUSED)),
+            new Property('rateLimits', self::createRateLimitsSchema()),
+            new Property('priority', self::createPrioritySchema(' 1 if left out.'))
+        );
+    }
 
+
+    /**
+     * Get the schema of an email token's list of conditions.
+     *
+     * @param string $description - what the list does, in the request it's in.
+     *
+     * @param ConditionRemoval $removal - whether a condition's "allowed" can be null, to remove it (in a PATCH).
+     *
+     * @return SchemaArray
+     */
+    private static function createConditionsSchema(string $description, ConditionRemoval $removal) : SchemaArray
+    {
+        return new SchemaArray(self::createConditionSchema($removal), $description);
+    }
+
+
+    /**
+     * Get the schema of an email token's priority.
+     *
+     * @param string $default - what it is when it's left out, as a sentence starting with a space, or an empty string
+     * if it can't be.
+     *
+     * @return SchemaInt
+     */
+    private static function createPrioritySchema(string $default) : SchemaInt
+    {
         $priorityDescription =
             'How important the email token\'s emails are in the queue: a higher priority\'s emails are sent before a'
-            . ' lower'
-            . ' one\'s, though rate limits still apply. 1 if left out. The service\'s own emails (password reset'
+            . " lower one's, though rate limits still apply.{$default} The service's own emails (password reset"
             . ' links) have priority 9999, so always go first.';
 
-        $prioritySchema = new SchemaInt(
+        return new SchemaInt(
             $priorityDescription,
             minimum: 1,
             maximum: Priority::MAX_EMAIL_TOKEN_PRIORITY,
             default: Priority::DEFAULT
-        );
-
-        return new PropertyCollection(
-            new Property('conditions', $conditions),
-            new Property('rateLimits', self::createRateLimitsSchema()),
-            new Property('priority', $prioritySchema)
         );
     }
 
@@ -719,15 +827,24 @@ final class OpenApiDocument
     /**
      * Get the schema of one condition: the client IP addresses allowed, or the addresses allowed in one part of the
      * email.
+     *
+     * @param ConditionRemoval $removal - whether its "allowed" can be null, to remove it (in a PATCH).
+     *
+     * @return SchemaOneOf
      */
-    private static function createConditionSchema() : SchemaOneOf
+    private static function createConditionSchema(ConditionRemoval $removal) : SchemaOneOf
     {
+        $canRemove = ($removal === ConditionRemoval::ALLOWED);
+        $orNull = $canRemove ? ' Or null, to remove the condition, so the field has no restriction.' : '';
+
         $ipFieldDescription = 'The IP address the email token is used from.';
         $ipsDescription = 'The IP addresses or CIDR ranges the email token may be used from, e.g. "10.0.0.0/8".';
 
+        $ips = new SchemaArray(new SchemaString(), $ipsDescription . $orNull, minItems: 1, nullable: $canRemove);
+
         $ipCondition = self::createObject(
             new Property('field', self::createEnum($ipFieldDescription, ConditionField::CLIENT_IP), required: true),
-            new Property('allowed', new SchemaArray(new SchemaString(), $ipsDescription, minItems: 1), required: true),
+            new Property('allowed', $ips, required: true),
         );
 
         $fieldDescription =
@@ -746,10 +863,11 @@ final class OpenApiDocument
         );
 
         $rulesDescription = 'The addresses allowed: an address is allowed if any of these rules allows it.';
+        $rules = new SchemaArray($rule, $rulesDescription . $orNull, minItems: 1, nullable: $canRemove);
 
         $addressCondition = self::createObject(
             new Property('field', self::createEnum($fieldDescription, ...$addressFields), required: true),
-            new Property('allowed', new SchemaArray($rule, $rulesDescription, minItems: 1), required: true),
+            new Property('allowed', $rules, required: true),
         );
 
         return new SchemaOneOf(new SchemaCollection($ipCondition, $addressCondition));

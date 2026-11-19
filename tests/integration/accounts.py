@@ -15,7 +15,7 @@ from lib.web import (Response, WebClient, create_unused_totp_code, find_csrf_tok
 
 suite = Suite('Accounts')
 admin = WebClient.create_logged_in()
-password = 'bobs-long-password'
+password = 'Bobs-long-password-1'
 account = {'password_source': 'set', 'password': password, 'confirm_password': password}
 
 
@@ -64,7 +64,7 @@ text = stack.get_mailpit_text(found['messages'][0]['ID']) if found['messages'] e
 link = re.search(r'/reset-password/[0-9a-f]{64}', text)
 suite.check('which says it works for 72 hours', link is not None and '72 hours' in text, text[:300])
 carol = WebClient()
-carol_password = 'carols-own-password'
+carol_password = 'Carols-own-password-2'
 form = {'new_password': carol_password, 'confirm_password': carol_password}
 response = carol.post_form(link.group(0), link.group(0), form) if link else None
 suite.check('the link sets the password they chose', response is not None and response.get_status() == 303)
@@ -83,7 +83,8 @@ suite.check('when it logs in, it\'s sent to My account', dave.request('GET', '/e
             == '/account')
 suite.check('which says to choose a password of its own', 'set by an administrator' in dave.get('/account'))
 page = dave.get('/account')
-form = {'current_password': password, 'new_password': 'daves-own-password', 'confirm_password': 'daves-own-password'}
+dave_password = 'Daves-own-password-3'
+form = {'current_password': password, 'new_password': dave_password, 'confirm_password': dave_password}
 response = dave.post_form('/account', '/account/password', form)
 must_change = stack.sql("SELECT must_change_password FROM admin_user WHERE email = 'dave@example.org'")
 suite.check('changing it lets it carry on', response.get_status() == 303 and must_change == 'f',

@@ -52,14 +52,14 @@ final readonly class PasswordPolicy
 
 
     /**
-     * Create the rules used when none are set: at least 12 characters, of any kind, as length matters far more than
-     * the mix of characters.
+     * Create the rules used when none are set: at least 12 characters, with a capital letter, a number and a symbol.
+     * Each can be switched off under Settings > Security.
      *
      * @return PasswordPolicy
      */
     public static function createDefault() : PasswordPolicy
     {
-        return new PasswordPolicy(12, false, false, false);
+        return new PasswordPolicy(12, true, true, true);
     }
 
 

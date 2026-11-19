@@ -50,6 +50,7 @@ class ViewEmailTokenPage extends Programster\AbstractView\AbstractView
         ];
 
         $emailTokens = new EmailTokenCollection($emailToken);
+        $editPath = '/email-tokens/' . rawurlencode((string)$emailToken->getId()) . '/edit';
 ?>
 <h1><?= Html::e($emailToken->getName()) ?>
     <?= $emailToken->isRevoked() ? '<span class="badge badge-revoked">revoked</span>' : '' ?></h1>
@@ -72,15 +73,16 @@ class ViewEmailTokenPage extends Programster\AbstractView\AbstractView
         <div><h3>Priority</h3><p><?= $policy->getPriority()->getValue() ?></p></div>
     </div>
     <?php if ($emailToken->isRevoked() === false): ?>
-        <form method="post" action="/email-tokens/<?= Html::e($emailToken->getId()) ?>/revoke" class="form-actions">
-            <?= new ViewCsrfField() ?>
-            <button type="submit" class="danger">Revoke this email token</button>
+        <div class="form-actions">
+            <a class="button" href="<?= Html::e($editPath) ?>"><?= new ViewIcon(Icon::EDIT) ?> Edit</a>
+            <button type="button" class="danger" data-role="revoke-email-token">Revoke this email token</button>
             <span class="hint">It stops working straight away, and any of its emails still in the queue are cancelled.
                 This can't be undone.</span>
-        </form>
+        </div>
     <?php endif; ?>
 </div>
 <?php if ($emailToken->isRevoked() === false): ?>
+    <?= new ViewRevokeEmailTokenDialog($emailToken) ?>
     <?= new ViewSenderChecks("/email-tokens/{$emailToken->getId()}/sender-checks", self::SENDER_CHECKS_INTRO) ?>
 <?php endif; ?>
 <?= new ViewActivityCounts($this->m_counts, $this->m_emailToken->getId()) ?>

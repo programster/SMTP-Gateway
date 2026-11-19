@@ -1,7 +1,7 @@
 <?php
 
 /*
- * Creates, loads and revokes email tokens, along with their policies (stored across the email_token_network,
+ * Creates, loads, changes and revokes email tokens, along with their policies (stored across the email_token_network,
  * email_token_address_rule and email_token_rate_limit tables).
  */
 
@@ -47,6 +47,59 @@ final class EmailTokenRepository
         $transaction->commit();
 
         return new CreatedEmailToken($emailToken, $token);
+    }
+
+
+    /**
+     * Change a token's name and policy. Its ID and secret stay the same, so whatever uses it carries on working,
+     * within its new restrictions from its next request to the JSON API, or its next SMTP login (a connection that's
+     * already logged in keeps the policy it logged in with). Changed rate limits apply to its emails already in the
+     * queue too, as they're checked when each is sent, but a changed priority only applies to emails queued from now
+     * on. Only the name and priority of the token's own row are changed, so it can't undo a revocation, or the record
+     * of its last use, made at the same moment.
+     *
+     * @param EmailToken $emailToken - the token.
+     *
+     * @param string $name - its name, which may be the one it has now.
+     *
+     * @param EmailTokenPolicy $policy - what it's restricted to now, replacing its current policy entirely.
+     *
+     * @return void
+     *
+     * @throws InvalidInputException - if the name is empty or too long.
+     *
+     * @throws ConflictException - if the token has been revoked, as a revoked token can't be changed.
+     */
+    public static function update(EmailToken $emailToken, string $name, EmailTokenPolicy $policy) : void
+    {
+        $name = self::validateName($name);
+        $id = (string)$emailToken->getId();
+
+        // The token's row, and its policy's rows, are changed together, or not at all.
+        $update = function () use ($id, $name, $policy) : void {
+            $db = ServiceFactory::getDb();
+
+            $result = $db->query(
+                'UPDATE "email_token" SET "name" = $1, "priority" = $2 WHERE "id" = $3 AND "revoked_at" IS NULL',
+                [$name, $policy->getPriority()->getValue(), $id]
+            );
+
+            if (pg_affected_rows($result) !== 1)
+            {
+                throw new ConflictException('This email token has been revoked, so it can\'t be changed.');
+            }
+
+            foreach (['email_token_network', 'email_token_address_rule', 'email_token_rate_limit'] as $table)
+            {
+                $db->query("DELETE FROM \"{$table}\" WHERE \"email_token_id\" = $1", [$id]);
+            }
+
+            $transaction = new Transaction();
+            self::addPolicyToTransaction($transaction, $id, $policy);
+            $transaction->commit();
+        };
+
+        DB::transaction($update);
     }
 
 
@@ -218,6 +271,19 @@ final class EmailTokenRepository
         };
 
         return DB::transaction($revoke);
+    }
+
+
+    /**
+     * Count a token's emails waiting in the queue: the ones revoking it would cancel (see revoke()).
+     * @param EmailToken $emailToken - the token.
+     * @return int
+     */
+    public static function countQueuedEmails(EmailToken $emailToken) : int
+    {
+        $query = 'SELECT count(*) AS "queued" FROM "email_message" WHERE "email_token_id" = $1 AND "status" = $2';
+        $result = ServiceFactory::getDb()->query($query, [$emailToken->getId(), MessageStatus::QUEUED->value]);
+        return (int)pg_fetch_result($result, 0, 'queued');
     }
 
 

@@ -29,6 +29,7 @@ enum Icon : string
     case UNBLOCK = 'check-circle';
     case ARCHIVE = 'archive';
     case RESTORE = 'arrow-counter-clockwise';
+    case CARET_RIGHT = 'caret-right';
 
 
     /**

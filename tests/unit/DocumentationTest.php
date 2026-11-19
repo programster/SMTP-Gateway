@@ -54,4 +54,83 @@ $suite->check('raw HTML is escaped', !str_contains($html, '<script') && !str_con
 $html = $render('[click](javascript:alert)', DocumentationPage::OVERVIEW);
 $suite->check('an unsafe link isn\'t made', !str_contains($html, 'javascript:'), $html);
 
+// The headings listed beside a page: its sections, down to the level asked for, as plain text, in order.
+$markdown = "# Page\n\n## One\n\n### `api_key` & more\n\n#### Deeper\n\n##### Deepest";
+$html = $render($markdown, DocumentationPage::PROVIDERS);
+$found = [];
+
+foreach (DocumentationRenderer::findHeadings($html, 4) as $heading)
+{
+    /* @var $heading DocumentationHeading */
+    $found[] = "{$heading->getLevel()}:{$heading->getId()}:{$heading->getText()}";
+}
+
+$expected = ['2:one:One', '3:apikey--more:api_key & more', '4:deeper:Deeper'];
+$isFound = ($found === $expected);
+$suite->check('a page\'s headings are found, down to a level, as plain text', $isFound, json_encode($found));
+$page = (string)new ViewDocumentationPage(DocumentationRenderer::fetchPage(DocumentationPage::PROVIDERS));
+$isListed = (str_contains($page, 'id="documentation-contents"') && str_contains($page, 'href="#sendgrid"'));
+$suite->check('a page lists its sections beside it, down to each provider\'s', $isListed);
+$hasCaret = str_contains($page, 'aria-controls="documentation-contents-sendgrid"')
+    && str_contains($page, '<ul id="documentation-contents-sendgrid" data-role="subsections">');
+$suite->check('with a caret to show or hide the sections within one', $hasCaret);
+$hasNoCaret = !str_contains($page, 'aria-controls="documentation-contents-mailgun"');
+$suite->check('but not for one with none', $hasNoCaret);
+
+// The sections as a tree: each with those below its level, until the next at its level or above. A skipped level
+// (an h4 straight after an h2) is nested under the heading above it.
+$markdown = "# Page\n\n## One\n\n### Two\n\n#### Three\n\n## Four\n\n#### Five\n\n## Six";
+$html = $render($markdown, DocumentationPage::PROVIDERS);
+
+$describe = function (DocumentationSectionCollection $sections) use (&$describe) : string {
+    $parts = [];
+
+    foreach ($sections as $section)
+    {
+        /* @var $section DocumentationSection */
+        $within = $section->getSubsections()->isEmpty() ? '' : '(' . $describe($section->getSubsections()) . ')';
+        $parts[] = $section->getHeading()->getText() . $within;
+    }
+
+    return implode(' ', $parts);
+};
+
+$tree = $describe(DocumentationRenderer::findSections($html, 4));
+$isNested = ($tree === 'One(Two(Three)) Four(Five) Six');
+$suite->check('a page\'s sections are nested, even across a skipped level', $isNested, $tree);
+
+// Every link to a section, on the same page or another, goes to a heading that's there, so restructuring a page
+// can't leave a link going nowhere.
+$idsBySlug = [];
+$htmlBySlug = [];
+
+foreach (DocumentationPage::cases() as $page)
+{
+    $html = DocumentationRenderer::fetchPage($page);
+    preg_match_all('# id="([^"]+)"#', $html, $matches);
+    $idsBySlug[$page->getSlug()] = $matches[1];
+    $htmlBySlug[$page->getSlug()] = $html;
+}
+
+$broken = [];
+
+foreach ($htmlBySlug as $slug => $html)
+{
+    preg_match_all('#href="(?:/documentation(?:/([a-z-]+))?)?\#([^"]+)"#', $html, $matches, PREG_SET_ORDER);
+
+    foreach ($matches as $match)
+    {
+        $isOtherPage = str_starts_with($match[0], 'href="/documentation');
+        // The overview's slug is empty, so /documentation#section is a section of the overview.
+        $target = $isOtherPage ? ($match[1] ?? '') : $slug;
+
+        if (!in_array(rawurldecode($match[2]), $idsBySlug[$target] ?? [], true))
+        {
+            $broken[] = "{$slug}: {$match[0]}";
+        }
+    }
+}
+
+$suite->check('every link to a section goes to one that\'s there', $broken === [], implode(', ', $broken));
+
 $suite->finish();

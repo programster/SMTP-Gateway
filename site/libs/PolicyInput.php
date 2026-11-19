@@ -14,37 +14,111 @@ final class PolicyInput
     // The most rows of a list (or of rate limits) a form can send. The form adds rows one at a time, up to this.
     public const int MAX_FORM_ROWS = 50;
 
+    // The fields of an email token that can be set through the API, and those it shows but that can't be changed.
+    private const array WRITABLE_FIELDS = ['name', 'conditions', 'rateLimits', 'priority'];
+    private const array READ_ONLY_FIELDS = ['id', 'createdAt', 'lastUsedAt', 'revokedAt'];
+
 
     /**
-     * Read a token's policy from an API request body. Its restrictions are an optional "conditions" list, each
+     * Read a new token's policy from a POST request body. Its restrictions are an optional "conditions" list, each
      * restricting one field, e.g. [{"field": "recipient", "allowed": [{"type": "domain", "value": "example.org"}]}].
-     * A field with no condition has no restriction.
+     * A field with no condition has no restriction. A field that isn't one of a token's (e.g. a misspelt
+     * "conditons") is refused, rather than ignored, which would create a token with no restrictions.
+     *
+     * @param array $body - the decoded JSON body, which may also have "name" (read by the caller).
+     *
+     * @return EmailTokenPolicy
+     *
+     * @throws InvalidInputException - if a field isn't one of a token's, or anything is invalid.
+     */
+    public static function readPolicyFromJson(array $body) : EmailTokenPolicy
+    {
+        self::assertOnlyWritableFields($body);
+        return self::readPolicyFieldsFromJson($body);
+    }
+
+
+    /**
+     * Read a token's new policy from a PUT request, which replaces the whole token, so must give every field: "name",
+     * "conditions", "rateLimits" and "priority" (with an empty list for no conditions, or no rate limits). Leaving one
+     * out is refused, rather than taken to mean its default, so a PUT that only meant to change the name can't remove
+     * every restriction by mistake.
      *
      * @param array $body - the decoded JSON body.
      *
      * @return EmailTokenPolicy
      *
-     * @throws InvalidInputException - if anything is missing or invalid.
+     * @throws InvalidInputException - if a field is missing, isn't one of a token's, or is invalid.
      */
-    public static function readPolicyFromJson(array $body) : EmailTokenPolicy
+    public static function readReplacementPolicyFromJson(array $body) : EmailTokenPolicy
     {
-        $conditions = self::readConditionsFromJson($body);
+        self::assertOnlyWritableFields($body);
+        $missing = array_values(array_diff(self::WRITABLE_FIELDS, array_keys($body)));
 
-        $readRules = function (ConditionField $field) use ($conditions) : AddressRestrictionInterface {
-            return isset($conditions[$field->value])
-                ? self::readRulesFromJson($conditions[$field->value]['allowed'], $conditions[$field->value]['path'])
-                : new AnyAddress();
-        };
+        if (count($missing) > 0)
+        {
+            $fields = '"' . implode('", "', self::WRITABLE_FIELDS) . '"';
+
+            $msg =
+                "PUT replaces the whole email token, so it needs every one of {$fields} (an empty list for no"
+                . ' conditions, or no rate limits). Missing: "' . implode('", "', $missing) . '". To change only some'
+                . ' of them, use PATCH.';
+
+            throw new InvalidInputException($msg);
+        }
+
+        return self::readPolicyFieldsFromJson($body);
+    }
+
+
+    /**
+     * Read a token's new policy from a PATCH request, which only changes what it gives. "rateLimits" and "priority"
+     * replace the token's, if given. Each condition given replaces the token's condition on that field, and the rest
+     * are kept, so changing the senders can't drop the IP address restriction by mistake. A condition with
+     * "allowed": null removes it, so that field has no restriction.
+     *
+     * @param array $body - the decoded JSON body, which may also have "name" (read by the caller).
+     *
+     * @param EmailTokenPolicy $current - the token's policy now.
+     *
+     * @return EmailTokenPolicy
+     *
+     * @throws InvalidInputException - if a field isn't one of a token's, or is invalid.
+     */
+    public static function readPolicyPatchFromJson(array $body, EmailTokenPolicy $current) : EmailTokenPolicy
+    {
+        self::assertOnlyWritableFields($body);
+        $conditions = self::readConditionsFromJson($body, ConditionRemoval::ALLOWED);
 
         $ip = $conditions[ConditionField::CLIENT_IP->value] ?? null;
 
+        if ($ip === null)
+        {
+            $networks = $current->getAllowedNetworks();
+        }
+        elseif ($ip['allowed'] === null)
+        {
+            $networks = new AnyIp();
+        }
+        else
+        {
+            $networks = self::readNetworksFromJson($ip['allowed'], $ip['path']);
+        }
+
+        $senders = self::patchRules($conditions, ConditionField::SENDER, $current->getAllowedSenders());
+        $replyTos = self::patchRules($conditions, ConditionField::REPLY_TO, $current->getAllowedReplyTos());
+        $recipients = self::patchRules($conditions, ConditionField::RECIPIENT, $current->getAllowedRecipients());
+        $hasRateLimits = array_key_exists('rateLimits', $body);
+        $rateLimits = $hasRateLimits ? self::readRateLimitsFromJson($body, 'rateLimits') : $current->getRateLimits();
+        $priority = array_key_exists('priority', $body) ? self::readPriorityFromJson($body) : $current->getPriority();
+
         return new EmailTokenPolicy(
-            allowedNetworks: ($ip === null) ? new AnyIp() : self::readNetworksFromJson($ip['allowed'], $ip['path']),
-            allowedSenders: $readRules(ConditionField::SENDER),
-            allowedReplyTos: $readRules(ConditionField::REPLY_TO),
-            allowedRecipients: $readRules(ConditionField::RECIPIENT),
-            rateLimits: self::readRateLimitsFromJson($body, 'rateLimits'),
-            priority: self::readPriorityFromJson($body),
+            allowedNetworks: $networks,
+            allowedSenders: $senders,
+            allowedReplyTos: $replyTos,
+            allowedRecipients: $recipients,
+            rateLimits: $rateLimits,
+            priority: $priority,
         );
     }
 
@@ -295,12 +369,14 @@ final class PolicyInput
      *
      * @param array $body - the decoded JSON body.
      *
-     * @return array<string, array{allowed: array, path: string}> - each condition's "allowed" list, and where it is in
-     * the request (for errors), by its field's value.
+     * @param ConditionRemoval $removal - whether "allowed": null may be given, to remove a condition (in a PATCH).
+     *
+     * @return array<string, array{allowed: array|null, path: string}> - each condition's "allowed" list (or null, to
+     * remove it), and where it is in the request (for errors), by its field's value.
      *
      * @throws InvalidInputException - if "conditions" or one of them is invalid, or a field is given twice.
      */
-    private static function readConditionsFromJson(array $body) : array
+    private static function readConditionsFromJson(array $body, ConditionRemoval $removal) : array
     {
         $conditions = [];
         $fields = implode(', ', array_column(ConditionField::cases(), 'value'));
@@ -316,12 +392,15 @@ final class PolicyInput
                 throw new InvalidInputException("{$path} must be an object with a \"field\" of {$fields}.");
             }
 
-            if (!is_array($allowed) || !array_is_list($allowed))
+            $isRemoving = ($allowed === null && $removal === ConditionRemoval::ALLOWED);
+            $orNull = ($removal === ConditionRemoval::ALLOWED) ? ', or null to remove the condition' : '';
+
+            if ($isRemoving === false && (!is_array($allowed) || !array_is_list($allowed)))
             {
-                throw new InvalidInputException("{$path}.allowed must be an array.");
+                throw new InvalidInputException("{$path}.allowed must be an array{$orNull}.");
             }
 
-            if (count($allowed) === 0)
+            if ($isRemoving === false && count($allowed) === 0)
             {
                 $msg =
                     "{$path}.allowed is empty, which would allow nobody. To allow anyone, leave out the"
@@ -382,6 +461,109 @@ final class PolicyInput
         }
 
         return new AddressRuleSet(...$rules);
+    }
+
+
+    /**
+     * Read a token's policy from the fields of an API request body: its "conditions", "rateLimits" and "priority",
+     * each optional, and no restriction (or the default priority) when left out.
+     *
+     * @param array $body - the decoded JSON body, whose fields have already been checked to be a token's.
+     *
+     * @return EmailTokenPolicy
+     *
+     * @throws InvalidInputException - if anything is invalid.
+     */
+    private static function readPolicyFieldsFromJson(array $body) : EmailTokenPolicy
+    {
+        $conditions = self::readConditionsFromJson($body, ConditionRemoval::REFUSED);
+
+        $readRules = function (ConditionField $field) use ($conditions) : AddressRestrictionInterface {
+            return isset($conditions[$field->value])
+                ? self::readRulesFromJson($conditions[$field->value]['allowed'], $conditions[$field->value]['path'])
+                : new AnyAddress();
+        };
+
+        $ip = $conditions[ConditionField::CLIENT_IP->value] ?? null;
+
+        return new EmailTokenPolicy(
+            allowedNetworks: ($ip === null) ? new AnyIp() : self::readNetworksFromJson($ip['allowed'], $ip['path']),
+            allowedSenders: $readRules(ConditionField::SENDER),
+            allowedReplyTos: $readRules(ConditionField::REPLY_TO),
+            allowedRecipients: $readRules(ConditionField::RECIPIENT),
+            rateLimits: self::readRateLimitsFromJson($body, 'rateLimits'),
+            priority: self::readPriorityFromJson($body),
+        );
+    }
+
+
+    /**
+     * Get one address field's restriction after a PATCH: the one it gives, none if it removes it, or the one there was.
+     *
+     * @param array<string, array{allowed: array|null, path: string}> $conditions - the PATCH's conditions, as
+     * readConditionsFromJson() reads them.
+     *
+     * @param ConditionField $field - the field.
+     *
+     * @param AddressRestrictionInterface $now - the field's restriction now.
+     *
+     * @return AddressRestrictionInterface
+     *
+     * @throws InvalidInputException - if the rules given are invalid.
+     */
+    private static function patchRules(
+        array $conditions,
+        ConditionField $field,
+        AddressRestrictionInterface $now
+    ) : AddressRestrictionInterface
+    {
+        $condition = $conditions[$field->value] ?? null;
+
+        if ($condition === null)
+        {
+            $restriction = $now;
+        }
+        elseif ($condition['allowed'] === null)
+        {
+            $restriction = new AnyAddress();
+        }
+        else
+        {
+            $restriction = self::readRulesFromJson($condition['allowed'], $condition['path']);
+        }
+
+        return $restriction;
+    }
+
+
+    /**
+     * Check a POST, PUT or PATCH body only has fields that can be set, so a misspelt one (which would otherwise be
+     * ignored, leaving that part of the token unrestricted, or unchanged) is refused, saying so.
+     *
+     * @param array $body - the decoded JSON body.
+     *
+     * @return void
+     *
+     * @throws InvalidInputException - if it has a field that can't be changed, or that a token doesn't have.
+     */
+    private static function assertOnlyWritableFields(array $body) : void
+    {
+        $writable = '"' . implode('", "', self::WRITABLE_FIELDS) . '"';
+
+        foreach (array_keys($body) as $field)
+        {
+            if (in_array($field, self::READ_ONLY_FIELDS, true))
+            {
+                $msg = "\"{$field}\" is set by the service, so it can't be given. Leave it out.";
+                throw new InvalidInputException($msg);
+            }
+
+            if (in_array($field, self::WRITABLE_FIELDS, true) === false)
+            {
+                $msg = "\"{$field}\" isn't a field of an email token. The ones that can be given are {$writable}.";
+                throw new InvalidInputException($msg);
+            }
+        }
     }
 
 

@@ -111,11 +111,14 @@ class ViewProviderFormPage extends Programster\AbstractView\AbstractView
         $action = $this->m_isEditing ? $editingPath : '/providers/new';
         $title = $this->m_isEditing ? "Edit the provider \"{$this->m_editingName}\"" : 'Add a provider';
         $isEnabled = ($this->m_values['enabled'] ?? '') === '1';
+        $errorHidden = ($this->m_error === '') ? ' hidden' : '';
+        $reservedNames = json_encode(ProviderDefinition::getReservedNames(), JSON_THROW_ON_ERROR);
 ?>
 <h1><?= Html::e($title) ?></h1>
 <p><a href="/providers">Back to the providers</a></p>
-<?= new ViewFormError($this->m_error) ?>
 <form method="post" action="<?= Html::e($action) ?>" class="card" id="provider-form">
+    <p class="flash flash-error" role="alert" data-role="form-error"<?= $errorHidden ?>><?=
+        Html::e($this->m_error) ?></p>
     <?= new ViewCsrfField() ?>
     <input type="hidden" name="version" value="<?= Html::e($this->m_version) ?>">
     <?php if ($this->m_isEditing && $chosenType !== null): ?>
@@ -135,7 +138,9 @@ class ViewProviderFormPage extends Programster\AbstractView\AbstractView
 
     <label for="provider-name">Name</label>
     <input type="text" id="provider-name" name="name" required maxlength="50"
-        value="<?= Html::e($this->m_values['name'] ?? '') ?>" placeholder="e.g. sendgrid-main">
+        value="<?= Html::e($this->m_values['name'] ?? '') ?>" placeholder="e.g. sendgrid-main"
+        aria-describedby="provider-name-error" data-reserved-names="<?= Html::e($reservedNames) ?>">
+    <p class="field-error" id="provider-name-error" data-role="name-error" hidden></p>
     <p class="hint">Lowercase letters, digits, "-" and "_". Its emails are recorded under it, and a provider with a
         webhook receives its events at <code>/webhooks/&lt;name&gt;</code>, so renaming it starts its statistics and
         rate limits afresh, and needs its webhook pointing at the new name.</p>
@@ -179,10 +184,31 @@ class ViewProviderFormPage extends Programster\AbstractView\AbstractView
         <?php $this->renderField($type, $field); ?>
     <?php endforeach; ?>
     <?php if ($type->hasWebhook()): ?>
-        <p class="hint">Its events are posted to <code>&lt;PUBLIC_URL&gt;/webhooks/&lt;name&gt;</code>. See
-            <a href="/documentation/providers#types-of-provider">Types of provider</a> for setting up its webhook.</p>
+        <?php $this->renderWebhookHint(); ?>
     <?php endif; ?>
 </fieldset>
+<?php
+    }
+
+
+    /**
+     * Render where a provider's events are to be posted, for setting up its webhook. Its name goes on the end, which
+     * ProviderForm.js keeps up to date as the name is typed. If PUBLIC_URL isn't set, only the path is known.
+     *
+     * @return void
+     */
+    private function renderWebhookHint() : void
+    {
+        $publicBase = ProviderWebhookUrl::getBase();
+        $isKnown = ($publicBase !== '');
+        $base = $isKnown ? $publicBase : '/webhooks/';
+        $name = $this->m_values['name'] ?? '';
+        $url = $base . (($name === '') ? '<name>' : rawurlencode($name));
+        $unknownHost = $isKnown ? '' : ' on this site (set <code>PUBLIC_URL</code> in .env for its full address)';
+?>
+<p class="hint">Point its webhook at <code data-role="webhook-url"
+    data-webhook-base="<?= Html::e($base) ?>"><?= Html::e($url) ?></code><?= $unknownHost ?>. See
+    <a href="/documentation/providers#types-of-provider">Types of provider</a> for setting it up.</p>
 <?php
     }
 

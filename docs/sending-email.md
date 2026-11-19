@@ -41,8 +41,10 @@ which is mounted read-only at `/tls`, in both the production and development com
 
 These are the names Let's Encrypt and certbot give them, so their files can be copied straight in (copy
 the files themselves: certbot's `live` folder holds symlinks, which break when only that folder is
-mounted). To use other names, or another mounted folder, set `SMTP_TLS_CERT_FILE` and
-`SMTP_TLS_KEY_FILE` to their paths inside the container. The files are checked hourly, so a renewed
+mounted). To use other names, set `SMTP_TLS_CERT_FILE` and `SMTP_TLS_KEY_FILE` to them (e.g.
+`cert.pem`, with or without `./tls/` in front), and they're looked for in `./tls`. To use another
+mounted folder, give full paths inside the container (e.g. `/certs/cert.pem`): anything starting with
+`/` is used as it is. Set both or neither. The files are checked hourly, so a renewed
 certificate is picked up without a restart.
 
 Without a certificate, the service won't start. The only exception is development (`ENVIRONMENT=dev`),
@@ -114,3 +116,47 @@ The checks happen as early as SMTP allows: the IP address and secret at login, t
 `MAIL FROM`, each recipient at `RCPT TO`, and the From, Sender and Reply-To headers after `DATA`.
 Headers that can't be parsed are rejected, rather than skipped. A client-supplied `X-SMTPAPI` header
 (which SendGrid would otherwise use to add recipients) is always removed.
+
+### Changing an email token
+
+A token's name, conditions, priority and rate limits can be changed on its page in the web interface
+(**Edit**), or through the management API, with `PUT` or `PATCH /api/v1/email-tokens/<id>`. Its ID and
+secret never change, so whatever uses it carries on working, with its new restrictions from its next
+request to the JSON API, or its next SMTP login. An SMTP connection that's already logged in keeps the
+restrictions it logged in with until it ends. The new rate limits apply to its emails already in the
+queue too, as they're checked when each is sent, but a new priority only applies to emails queued from
+then on, as each email keeps the priority it was queued with. A revoked token can't be changed (the API
+answers 409).
+
+`PUT` replaces the whole token, so it needs every one of `name`, `conditions`, `rateLimits` and
+`priority`, with an empty list for no conditions or no rate limits. Leaving one out is refused, rather
+than taken to mean "no restriction", so a `PUT` meant to rename a token can't remove its restrictions:
+
+```json
+{
+  "name": "Billing",
+  "conditions": [
+    {"field": "clientIp", "allowed": ["10.0.0.0/8"]},
+    {"field": "sender", "allowed": [{"type": "address", "value": "noreply@example.org"}]}
+  ],
+  "rateLimits": [{"unit": "emails", "max": 10, "periodSeconds": 1}],
+  "priority": 1
+}
+```
+
+`PATCH` changes only what it's given, and keeps the rest. `name`, `rateLimits` and `priority` replace
+the token's. Each condition in `conditions` replaces the token's condition on that field, and its other
+conditions are kept, so this changes who it may send as, and keeps its IP addresses and recipients:
+
+```json
+{"conditions": [{"field": "sender", "allowed": [{"type": "domain", "value": "example.org"}]}]}
+```
+
+To remove a condition, so that field has no restriction, give it `"allowed": null`, e.g.
+`{"conditions": [{"field": "replyTo", "allowed": null}]}`. Both answer with the token as it is now, as
+`GET` does.
+
+Creating a token (`POST`), `PUT` and `PATCH` all refuse a field a token doesn't have, e.g. a misspelt
+`conditons`, which would otherwise be ignored, creating a token with no restrictions. They also refuse
+the fields the service sets, such as `id` and `createdAt`.
+

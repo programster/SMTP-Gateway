@@ -145,6 +145,7 @@ class ViewProvidersPage extends Programster\AbstractView\AbstractView
         $path = '/providers/' . rawurlencode($name);
         $noneSent = ['last_minute' => 0, 'last_hour' => 0, 'last_24_hours' => 0, 'recipients_last_24_hours' => 0];
         $sent = $counts[$name] ?? $noneSent;
+        $removal = ProviderRemovalNotice::createForProvider($provider, $this->m_config);
 ?>
 <tr data-role="sortable-row" data-name="<?= Html::e($name) ?>">
     <?php if ($isSortable): ?>
@@ -163,6 +164,8 @@ class ViewProvidersPage extends Programster\AbstractView\AbstractView
             title="Edit"><?= new ViewIcon(Icon::EDIT) ?></a>
         <button type="button" class="icon-button" data-role="remove-provider"
             data-action="<?= Html::e("{$path}/remove") ?>" data-name="<?= Html::e($name) ?>"
+            data-warning="<?= Html::e($removal->getMessage()) ?>"
+            data-refused="<?= $removal->isRefused() ? 'true' : 'false' ?>"
             aria-label="Remove <?= Html::e($name) ?>" title="Remove"><?= new ViewIcon(Icon::TRASH) ?></button>
     </td>
 </tr>

@@ -40,7 +40,8 @@ final class ProviderFormFields
     private static function getSendGridFields() : ProviderFieldCollection
     {
         $publicKeyHint =
-            'Optional. The public key from SendGrid\'s Signed Event Webhook settings, which switches its events on.';
+            'Optional. The Verification Key SendGrid shows for its event webhook once signature verification is on.'
+            . ' Until it\'s set, no events (deliveries, bounces, etc.) are recorded.';
 
         return new ProviderFieldCollection(
             ProviderField::createSecret('api_key', 'API key', true, 'An API key with the Mail Send permission.'),

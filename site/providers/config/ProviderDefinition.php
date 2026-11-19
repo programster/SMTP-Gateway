@@ -64,6 +64,18 @@ readonly class ProviderDefinition
     }
 
 
+    /**
+     * Get the names a provider can't have, as the web interface uses /providers/<name> for a page, e.g. for the
+     * provider form to check a name as it's typed.
+     *
+     * @return string[]
+     */
+    public static function getReservedNames() : array
+    {
+        return self::RESERVED_NAMES;
+    }
+
+
     public function getType() : ProviderType
     {
         return $this->m_settings->getType();

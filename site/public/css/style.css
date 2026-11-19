@@ -7,6 +7,7 @@
     --accent: #2459c9;
     --accent-text: #ffffff;
     --danger: #b42318;
+    --danger-button: #b42318;
     --success-bg: #e6f4ea;
     --success-text: #1e5b2e;
     --error-bg: #fdecea;
@@ -28,6 +29,9 @@
         --accent: #7aa2f7;
         --accent-text: #0e1320;
         --danger: #f2837a;
+        /* --danger is lightened above so red text reads on the dark background, but a button needs a dark red
+           behind its white text, or it looks pale, like a disabled one. */
+        --danger-button: #c0392b;
         --success-bg: #183524;
         --success-text: #9fdcb0;
         --error-bg: #3d1a17;
@@ -149,9 +153,76 @@ details.advanced[open] > summary { margin-bottom: 0.5rem; }
 .documentation { max-width: 880px; }
 .documentation h1 { margin-top: 0; }
 .documentation h2 { border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; }
+/* Headings get smaller with each level, and stay in the text's colour (unlike the site's muted h3, for forms). */
+.documentation h3 { font-size: 1.1rem; margin-top: 1.75rem; color: var(--text); }
+.documentation h4 { font-size: 1rem; margin: 1.5rem 0 0.5rem; }
+.documentation h5 { font-size: 0.9rem; margin: 1.25rem 0 0.5rem; color: var(--muted); }
+/* A table's first column is usually a name (e.g. a type of provider), which shouldn't break in the middle. */
+.documentation td:first-child { white-space: nowrap; }
 .documentation table { margin: 0.75rem 0; }
 .documentation th, .documentation td { vertical-align: top; text-align: left; }
 .documentation li { margin: 0.2rem 0; }
+
+/*
+ * A documentation page's list of its sections ("On this page", see DocumentationContents.ts), beside it on screens
+ * wide enough for both, and stuck in place as the page scrolls. The sections in view are in bold, with a bar beside
+ * them. On narrower screens, it isn't shown, as there's no room beside the page.
+ */
+.documentation-layout { display: grid; grid-template-columns: minmax(0, 880px) 15rem; gap: 2.5rem; align-items: start; }
+.documentation-contents {
+    position: sticky;
+    top: 1.5rem;
+    max-height: calc(100vh - 3rem);
+    overflow-y: auto;
+    font-size: 0.85rem;
+}
+.documentation-contents-title { margin: 0 0 0.5rem; font-weight: 600; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 0.04em; font-size: 0.75rem; }
+.documentation-contents ul { list-style: none; margin: 0; padding: 0; }
+.documentation-contents ul ul { padding-left: 0.85rem; }
+.documentation-contents ul[hidden] { display: none; }
+.documentation-contents li { margin: 0; }
+
+/* Each entry: a caret to show or hide its subsections, if it has any, then its link. An entry without a caret is
+   indented by a caret's width, so every link lines up. */
+.documentation-contents-entry { display: flex; align-items: flex-start; }
+.documentation-contents-entry > a:first-child { margin-left: 1.25rem; }
+.documentation-contents-toggle {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.6rem;
+    padding: 0;
+    background: transparent;
+    color: var(--muted);
+    border-radius: 4px;
+}
+.documentation-contents-toggle:hover, .documentation-contents-toggle:focus-visible { color: var(--text); }
+.documentation-contents-toggle .icon { width: 12px; height: 12px; transition: transform 0.2s ease; }
+.documentation-contents-toggle[aria-expanded=true] .icon { transform: rotate(90deg); }
+
+@media (prefers-reduced-motion: reduce) {
+    .documentation-contents-toggle .icon { transition: none; }
+}
+
+.documentation-contents a {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: block;
+    padding: 0.2rem 0 0.2rem 0.6rem;
+    border-left: 2px solid var(--border);
+    color: var(--muted);
+    text-decoration: none;
+}
+.documentation-contents a:hover { color: var(--text); }
+.documentation-contents a.is-in-view { color: var(--text); font-weight: 600; border-left-color: var(--accent); }
+
+@media (max-width: 1150px) {
+    .documentation-layout { display: block; }
+    .documentation-contents { display: none; }
+}
 
 /* On a narrow screen, the side panel goes above the page instead. */
 @media (max-width: 760px) {
@@ -177,6 +248,12 @@ main { max-width: 1200px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
 .flash { padding: 0.6rem 0.9rem; border-radius: 6px; }
 .flash-success { background: var(--success-bg); color: var(--success-text); }
 .flash-error { background: var(--error-bg); color: var(--error-text); }
+.flash[hidden] { display: none; }
+
+/* A field the browser has found a mistake in (see ProviderNameField.ts), and the message beneath it. */
+input[aria-invalid=true] { border-color: var(--danger); box-shadow: 0 0 0 1px var(--danger); }
+.field-error { margin: 0.25rem 0 0; color: var(--danger); font-size: 0.85rem; }
+.field-error[hidden] { display: none; }
 .flash-warning { background: var(--warning-bg); color: var(--warning-text); }
 
 label { display: block; font-weight: 600; margin: 0.9rem 0 0.25rem; }
@@ -223,7 +300,7 @@ button, .button {
     text-decoration: none;
 }
 
-button.danger { background: var(--danger); color: #fff; }
+button.danger { background: var(--danger-button); color: #fff; }
 button.secondary, .button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--border); }
 button:disabled { opacity: 0.6; cursor: wait; }
 .icon-button {
@@ -350,9 +427,14 @@ dialog[open] { transform: none; }
 .set-password { margin: 0.25rem 0 0 1.6rem; }
 .set-password[hidden] { display: none; }
 dialog h3 { margin-top: 0; color: var(--text); }
+/* A dialog's confirm button is disabled when what it's for can't be done (see ConfirmDialog.ts), not while it waits. */
+dialog [data-role=confirm]:disabled { cursor: not-allowed; }
 .link-button { background: none; border: 0; padding: 0; color: var(--accent); font-weight: normal; cursor: pointer; }
 .inline-form { display: inline; margin: 0; }
 .form-actions { margin-top: 1.25rem; display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
+/* A form that's just a button, among other actions (e.g. a provider's Disable). */
+.inline-form { display: inline; margin: 0; }
+.inline-form button:disabled[title] { cursor: not-allowed; }
 
 .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0 1.5rem; }
 /* An API key's age (see ViewKeyAge): yellow as it nears a year, red from a year. */

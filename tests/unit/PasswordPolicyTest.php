@@ -27,9 +27,23 @@ $isAccepted = function (PasswordPolicy $policy, string $password) : bool {
 };
 
 $default = PasswordPolicy::createDefault();
-$suite->check('by default, 12 characters of any kind are enough', $isAccepted($default, 'aaaaaaaaaaaa'));
-$suite->check('and 11 aren\'t', !$isAccepted($default, 'aaaaaaaaaaa'));
-$suite->check('the default is described', $default->describe() === 'At least 12 characters.', $default->describe());
+$isEnough = $isAccepted($default, 'Aaaaaaaaaa1!');
+$suite->check('by default, 12 characters with a capital, a number and a symbol are enough', $isEnough);
+$suite->check('and 11 aren\'t', !$isAccepted($default, 'Aaaaaaaaa1!'));
+$suite->check('nor 12 without a capital letter', !$isAccepted($default, 'aaaaaaaaaa1!'));
+$suite->check('nor 12 without a number', !$isAccepted($default, 'Aaaaaaaaaaa!'));
+$suite->check('nor 12 without a symbol', !$isAccepted($default, 'Aaaaaaaaaaa1'));
+$described = 'At least 12 characters, with a capital letter, a number and a symbol.';
+$suite->check('the default is described', $default->describe() === $described, $default->describe());
+
+// settings.yaml's security section: a rule it leaves out is the default's, and one it gives is kept, even if false.
+$fromFile = ServiceSettingsParser::parseSecurity(['require_mfa' => true])->getPasswordPolicy();
+$isDefault = ($fromFile->describe() === $described);
+$suite->check('a security section without the rules has the default ones', $isDefault, $fromFile->describe());
+$given = ['require_mfa' => true, 'password_requires_capital' => false, 'password_requires_symbol' => false];
+$fromFile = ServiceSettingsParser::parseSecurity($given)->getPasswordPolicy();
+$isKept = ($fromFile->requiresCapital() === false && $fromFile->requiresSymbol() === false);
+$suite->check('and one that switches a rule off keeps it off', $isKept && $fromFile->requiresNumber());
 
 $strict = new PasswordPolicy(10, true, true, true);
 $suite->check('every rule met is accepted', $isAccepted($strict, 'Abcdefgh1!'));

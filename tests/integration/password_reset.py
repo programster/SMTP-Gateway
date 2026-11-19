@@ -11,7 +11,7 @@ from lib.harness import Suite
 from lib.web import Response, WebClient, find_csrf_token, forget_used_totp_code
 
 suite = Suite('Password reset')
-new_password = 'a-brand-new-password'
+new_password = 'A-brand-new-password-2'
 stack.clear_mailpits()
 # Only one reset email is sent per account every 5 minutes, so any earlier one (e.g. the priority suite's) is moved
 # out of the way.

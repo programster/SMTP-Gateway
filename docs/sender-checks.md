@@ -72,7 +72,7 @@ Every provider's API is only ever read from (GET requests). SendGrid's API key o
 to send email, so the rest is optional: a check the key isn't allowed to make says which permission
 would allow it. Giving it read access to **Sender Authentication** (`whitelabel.read`), the verified
 senders, and the event webhook settings (`user.webhooks.event.settings.read`) lets everything be
-checked.
+checked. [SendGrid's API key](providers.md#sendgrids-api-key) has how to create one with just those.
 
 For each enabled **custom** provider (an SMTP server of your own, e.g. mailcow), which can't be asked
 which senders it accepts, what receivers check about the server itself:

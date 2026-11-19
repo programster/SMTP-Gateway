@@ -8,7 +8,7 @@ which keep it in `config/settings.yaml`. The main settings in `.env` are:
 |---|---|
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH` | The default web interface account, created if it doesn't exist, and its password's hash (from `password_hash()`, base64 encoded), so the password itself isn't kept in `.env`. |
 | `PUBLIC_URL` | The address the web interface is reached at, for links in emails and logging in with Google. |
-| `SMTP_TLS_CERT_FILE`, `SMTP_TLS_KEY_FILE` | Where the SMTP server's certificate is, if not `./tls/fullchain.pem` and `./tls/privkey.pem`. |
+| `SMTP_TLS_CERT_FILE`, `SMTP_TLS_KEY_FILE` | The SMTP server's certificate and key, if not `fullchain.pem` and `privkey.pem`: names in `./tls`, or full paths inside the container. |
 | `SMTP_MAX_MESSAGE_BYTES` | The largest email accepted. 20 MiB by default. |
 | `QUEUE_WORKERS`, `PHP_FPM_MAX_CHILDREN`, `SMTP_MAX_CONNECTIONS` | How much can run at once, which caps the memory used. |
 | `HTTP_MAX_BODY_SIZE`, `PHP_MEMORY_LIMIT` | The largest request nginx and PHP accept, and the most memory a PHP process can use. |
@@ -29,7 +29,7 @@ restart:
 | Section | Settings | Default |
 |---|---|---|
 | General | The time zone times are shown in. Times are stored in UTC. | UTC |
-| Security | Whether every web account must use two-factor authentication, and what a password must have: a minimum length (8 to 64), and optionally a capital letter, a number and a symbol, checked whenever a password is set | Required, and at least 12 characters |
+| Security | Whether every web account must use two-factor authentication, and what a password must have: a minimum length (8 to 64), and optionally a capital letter, a number and a symbol, checked whenever a password is set | Required, and at least 12 characters, with a capital letter, a number and a symbol |
 | Proxies | Whether the site is behind Cloudflare (see below), and your own reverse proxies, whose `X-Forwarded-For` header is believed | Not behind Cloudflare, and none |
 | Sending (on the General page) | The address password reset emails are sent from, and how long a client waits to be told an email was sent (0 to 60 seconds) | None, and 5 seconds |
 | Email retention | How long emails and logs are kept: see [How long emails are kept](retention.md) | Records and logs 90 days, content not kept |

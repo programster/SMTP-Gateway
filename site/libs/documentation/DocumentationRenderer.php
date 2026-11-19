@@ -44,6 +44,53 @@ final class DocumentationRenderer
 
 
     /**
+     * Find the headings of a rendered page, from its sections (level 2) down to a given level, in the order they're
+     * in, for the list of its sections beside it.
+     *
+     * @param string $html - the page, from fetchPage() or render().
+     *
+     * @param int $deepestLevel - the deepest level to include, e.g. 4 for h2, h3 and h4.
+     *
+     * @return DocumentationHeadingCollection
+     */
+    public static function findHeadings(string $html, int $deepestLevel) : DocumentationHeadingCollection
+    {
+        $headings = [];
+        preg_match_all('#<h([2-6]) id="([^"]+)">(.*?)</h\1>#s', $html, $matches, PREG_SET_ORDER);
+
+        foreach ($matches as $match)
+        {
+            $level = (int)$match[1];
+            $text = trim(html_entity_decode(strip_tags($match[3]), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+
+            if ($level <= $deepestLevel && $text !== '')
+            {
+                $headings[] = new DocumentationHeading($level, html_entity_decode($match[2]), $text);
+            }
+        }
+
+        return new DocumentationHeadingCollection(...$headings);
+    }
+
+
+    /**
+     * Find the sections of a rendered page, as a tree: its level 2 sections, each with the sections within it, down to
+     * a given level. A level that's skipped (e.g. an h4 straight after an h2) is nested under the heading above it.
+     *
+     * @param string $html - the page, from fetchPage() or render().
+     *
+     * @param int $deepestLevel - the deepest level to include, e.g. 4 for h2, h3 and h4.
+     *
+     * @return DocumentationSectionCollection
+     */
+    public static function findSections(string $html, int $deepestLevel) : DocumentationSectionCollection
+    {
+        $index = 0;
+        return self::buildSections(self::findHeadings($html, $deepestLevel), $index, 1);
+    }
+
+
+    /**
      * Render some of the documentation's Markdown.
      *
      * @param string $markdown - the Markdown.
@@ -82,6 +129,38 @@ final class DocumentationRenderer
 
         $linked = (string)preg_replace_callback('/(?<!!)\[([^\]]*)\]\(([^)\s]+)\)/', $rewriteLink, $markdown);
         return $converter->convert($linked)->getContent();
+    }
+
+
+    /**
+     * Build the sections within a heading, from the headings after it that are below its level, moving $index past
+     * them, so the caller carries on from the next heading at its level or above.
+     *
+     * @param DocumentationHeadingCollection $headings - every heading, in order.
+     *
+     * @param int $index - where to start, which is moved to the first heading not used.
+     *
+     * @param int $parentLevel - the level of the heading they're within, or 1 for the page itself.
+     *
+     * @return DocumentationSectionCollection
+     */
+    private static function buildSections(
+        DocumentationHeadingCollection $headings,
+        int &$index,
+        int $parentLevel
+    ) : DocumentationSectionCollection
+    {
+        $sections = [];
+
+        while ($index < count($headings) && $headings->get($index)->getLevel() > $parentLevel)
+        {
+            $heading = $headings->get($index);
+            $index++;
+            $subsections = self::buildSections($headings, $index, $heading->getLevel());
+            $sections[] = new DocumentationSection($heading, $subsections);
+        }
+
+        return new DocumentationSectionCollection(...$sections);
     }
 
 

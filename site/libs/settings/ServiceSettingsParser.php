@@ -107,11 +107,12 @@ final class ServiceSettingsParser
             }
         }
 
+        // Each rule left out of the file is the default's.
         $passwordPolicy = new PasswordPolicy(
             $minLength,
-            $settings['password_requires_capital'] ?? false,
-            $settings['password_requires_number'] ?? false,
-            $settings['password_requires_symbol'] ?? false
+            $settings['password_requires_capital'] ?? $default->requiresCapital(),
+            $settings['password_requires_number'] ?? $default->requiresNumber(),
+            $settings['password_requires_symbol'] ?? $default->requiresSymbol()
         );
 
         return new SecuritySettings($settings['require_mfa'] ?? true, $passwordPolicy);

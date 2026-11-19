@@ -113,6 +113,32 @@ final class ProvidersFormService
 
 
     /**
+     * Enable or disable a provider, keeping all its settings, so it can be switched back without setting it up again.
+     * A disabled provider isn't sent through. The last one that's enabled can't be disabled, as no email could be
+     * sent.
+     *
+     * @param string $name - its name.
+     *
+     * @param bool $isEnabled - whether it's to be enabled.
+     *
+     * @param string $version - the version of the providers the change is based on.
+     *
+     * @return void
+     *
+     * @throws NotFoundException - if there's no such provider.
+     * @throws InvalidInputException - if it's the last enabled one, and it's being disabled.
+     * @throws ConflictException - if the providers have changed since the version given.
+     * @throws ConfigurationException - if the providers can't be read or saved.
+     */
+    public static function setEnabled(string $name, bool $isEnabled, string $version) : void
+    {
+        $data = self::loadData();
+        $data['providers'][self::findIndex($data, $name)]['enabled'] = $isEnabled;
+        self::save($data, $version);
+    }
+
+
+    /**
      * Put the enabled providers in an order, which is the order they're tried in, for the overflow and fallback
      * modes. The disabled ones, which aren't tried, go after them, in the order they were in.
      *

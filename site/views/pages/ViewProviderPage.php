@@ -39,6 +39,7 @@ class ViewProviderPage extends Programster\AbstractView\AbstractView
         $noneSent = ['last_minute' => 0, 'last_hour' => 0, 'last_24_hours' => 0, 'recipients_last_24_hours' => 0];
         $sent = $counts[$name] ?? $noneSent;
         $unavailable = ProviderStatusRepository::loadUnavailableDetails();
+        $removal = ProviderRemovalNotice::createForProvider($provider, $this->m_config);
 
         $attempts = [
             'Last minute' => $sent['last_minute'],
@@ -48,25 +49,24 @@ class ViewProviderPage extends Programster\AbstractView\AbstractView
         ];
 ?>
 <p><a href="/providers">Back to the providers</a></p>
-<div class="page-heading">
-    <h1><?= Html::e($name) ?></h1>
-    <div class="page-actions">
-        <a class="button" href="<?= Html::e("{$path}/edit") ?>"><?= new ViewIcon(Icon::EDIT) ?> Edit</a>
-        <button type="button" class="secondary" data-role="remove-provider"
-            data-action="<?= Html::e("{$path}/remove") ?>" data-name="<?= Html::e($name) ?>"><?= new ViewIcon(
-                Icon::TRASH
-            ) ?> Remove</button>
-    </div>
-</div>
+<h1><?= Html::e($name) ?></h1>
 <div class="card">
     <dl class="details">
         <dt>Type</dt><dd><?= Html::e($provider->getType()->getLabel()) ?></dd>
         <dt>Status</dt><dd><?= new ViewProviderStatus($provider, $unavailable) ?></dd>
         <dt>Order</dt><dd><?= Html::e($this->describePlace()) ?></dd>
         <?php if ($provider->getType()->hasWebhook()): ?>
-            <dt>Webhook</dt><dd><code>&lt;PUBLIC_URL&gt;/webhooks/<?= Html::e($name) ?></code></dd>
+            <dt>Webhook</dt><dd><?= $this->describeWebhookUrl() ?></dd>
         <?php endif; ?>
     </dl>
+    <div class="form-actions">
+        <a class="button" href="<?= Html::e("{$path}/edit") ?>"><?= new ViewIcon(Icon::EDIT) ?> Edit</a>
+        <?php $this->renderEnabledToggle($path, $removal->isRefused()); ?>
+        <button type="button" class="danger" data-role="remove-provider" data-action="<?= Html::e("{$path}/remove")
+            ?>" data-name="<?= Html::e($name) ?>" data-warning="<?= Html::e($removal->getMessage()) ?>"
+            data-refused="<?= $removal->isRefused() ? 'true' : 'false' ?>"><?= new ViewIcon(Icon::TRASH) ?> Remove this
+            provider</button>
+    </div>
 </div>
 <h2>Attempts</h2>
 <div class="tiles">
@@ -109,6 +109,41 @@ class ViewProviderPage extends Programster\AbstractView\AbstractView
 
 
     /**
+     * Render the button that disables the provider, keeping its settings, or enables it again.
+     *
+     * @param string $path - the provider's page, e.g. "/providers/sendgrid-main".
+     *
+     * @param bool $isOnlyEnabled - whether it's the only enabled provider, which can't be disabled, as no email could
+     * be sent.
+     *
+     * @return void
+     */
+    private function renderEnabledToggle(string $path, bool $isOnlyEnabled) : void
+    {
+        $isEnabled = $this->m_provider->isEnabled();
+        $action = $isEnabled ? "{$path}/disable" : "{$path}/enable";
+        $label = $isEnabled ? 'Disable' : 'Enable';
+        $refused = '';
+
+        if ($isOnlyEnabled)
+        {
+            $why =
+                'It\'s the only enabled provider, so it can\'t be disabled, as no email could be sent. Enable another'
+                . ' one first.';
+
+            $refused = ' disabled title="' . Html::e($why) . '"';
+        }
+?>
+<form method="post" action="<?= Html::e($action) ?>" class="inline-form">
+    <?= new ViewCsrfField() ?>
+    <input type="hidden" name="version" value="<?= Html::e($this->m_version) ?>">
+    <button type="submit" class="secondary"<?= $refused ?>><?= Html::e($label) ?></button>
+</form>
+<?php
+    }
+
+
+    /**
      * Describe where the provider is in the order they're tried in (for the overflow and fallback modes).
      */
     private function describePlace() : string
@@ -130,6 +165,23 @@ class ViewProviderPage extends Programster\AbstractView\AbstractView
             : ($index + 1) . ' of ' . count($enabledNames) . ' enabled providers.';
 
         return $place;
+    }
+
+
+    /**
+     * Describe where the provider's events are to be posted, as HTML. If PUBLIC_URL isn't set, only the path is known.
+     */
+    private function describeWebhookUrl() : string
+    {
+        $name = $this->m_provider->getName();
+        $url = ProviderWebhookUrl::get($name);
+
+        $html = ($url === '')
+            ? '<code>/webhooks/' . Html::e(rawurlencode($name)) . '</code> on this site <span class="hint">(set'
+                . ' <code>PUBLIC_URL</code> in .env for its full address)</span>'
+            : '<code>' . Html::e($url) . '</code>';
+
+        return $html;
     }
 
 

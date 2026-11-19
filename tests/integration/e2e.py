@@ -160,6 +160,15 @@ for description, (bad_conditions, expected_message) in refusals.items():
     is_refused = response.get_status() == 400 and expected_message in response.get_json()['error']['message']
     suite.check(f'a condition with {description} is refused', is_refused, response.get_body())
 
+response = call_api('POST', '/email-tokens', auth, policy | {'name': 'misspelt', 'conditons': []})
+is_refused = response.get_status() == 400 and 'isn\'t a field of an email token' in response.get_body()
+suite.check('a misspelt field is refused, rather than ignored', is_refused, response.get_body())
+response = call_api('POST', '/email-tokens', auth, policy | {'name': 'with an id', 'id': 'et_0000000000000000'})
+is_refused = (response.get_status() == 400
+              and '"id" is set by the service' in response.get_json()['error']['message'])
+suite.check('as is a field the service sets', is_refused, response.get_body())
+names = [token['name'] for token in call_api('GET', '/email-tokens', auth).get_json()['emailTokens']]
+suite.check('and neither creates a token', 'misspelt' not in names and 'with an id' not in names, names)
 response = call_api('POST', '/email-tokens', auth, {'name': 'no conditions'})
 unrestricted = response.get_json() if response.get_status() == 201 else {}
 is_created = unrestricted.get('emailToken', {}).get('conditions') == []
@@ -510,8 +519,8 @@ suite.check('no log entry names an account by its email address', emails_logged 
 suite.check('an unknown entry is a 404', web.request('GET', '/admin/logs/nonsense').get_status() == 404)
 
 # Accounts, through the management API.
-form = {'email': 'api-user@example.org', 'password_source': 'set', 'password': 'api-users-password',
-        'confirm_password': 'api-users-password'}
+form = {'email': 'api-user@example.org', 'password_source': 'set', 'password': 'Api-users-password-4',
+        'confirm_password': 'Api-users-password-4'}
 web.post_form('/admin/users', '/admin/users', form)
 user_id = stack.sql("SELECT id FROM admin_user WHERE email = 'api-user@example.org'")
 listed = call_api('GET', '/users', auth).get_json()['users']
@@ -557,6 +566,117 @@ response = web.request('POST', '/login/second-factor/totp', form)
 suite.check('fresh TOTP code logs in', response.get_header('Location') == '/', response)
 suite.check('logged in after TOTP', web.request('GET', '/').get_status() == 200)
 
+# Editing an email token, which keeps its ID and secret, and restricts it differently from its next email. (After
+# Mailpit's emails were counted above, so the email it sends doesn't change the count.)
+response = call_api('POST', '/email-tokens', auth, policy | {'name': 'editable', 'rateLimits': []})
+editable = response.get_json() if response.get_status() == 201 else {'emailToken': {'id': ''}, 'token': ''}
+editable_id = editable['emailToken']['id']
+editable_auth = bearer(editable['token'])
+editable_path = f'/email-tokens/{editable_id}'
+other_sender = {name: value for name, value in email.items() if name != 'bcc'}
+other_sender = other_sender | {'from': {'email': 'other@example.org'}}
+response = call_api('POST', '/send', editable_auth, other_sender)
+suite.check('a token refuses a sender it doesn\'t allow, before it\'s edited', response.get_status() == 403
+            and response.get_error_code() == 20, response.get_body())
+suite.check('a token\'s page has a link to edit it', f'href="{editable_path}/edit"' in web.get(editable_path))
+page = web.get(f'{editable_path}/edit')
+is_filled_in = ('value="editable"' in page and 'value="noreply@example.org"' in page
+                and 'value="*@example.com"' in page and 'value="0.0.0.0/0"' in page)
+suite.check('its edit form is filled in with it as it is', is_filled_in, page[:300])
+form = {'name': 'edited', 'allowed_ips_0': '0.0.0.0/0', 'allowed_ips_1': '::/0',
+        'allowed_senders_0': 'other@example.org', 'allowed_recipients_0': '*@example.com', 'priority': '5',
+        'rate_limit_max_0': '7',
+        'rate_limit_unit_0': 'emails', 'rate_limit_period_0': '60'}
+response = web.post_form(f'{editable_path}/edit', f'{editable_path}/edit', form)
+suite.check('saving it goes back to its page', response.get_status() == 303
+            and response.get_header('Location') == editable_path, response.get_status())
+saved = call_api('GET', editable_path, auth).get_json()['emailToken']
+senders = [condition for condition in saved['conditions'] if condition['field'] == 'sender']
+is_saved = (saved['name'] == 'edited' and saved['priority'] == 5
+            and senders == [{'field': 'sender', 'allowed': [{'type': 'address', 'value': 'other@example.org'}]}]
+            and saved['rateLimits'] == [{'unit': 'emails', 'max': 7, 'periodSeconds': 60}])
+suite.check('its name, senders, priority and rate limits are changed', is_saved, saved)
+response = call_api('POST', '/send', editable_auth, other_sender)
+suite.check('and its secret now sends as the new sender', response.get_status() in (201, 202), response.get_body())
+response = call_api('POST', '/send', editable_auth, email)
+suite.check('but no longer as the old one', response.get_status() == 403, response.get_body())
+response = web.post_form(f'{editable_path}/edit', f'{editable_path}/edit', form | {'allowed_senders_0': 'not one'})
+is_refused = response.get_status() == 400 and 'value="not one"' in response.get_body()
+suite.check('an invalid edit is refused, keeping what was entered', is_refused, response.get_status())
+saved = call_api('GET', editable_path, auth).get_json()['emailToken']
+suite.check('and changes nothing', saved['name'] == 'edited' and saved['priority'] == 5, saved)
+
+
+def conditions_by_field(token: dict) -> dict:
+    """Get an email token's conditions, as the API shows them, by field."""
+    return {condition['field']: condition['allowed'] for condition in token['conditions']}
+
+
+# Changing an email token through the API: PATCH changes only what it's given, and PUT replaces everything.
+api_path = f'/email-tokens/{editable_id}'
+noreply_rule = [{'type': 'address', 'value': 'noreply@example.org'}]
+patch = {'conditions': [{'field': 'sender', 'allowed': noreply_rule}]}
+response = call_api('PATCH', api_path, auth, patch)
+patched = response.get_json()['emailToken'] if response.get_status() == 200 else {'conditions': []}
+conditions = conditions_by_field(patched)
+is_patched = (conditions.get('sender') == noreply_rule and conditions.get('clientIp') == ['0.0.0.0/0', '::/0']
+              and conditions.get('recipient') == [{'type': 'domain', 'value': 'example.com'}])
+suite.check('PATCH changes the condition given, and keeps the others', is_patched, response.get_body())
+suite.check('and the name, priority and rate limits', patched.get('name') == 'edited' and patched.get('priority') == 5
+            and patched.get('rateLimits') == [{'unit': 'emails', 'max': 7, 'periodSeconds': 60}], patched)
+response = call_api('PATCH', api_path, auth, {'name': 'patched', 'priority': 3})
+patched = response.get_json()['emailToken'] if response.get_status() == 200 else {'conditions': []}
+suite.check('PATCH changes the name and priority alone', patched.get('name') == 'patched'
+            and patched.get('priority') == 3 and conditions_by_field(patched) == conditions, response.get_body())
+response = call_api('PATCH', api_path, auth, {'conditions': [{'field': 'recipient', 'allowed': None}]})
+patched = response.get_json()['emailToken'] if response.get_status() == 200 else {'conditions': []}
+is_removed = 'recipient' not in conditions_by_field(patched) and 'sender' in conditions_by_field(patched)
+suite.check('PATCH with "allowed": null removes just that condition', is_removed, response.get_body())
+
+refusals = [
+    ('a misspelt field', 'PATCH', {'conditons': []}, 'isn\'t a field of an email token'),
+    ('a field that can\'t be changed', 'PATCH', {'id': editable_id}, '"id" is set by the service'),
+    ('an empty "allowed" list', 'PATCH', {'conditions': [{'field': 'sender', 'allowed': []}]}, 'allow nobody'),
+    ('a name that isn\'t a string', 'PATCH', {'name': 5}, '"name" must be a string'),
+    ('a PUT that leaves fields out', 'PUT', {'name': 'renamed'}, 'Missing: "conditions", "rateLimits", "priority"'),
+    ('a PUT with "allowed": null', 'PUT', {'name': 'x', 'conditions': [{'field': 'sender', 'allowed': None}],
+                                          'rateLimits': [], 'priority': 1}, 'must be an array'),
+]
+
+for description, method, body, expected in refusals:
+    response = call_api(method, api_path, auth, body)
+    is_refused = (response.get_status() == 400 and response.get_error_code() == 2
+                  and expected in response.get_json()['error']['message'])
+    suite.check(f'{method} with {description} is refused', is_refused, response.get_body())
+
+unchanged = call_api('GET', api_path, auth).get_json()['emailToken']
+suite.check('and none of them change it', unchanged['name'] == 'patched' and unchanged['priority'] == 3, unchanged)
+replacement = {'name': 'replaced', 'conditions': [{'field': 'recipient', 'allowed': [{'type': 'domain',
+               'value': 'example.net'}]}], 'rateLimits': [], 'priority': 2}
+response = call_api('PUT', api_path, auth, replacement)
+replaced = response.get_json()['emailToken'] if response.get_status() == 200 else {}
+is_replaced = (replaced.get('name') == 'replaced' and replaced.get('priority') == 2 and replaced.get('rateLimits') == []
+               and replaced.get('conditions') == replacement['conditions'])
+suite.check('PUT replaces everything, dropping the conditions it leaves out', is_replaced, response.get_body())
+suite.check('and keeps its ID', replaced.get('id') == editable_id, replaced.get('id'))
+response = call_api('PATCH', '/email-tokens/et_0000000000000000', auth, {'priority': 2})
+suite.check('changing a token that doesn\'t exist is a 404', response.get_status() == 404, response.get_status())
+
+# The dialog that asks before revoking it, which loads how many of its emails are queued.
+page = web.get(f'/email-tokens/{key_id}')
+has_dialog = ('id="revoke-email-token-dialog"' in page and f'data-queued-url="/email-tokens/{key_id}/queued-emails"'
+              in page and 'data-role="revoke-email-token"' in page)
+suite.check('a token\'s page has a dialog to confirm revoking it', has_dialog)
+response = web.request('GET', f'/email-tokens/{key_id}/queued-emails', headers=json_headers)
+queued = response.get_json().get('queuedEmails', -1) if response.get_status() == 200 else -1
+suite.check('which counts its emails waiting in the queue', queued >= 1, response.get_body())
+response = web.request('GET', f'/email-tokens/{editable_id}/queued-emails', headers=json_headers)
+suite.check('none for a token with nothing queued', response.get_status() == 200
+            and response.get_json() == {'queuedEmails': 0}, response.get_body())
+response = web.request('GET', '/email-tokens/not-a-uuid/queued-emails', headers=json_headers)
+suite.check('and a token that doesn\'t exist is a JSON 404', response.get_status() == 404
+            and response.get_error_code() == 3, response.get_body())
+
 # Revoking the email token.
 response = call_api('DELETE', f'/email-tokens/{key_id}', auth)
 revoked = response.get_json()
@@ -574,5 +694,17 @@ except smtplib.SMTPAuthenticationError as error:
 response = call_api('POST', '/send', key_auth, email)
 is_refused = response.get_status() == 401 and response.get_error_code() == 12
 suite.check('and refused by the send endpoint', is_refused, (response.get_status(), response.get_body()))
+revoked_path = f'/email-tokens/{key_id}'
+response = web.request('GET', f'{revoked_path}/edit')
+is_refused = response.get_status() == 303 and response.get_header('Location') == revoked_path
+suite.check('a revoked token can\'t be edited', is_refused, response.get_status())
+suite.check('and its page has no link to edit it', f'href="{revoked_path}/edit"' not in web.get(revoked_path))
+response = web.post_form(revoked_path, f'{revoked_path}/edit', {'name': 'changed after revoking'})
+saved = call_api('GET', revoked_path, auth).get_json()['emailToken']
+suite.check('and saving an edit to it changes nothing', response.get_status() == 303
+            and saved['name'] == 'e2e service', saved['name'])
+response = call_api('PATCH', revoked_path, auth, {'name': 'changed after revoking'})
+is_refused = response.get_status() == 409 and response.get_error_code() == 5
+suite.check('nor through the API (409)', is_refused, (response.get_status(), response.get_body()))
 
 suite.finish()

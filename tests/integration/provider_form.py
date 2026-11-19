@@ -10,7 +10,7 @@ import re
 
 from lib import stack
 from lib.harness import Suite
-from lib.web import Response, WebClient
+from lib.web import Response, WebClient, find_csrf_token
 
 suite = Suite('Provider form')
 web = WebClient.create_logged_in()
@@ -136,6 +136,34 @@ response = add('sendgrid', 'test-stale', REQUIRED['sendgrid'], version='0' * 64)
 is_refused = response.get_status() == 400 and 'changed since' in response.get_body()
 suite.check('a change based on an old version is refused', is_refused, response.get_status())
 
+
+def add_with_script(type_name: str, name: str, fields: dict) -> Response:
+    """Post the add form as its script does (ProviderForm.js), asking for JSON back."""
+    page = web.get('/providers/new')
+    form = {'csrf_token': find_csrf_token(page), 'version': get_version(page), 'type': type_name, 'name': name,
+            'enabled': ''}
+    headers = {'Accept': 'application/json'}
+    return web.request('POST', '/providers/new', form | with_sources(type_name, fields), headers=headers)
+
+
+# Saving with the form's script, which keeps the form (and the secrets entered in it) when it's refused.
+page = web.get('/providers/new')
+suite.check('the form gives its script the names the web interface uses', 'data-reserved-names="[&quot;new&quot;'
+            in page and 'id="provider-name-error"' in page and 'data-role="form-error"' in page)
+response = add_with_script('sendgrid', 'Sendgrid', REQUIRED['sendgrid'])
+is_json_error = (response.get_status() == 400 and response.get_error_code() == 2
+                 and 'isn\'t a valid provider name' in response.get_json()['error']['message'])
+suite.check('a refused save from the script gets a JSON error, not the form again', is_json_error,
+            (response.get_status(), response.get_body()[:300]))
+suite.check('which doesn\'t save it', 'Sendgrid' not in provider_names())
+response = add_with_script('sendgrid', 'test-sendgrid', REQUIRED['sendgrid'])
+suite.check('a taken name gets a JSON error too', response.get_status() == 400
+            and 'two providers called' in response.get_json()['error']['message'], response.get_status())
+response = add_with_script('sendgrid', 'test-script', REQUIRED['sendgrid'])
+suite.check('a save from the script gets where to go next', response.get_status() == 200
+            and response.get_json() == {'redirect': '/providers'}, (response.get_status(), response.get_body()[:300]))
+suite.check('and is saved', 'test-script' in provider_names())
+
 # Editing, with a secret left blank kept as it was.
 page = web.get('/providers/test-postmark/edit')
 suite.check('the edit form has the type fixed', 'name="type" value="postmark"' in page and '<select id="provider-type"'
@@ -161,6 +189,44 @@ names = provider_names()
 is_renamed = response.get_status() == 303 and 'test-brevo-renamed' in names and 'test-brevo' not in names
 suite.check('a provider is renamed', is_renamed, names)
 suite.check('keeping its secret', 'smtp_key: "brevo-secret"' in read_settings())
+
+
+def set_enabled(name: str, action: str) -> Response:
+    """Press a provider's Enable or Disable button, on its page."""
+    path = f'/providers/{name}'
+    return web.post_form(path, f'{path}/{action}', {'version': get_version(web.get(path))})
+
+
+# Disabling a provider, which keeps its settings, so it can be enabled again without setting it up again.
+page = web.get('/providers/test-sendgrid')
+suite.check('a disabled provider\'s page has an Enable button', 'action="/providers/test-sendgrid/enable"' in page)
+suite.check('and its Remove button says it\'s disabled', 'It&apos;s disabled, so no emails are sent through it now.'
+            in page and 'data-refused="false"' in page)
+response = set_enabled('test-sendgrid', 'enable')
+page = web.get('/providers/test-sendgrid')
+suite.check('enabling it goes back to its page', response.get_header('Location') == '/providers/test-sendgrid')
+suite.check('and it\'s enabled, with a Disable button', 'Not tried' not in page
+            and 'action="/providers/test-sendgrid/disable"' in page, response.get_status())
+suite.check('keeping its secret', 'SG.sendgrid-secret' in read_settings())
+response = set_enabled('test-sendgrid', 'disable')
+page = web.get('/providers/test-sendgrid')
+suite.check('and it can be disabled again', 'Not tried, as it&apos;s disabled.' in page, response.get_status())
+page = web.get('/providers/mailpit')
+suite.check('an enabled provider\'s Remove button names the others emails will go through instead',
+            'the other enabled provider instead: &quot;mailpit-secondary&quot;' in page)
+
+# The only enabled provider can be neither disabled nor removed, and its page says so before it's tried.
+set_enabled('mailpit-secondary', 'disable')
+page = web.get('/providers/mailpit')
+is_refused = 'data-refused="true"' in page and 'not even password reset links' in page
+suite.check('the only enabled provider\'s Remove button says it can\'t be removed, and why', is_refused)
+suite.check('and its Disable button is disabled', re.search(r'action="/providers/mailpit/disable"[\s\S]*?<button '
+            r'type="submit" class="secondary" disabled title="It&apos;s the only enabled provider', page) is not None)
+set_enabled('mailpit', 'disable')
+page = web.get('/providers/mailpit')
+suite.check('and disabling it anyway is refused', 'Not tried' not in page and 'must be enabled' in page)
+set_enabled('mailpit-secondary', 'enable')
+suite.check('the other is enabled again', 'Not tried' not in web.get('/providers/mailpit-secondary'))
 
 
 def post_from_list(path: str, fields: dict) -> Response:

@@ -136,6 +136,20 @@ abstract class AbstractController
 
 
     /**
+     * Check whether the request asked for JSON (with its Accept header), as a form posted by JavaScript does, so it
+     * gets JSON back rather than a page.
+     *
+     * @param ServerRequestInterface $request - the request.
+     *
+     * @return bool
+     */
+    protected static function wantsJson(ServerRequestInterface $request) : bool
+    {
+        return str_contains($request->getHeaderLine('Accept'), 'application/json');
+    }
+
+
+    /**
      * Get a string field from a posted form.
      *
      * @param ServerRequestInterface $request - the request.

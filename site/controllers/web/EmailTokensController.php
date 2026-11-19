@@ -1,7 +1,7 @@
 <?php
 
 /*
- * Creating, viewing and revoking the email tokens that other services send email with.
+ * Creating, viewing, changing and revoking the email tokens that other services send email with.
  */
 
 declare(strict_types = 1);
@@ -19,8 +19,16 @@ class EmailTokensController extends AbstractController
         $group->get('/email-tokens/new', [self::class, 'showNew'])->setName('email-tokens.new');
         $group->post('/email-tokens', [self::class, 'create'])->setName('email-tokens.create');
         $group->get('/email-tokens/{id}', [self::class, 'show'])->setName('email-tokens.show');
+
         $group->get('/email-tokens/{id}/sender-checks', [self::class, 'checkSenders'])
             ->setName('email-tokens.senderChecks');
+
+        $group->get('/email-tokens/{id}/edit', [self::class, 'showEdit'])->setName('email-tokens.edit');
+        $group->post('/email-tokens/{id}/edit', [self::class, 'saveEdit'])->setName('email-tokens.saveEdit');
+
+        $group->get('/email-tokens/{id}/queued-emails', [self::class, 'countQueuedEmails'])
+            ->setName('email-tokens.queuedEmails');
+
         $group->post('/email-tokens/{id}/revoke', [self::class, 'revoke'])->setName('email-tokens.revoke');
     }
 
@@ -92,6 +100,79 @@ class EmailTokensController extends AbstractController
 
 
     /**
+     * Show the form for changing a token's name and restrictions, filled in with them as they are now. A revoked token
+     * can't be changed, so that goes back to its page, saying so.
+     *
+     * @throws NotFoundException - if there's no such token.
+     */
+    public function showEdit(Request $request, Response $response, array $args) : Response
+    {
+        $emailToken = EmailTokenRepository::load($args['id']);
+
+        if ($emailToken->isRevoked())
+        {
+            WebSession::flash('This email token has been revoked, so it can\'t be changed.', true);
+            $result = self::redirect($response, '/email-tokens/' . rawurlencode((string)$emailToken->getId()));
+        }
+        else
+        {
+            $values = EmailTokenFormValues::createFromToken($emailToken, EmailTokenRepository::loadPolicy($emailToken));
+            $page = new ViewEditEmailTokenPage($emailToken, $values, '');
+            $result = self::renderPage($response, "Edit {$emailToken->getName()}", $page);
+        }
+
+        return $result;
+    }
+
+
+    /**
+     * Save a token's new name and restrictions, and go back to its page. If they're invalid, the form is shown again
+     * with what was sent, and why.
+     *
+     * @throws NotFoundException - if there's no such token.
+     */
+    public function saveEdit(Request $request, Response $response, array $args) : Response
+    {
+        $emailToken = EmailTokenRepository::load($args['id']);
+        $tokenPath = '/email-tokens/' . rawurlencode((string)$emailToken->getId());
+
+        $getField = function (string $name) use ($request) : string {
+            return self::getFormField($request, $name);
+        };
+
+        try
+        {
+            $name = self::getFormField($request, 'name');
+            $policy = PolicyInput::readPolicyFromForm($getField);
+            EmailTokenRepository::update($emailToken, $name, $policy);
+
+            ServiceFactory::getLogger(LogCategory::ADMIN)->info('Email token changed', [
+                'email_token_id' => $emailToken->getId(),
+                'name' => trim($name),
+                'by_user_id' => WebSession::getUser()->getId(),
+            ]);
+
+            WebSession::flash('The email token was saved.');
+            $result = self::redirect($response, $tokenPath);
+        }
+        catch (InvalidInputException $e)
+        {
+            $body = $request->getParsedBody();
+            $values = is_array($body) ? array_filter($body, 'is_string') : [];
+            $page = new ViewEditEmailTokenPage($emailToken, $values, $e->getMessage());
+            $result = self::renderPage($response, "Edit {$emailToken->getName()}", $page, 400);
+        }
+        catch (ConflictException $e)
+        {
+            WebSession::flash($e->getMessage(), true);
+            $result = self::redirect($response, $tokenPath);
+        }
+
+        return $result;
+    }
+
+
+    /**
      * Check whether the token's allowed senders can be sent as through each enabled provider, and the providers'
      * accounts (as JSON, for the sender checks on the token's page). This asks DNS and the providers' APIs, so it
      * takes a few seconds.
@@ -104,6 +185,19 @@ class EmailTokensController extends AbstractController
 
         $groups = $groups->merge($checks->checkAccounts());
         return self::json($response, $groups->toResponseArray());
+    }
+
+
+    /**
+     * Count the token's emails waiting in the queue, which revoking it would cancel (as JSON, for the dialog that asks
+     * before revoking it).
+     *
+     * @throws NotFoundException - if there's no such token.
+     */
+    public function countQueuedEmails(Request $request, Response $response, array $args) : Response
+    {
+        $emailToken = EmailTokenRepository::load($args['id']);
+        return self::json($response, ['queuedEmails' => EmailTokenRepository::countQueuedEmails($emailToken)]);
     }
 
 

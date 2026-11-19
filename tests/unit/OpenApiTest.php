@@ -69,6 +69,19 @@ $isOptional = ($tokenRequired === []);
 $suite->check('an email token\'s lists aren\'t marked required in responses', $isOptional, json_encode($tokenRequired));
 $idPattern = $tokenPath['parameters'][0]['schema']['pattern'] ?? '';
 $suite->check('its ID is described by its pattern', $idPattern === '^et_[0-9a-f]{16}$', $idPattern);
+$replaceToken = $tokenPath['put']['requestBody']['content']['application/json']['schema'] ?? [];
+$replaceRequired = $replaceToken['required'] ?? [];
+$isComplete = ($replaceRequired === ['name', 'conditions', 'rateLimits', 'priority']);
+$suite->check('an email token can be replaced, with every field required', $isComplete, json_encode($replaceRequired));
+$patchToken = $tokenPath['patch']['requestBody']['content']['application/json']['schema'] ?? [];
+$patchRequired = $patchToken['required'] ?? [];
+$suite->check('or patched, with nothing required', $patchRequired === [], json_encode($patchRequired));
+$patchCondition = $patchToken['properties']['conditions']['items']['oneOf'][0]['properties']['allowed'] ?? [];
+$createCondition = $createToken['properties']['conditions']['items']['oneOf'][0]['properties']['allowed'] ?? [];
+$isRemovable = (($patchCondition['nullable'] ?? false) === true && ($createCondition['nullable'] ?? false) === false);
+$suite->check('where only a patch\'s conditions can be null, to remove them', $isRemovable);
+$changeResponses = array_map('strval', array_keys($tokenPath['patch']['responses'] ?? []));
+$suite->check('changing a revoked one can be a 409 Conflict', in_array('409', $changeResponses, true));
 
 $isUserPath = function (string $path) : bool {
     return str_starts_with($path, '/users');
