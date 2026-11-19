@@ -6,7 +6,7 @@ which keep it in `config/settings.yaml`. The main settings in `.env` are:
 
 | Setting | What it's for |
 |---|---|
-| `ADMIN_EMAIL`, `ADMIN_PASSWORD` | The default web interface account, created if it doesn't exist. |
+| `ADMIN_EMAIL`, `ADMIN_PASSWORD_HASH` | The default web interface account, created if it doesn't exist, and its password's hash (from `password_hash()`, base64 encoded), so the password itself isn't kept in `.env`. |
 | `PUBLIC_URL` | The address the web interface is reached at, for links in emails and logging in with Google. |
 | `SMTP_TLS_CERT_FILE`, `SMTP_TLS_KEY_FILE` | Where the SMTP server's certificate is, if not `./tls/fullchain.pem` and `./tls/privkey.pem`. |
 | `SMTP_MAX_MESSAGE_BYTES` | The largest email accepted. 20 MiB by default. |

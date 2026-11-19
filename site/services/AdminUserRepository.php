@@ -41,6 +41,32 @@ final class AdminUserRepository
 
 
     /**
+     * Create an account with a password that's already been hashed, so the password itself is never given to the
+     * service (e.g. the default account, from ADMIN_PASSWORD_HASH). The password can't be checked against the rules
+     * set under Settings > Security, as only its hash is known.
+     *
+     * @param EmailAddress $email - its email address, which it logs in with, and where password reset links go.
+     *
+     * @param PasswordHash $passwordHash - the hash of its password.
+     *
+     * @param bool $mustChangePassword - whether it has to choose a password of its own when it first logs in, before
+     * it can do anything else.
+     *
+     * @return AdminUser
+     *
+     * @throws InvalidInputException - if there's already an account with that email address.
+     */
+    public static function createWithPasswordHash(
+        EmailAddress $email,
+        PasswordHash $passwordHash,
+        bool $mustChangePassword
+    ) : AdminUser
+    {
+        return self::insert($email, $passwordHash->getHash(), $mustChangePassword);
+    }
+
+
+    /**
      * Create an account with a password that nobody knows, for its owner to choose their own with a link (see
      * PasswordResetService::sendInvitation()). Until then, it can't be logged in to with a password.
      *

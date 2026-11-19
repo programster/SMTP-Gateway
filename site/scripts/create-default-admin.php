@@ -1,9 +1,11 @@
 <?php
 
 /*
- * Creates the default web interface account from ADMIN_EMAIL and ADMIN_PASSWORD, if there's no account for that
- * email address yet. An existing account is never changed, so a password changed (or two-factor authentication
- * set up) in the web interface isn't undone by restarting. Run on every start up, after the migrations.
+ * Creates the default web interface account from ADMIN_EMAIL and ADMIN_PASSWORD_HASH (the base64 encoded hash of its
+ * password, so the password itself is never kept in .env), if there's no account for that email address yet. An
+ * existing account is never changed, so a password changed (or two-factor authentication set up) in the web interface
+ * isn't undone by restarting. Run on every start up, after the migrations. The hash is checked even when the account
+ * already exists, so a mistake in it shows straight away, rather than on a fresh install.
  */
 
 declare(strict_types = 1);
@@ -14,17 +16,18 @@ require_once(__DIR__ . '/../bootstrap.php');
 function main() : void
 {
     $email = Config::getEnv('ADMIN_EMAIL');
-    $password = getenv('ADMIN_PASSWORD');
+    $encodedHash = Config::getEnv('ADMIN_PASSWORD_HASH');
 
-    if ($email === '' || $password === false || $password === '')
+    if ($email === '' || $encodedHash === '')
     {
-        fwrite(STDERR, 'ADMIN_EMAIL and ADMIN_PASSWORD must be set.' . PHP_EOL);
+        fwrite(STDERR, 'ADMIN_EMAIL and ADMIN_PASSWORD_HASH must be set.' . PHP_EOL);
         exit(1);
     }
 
     try
     {
         $address = new EmailAddress($email);
+        $passwordHash = PasswordHash::createFromBase64($encodedHash);
 
         if (AdminUserRepository::isEmailTaken($address))
         {
@@ -32,13 +35,13 @@ function main() : void
         }
         else
         {
-            AdminUserRepository::createWithPassword($address, $password, false);
+            AdminUserRepository::createWithPasswordHash($address, $passwordHash, false);
             print "Created the account for {$email}." . PHP_EOL;
         }
     }
     catch (InvalidInputException $e)
     {
-        $msg = "Couldn't create the default account (ADMIN_EMAIL, ADMIN_PASSWORD): {$e->getMessage()}";
+        $msg = "Couldn't create the default account (ADMIN_EMAIL, ADMIN_PASSWORD_HASH): {$e->getMessage()}";
         fwrite(STDERR, $msg . PHP_EOL);
         exit(1);
     }

@@ -47,7 +47,7 @@ function createSuites(bool $isLoadTesting) : SuiteCollection
         'BrevoTest', 'MailjetTest', 'MailerSendTest', 'MailtrapTest', 'SettingsFileTest', 'SettingsMigrationTest',
         'ResourceAdvisorTest', 'NavigationTest', 'TokenTest',
         'DocumentationTest', 'ProviderFormTest', 'ClientIpTest', 'RateLimitReplyTest', 'PasswordPolicyTest',
-        'BackupCodeTest', 'EmailContentTest'
+        'BackupCodeTest', 'EmailContentTest', 'PasswordHashTest'
     );
 
     $suites = new SuiteCollection(

@@ -29,7 +29,7 @@ services:
       - HOST_USER_ID
       - HOST_GROUP_ID
       - ADMIN_EMAIL
-      - ADMIN_PASSWORD
+      - ADMIN_PASSWORD_HASH
       - PUBLIC_URL
       - SMTP_SERVER_HOSTNAME
       - SMTP_TLS_CERT_FILE

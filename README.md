@@ -29,12 +29,13 @@ opened or clicked.
 
 ```bash
 cp .env.example .env
-# Fill in at least DB_USER, DB_PASSWORD, DB_NAME, ADMIN_EMAIL and ADMIN_PASSWORD.
+# Fill in at least DB_USER, DB_PASSWORD, DB_NAME, ADMIN_EMAIL and ADMIN_PASSWORD_HASH (the hash of
+# the password, base64 encoded: .env.example says how to make it).
 docker compose build
 docker compose up -d
 ```
 
-Then open the web interface (port 80 by default), log in with `ADMIN_EMAIL` and `ADMIN_PASSWORD`, and
+Then open the web interface (port 80 by default), log in with `ADMIN_EMAIL` and the password you hashed, and
 set up two-factor authentication (you'll be taken straight there, as it's required by default). A fresh
 install has no providers, so add one under **Providers** (e.g. SendGrid, with its API key in `.env` as
 `SENDGRID_API_KEY`, referred to as `"${SENDGRID_API_KEY}"`). Emails sent before then are queued, and

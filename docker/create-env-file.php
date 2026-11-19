@@ -15,7 +15,7 @@ define('REQUIRED_ENV_VARS', [
     "DB_NAME",
 
     "ADMIN_EMAIL",
-    "ADMIN_PASSWORD",
+    "ADMIN_PASSWORD_HASH",
 ]);
 
 define('OPTIONAL_ENV_VARS', [
@@ -52,6 +52,13 @@ define('MIGRATED_ENV_VARS', [
     "GOOGLE_SSO_CLIENT_ID",
     "GOOGLE_SSO_CLIENT_SECRET",
     "GOOGLE_SSO_BYPASS_MFA",
+]);
+
+// The settings an earlier version read, which have been replaced by another (by name, what replaces each). The service
+// won't start while one is still set, so it can't be silently ignored, or left in .env (ADMIN_PASSWORD was the
+// password in plain text).
+define('REPLACED_ENV_VARS', [
+    "ADMIN_PASSWORD" => "ADMIN_PASSWORD_HASH",
 ]);
 
 
@@ -93,6 +100,7 @@ function main(string $outputFilepath) : void
     $lines = [];
     $missing = [];
     $badValues = [];
+    $replaced = [];
 
     $names = [...REQUIRED_ENV_VARS, ...OPTIONAL_ENV_VARS, ...MIGRATED_ENV_VARS, ...getSettingsReferences()];
 
@@ -117,7 +125,15 @@ function main(string $outputFilepath) : void
         }
     }
 
-    if (count($missing) > 0 || count($badValues) > 0)
+    foreach (REPLACED_ENV_VARS as $oldName => $newName)
+    {
+        if (getenv($oldName) !== false)
+        {
+            $replaced[] = "{$oldName} is no longer used. Remove it, and set {$newName} instead (see .env.example).";
+        }
+    }
+
+    if (count($missing) > 0 || count($badValues) > 0 || count($replaced) > 0)
     {
         foreach ($missing as $name)
         {
@@ -127,6 +143,11 @@ function main(string $outputFilepath) : void
         foreach ($badValues as $name)
         {
             fwrite(STDERR, "Environment variable {$name} can't contain a single quote or a newline." . PHP_EOL);
+        }
+
+        foreach ($replaced as $message)
+        {
+            fwrite(STDERR, $message . PHP_EOL);
         }
 
         exit(-1);

@@ -3,7 +3,8 @@
 * API keys and email tokens are each a prefix (`ak_` or `et_`), an ID of 8 random bytes, and a secret of
   32 random bytes, hex encoded. Only the SHA-256 hash of the secret is stored. A slow password hash isn't
   needed for random secrets of that length.
-* Web passwords are hashed with PHP's `password_hash()`. Each TOTP code can only be used once.
+* Web passwords are hashed with PHP's `password_hash()`. The default account's password is never in `.env`:
+  only its hash is (`ADMIN_PASSWORD_HASH`, base64 encoded). Each TOTP code can only be used once.
 * The SMTP server starts as root only to open ports 465 and 587, and drops to `www-data` before
   accepting any connection. Each connection runs in its own process.
 * By default, the content of each email is deleted from the database as soon as the provider has
