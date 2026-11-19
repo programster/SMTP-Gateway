@@ -1,0 +1,19 @@
+{
+    "name": "smtp-api-service/test-runner",
+    "description": "Runs the SMTP API service's test suites, each against a fresh stack, several at once, through a queue.",
+    "type": "project",
+    "license": "MIT",
+    "require": {
+        "php": "^8.5",
+        "ext-curl": "*",
+        "ext-pgsql": "*",
+        "ext-posix": "*",
+        "programster/autoloader": "^1.0.3",
+        "programster/collections": "^4.0",
+        "programster/pgsql-lib": "^3.2",
+        "programster/pgsql-task-queue": "^1.0.0-alpha6@alpha"
+    },
+    "config": {
+        "sort-packages": true
+    }
+}

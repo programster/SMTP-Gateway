@@ -1,0 +1,8 @@
+{
+    "name": "smtp-api-service-frontend",
+    "private": true,
+    "description": "Compiles the TypeScript in ts/ to the ES modules in public/js/. Run: npm install && npx tsc",
+    "devDependencies": {
+        "typescript": "5.6.3"
+    }
+}

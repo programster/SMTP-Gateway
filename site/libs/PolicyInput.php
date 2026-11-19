@@ -1,0 +1,428 @@
+<?php
+
+/*
+ * Turns the restrictions sent to the API (JSON) or the web interface (forms) into the typed objects, so that every
+ * mistake is reported with a message saying what was wrong.
+ */
+
+declare(strict_types = 1);
+
+
+final class PolicyInput
+{
+    // The rate limit rows on the web forms.
+    // The most rows of a list (or of rate limits) a form can send. The form adds rows one at a time, up to this.
+    public const int MAX_FORM_ROWS = 50;
+
+
+    /**
+     * Read a token's policy from an API request body. Its restrictions are an optional "conditions" list, each
+     * restricting one field, e.g. [{"field": "recipient", "allowed": [{"type": "domain", "value": "example.org"}]}].
+     * A field with no condition has no restriction.
+     *
+     * @param array $body - the decoded JSON body.
+     *
+     * @return EmailTokenPolicy
+     *
+     * @throws InvalidInputException - if anything is missing or invalid.
+     */
+    public static function readPolicyFromJson(array $body) : EmailTokenPolicy
+    {
+        $conditions = self::readConditionsFromJson($body);
+
+        $readRules = function (ConditionField $field) use ($conditions) : AddressRestrictionInterface {
+            return isset($conditions[$field->value])
+                ? self::readRulesFromJson($conditions[$field->value]['allowed'], $conditions[$field->value]['path'])
+                : new AnyAddress();
+        };
+
+        $ip = $conditions[ConditionField::CLIENT_IP->value] ?? null;
+
+        return new EmailTokenPolicy(
+            allowedNetworks: ($ip === null) ? new AnyIp() : self::readNetworksFromJson($ip['allowed'], $ip['path']),
+            allowedSenders: $readRules(ConditionField::SENDER),
+            allowedReplyTos: $readRules(ConditionField::REPLY_TO),
+            allowedRecipients: $readRules(ConditionField::RECIPIENT),
+            rateLimits: self::readRateLimitsFromJson($body, 'rateLimits'),
+            priority: self::readPriorityFromJson($body),
+        );
+    }
+
+
+    /**
+     * Read a list of rate limits from a JSON field, e.g. "rateLimits": [{"unit": "emails", "max": 10,
+     * "periodSeconds": 1}, {"unit": "recipients", "max": 50000, "periodSeconds": 2592000}]. The field is optional, and
+     * means no limit when left out.
+     *
+     * @throws InvalidInputException - if it's invalid.
+     */
+    public static function readRateLimitsFromJson(array $body, string $field) : RateLimitSet
+    {
+        $limits = [];
+        $units = implode(' or ', array_column(RateLimitUnit::cases(), 'value'));
+
+        foreach ((array_key_exists($field, $body) ? self::readList($body, $field) : []) as $index => $item)
+        {
+            $unit = is_array($item) ? RateLimitUnit::tryFrom((string)($item['unit'] ?? '')) : null;
+
+            if ($unit === null || !is_int($item['max'] ?? null) || !is_int($item['periodSeconds'] ?? null))
+            {
+                $msg =
+                    "{$field}[{$index}] must be an object with a \"unit\" ({$units}), and integer \"max\" and"
+                    . " \"periodSeconds\".";
+
+                throw new InvalidInputException($msg);
+            }
+
+            $createLimit = function () use ($unit, $item) : RateLimit {
+                return new RateLimit($unit, $item['max'], $item['periodSeconds']);
+            };
+
+            $limits[] = self::prefixError("{$field}[{$index}]", $createLimit);
+        }
+
+        return new RateLimitSet(...$limits);
+    }
+
+
+    /**
+     * Read a token's policy from the web interface's form. A list left with no rows has no restriction.
+     *
+     * @param Closure $getField - gets a form field's value by name, as a string.
+     *
+     * @return EmailTokenPolicy
+     *
+     * @throws InvalidInputException - if anything is invalid.
+     */
+    public static function readPolicyFromForm(Closure $getField) : EmailTokenPolicy
+    {
+        $readRules = function (string $prefix, string $label) use ($getField) : AddressRestrictionInterface {
+            $rules = [];
+
+            foreach (self::readValueRowsFromForm($getField, $prefix) as $row => $value)
+            {
+                $createRule = function () use ($value) : AddressRule {
+                    return AddressRule::createFromString($value);
+                };
+
+                $rules[] = self::prefixError("{$label}, row {$row}", $createRule);
+            }
+
+            return (count($rules) === 0) ? new AnyAddress() : new AddressRuleSet(...$rules);
+        };
+
+        $hasIps = count(self::readValueRowsFromForm($getField, 'allowed_ips')) > 0;
+
+        return new EmailTokenPolicy(
+            allowedNetworks: $hasIps ? self::readIpAllowListFromForm($getField) : new AnyIp(),
+            allowedSenders: $readRules('allowed_senders', AddressRuleField::SENDER->getLabel()),
+            allowedReplyTos: $readRules('allowed_reply_tos', AddressRuleField::REPLY_TO->getLabel()),
+            allowedRecipients: $readRules('allowed_recipients', AddressRuleField::RECIPIENT->getLabel()),
+            rateLimits: self::readRateLimitsFromForm($getField),
+            priority: self::prefixError('Priority', self::createPriorityReader((string)$getField('priority'))),
+        );
+    }
+
+
+    /**
+     * Read the "allowed_ips" rows of a form (see ViewValueRows): the IP addresses and CIDR ranges an API key (or an
+     * email token restricted by IP address) may be used from, at least one.
+     *
+     * @param Closure $getField - gets a form field's value by name, as a string.
+     *
+     * @return IpAllowList
+     *
+     * @throws InvalidInputException - if a row isn't an address or range, or there are none, saying which row.
+     */
+    public static function readIpAllowListFromForm(Closure $getField) : IpAllowList
+    {
+        $networks = [];
+
+        foreach (self::readValueRowsFromForm($getField, 'allowed_ips') as $row => $value)
+        {
+            $createNetwork = function () use ($value) : IpNetwork {
+                return new IpNetwork($value);
+            };
+
+            $networks[] = self::prefixError("Allowed IP addresses, row {$row}", $createNetwork);
+        }
+
+        $readNetworks = function () use ($networks) : IpAllowList {
+            return new IpAllowList(...$networks);
+        };
+
+        return self::prefixError('Allowed IP addresses', $readNetworks);
+    }
+
+
+    /**
+     * Read the rows of a list on a form (see ViewValueRows): "<prefix>_0", "<prefix>_1" and so on. Rows left empty
+     * are ignored.
+     *
+     * @param Closure $getField - gets a form field's value by name, as a string.
+     *
+     * @param string $prefix - the rows' name, e.g. "allowed_ips".
+     *
+     * @return array<int, string> - each row's value, trimmed, keyed by its number as it's shown (from 1), so an
+     * error can say which row it's in.
+     */
+    public static function readValueRowsFromForm(Closure $getField, string $prefix) : array
+    {
+        $values = [];
+
+        for ($i = 0; $i < self::MAX_FORM_ROWS; $i++)
+        {
+            $value = trim($getField("{$prefix}_{$i}"));
+
+            if ($value !== '')
+            {
+                $values[count($values) + 1] = $value;
+            }
+        }
+
+        return $values;
+    }
+
+
+    /**
+     * Read the rate limit rows of a form: "rate_limit_max_<n>" (a number), "rate_limit_unit_<n>" (emails or
+     * recipients) and "rate_limit_period_<n>" (seconds, from a select). Rows with no number are ignored, so leaving
+     * every row empty means no limit.
+     *
+     * @param Closure $getField - gets a form field's value by name, as a string.
+     *
+     * @return RateLimitSet
+     *
+     * @throws InvalidInputException - if a row is invalid.
+     */
+    public static function readRateLimitsFromForm(Closure $getField) : RateLimitSet
+    {
+        $limits = [];
+
+        for ($i = 0; $i < self::MAX_FORM_ROWS; $i++)
+        {
+            $max = trim($getField("rate_limit_max_{$i}"));
+            $unit = RateLimitUnit::tryFrom(trim($getField("rate_limit_unit_{$i}")));
+            $period = trim($getField("rate_limit_period_{$i}"));
+
+            if ($max !== '')
+            {
+                if (ctype_digit($max) === false || ctype_digit($period) === false || $unit === null)
+                {
+                    $msg = "Rate limit " . ($i + 1) . " must be a whole number of emails or recipients.";
+                    throw new InvalidInputException($msg);
+                }
+
+                $limits[] = new RateLimit($unit, (int)$max, (int)$period);
+            }
+        }
+
+        return new RateLimitSet(...$limits);
+    }
+
+
+    /**
+     * Read the optional "priority" field: a whole number from 1 to Priority::MAX_EMAIL_TOKEN_PRIORITY, 1 if it's left
+     * out.
+     *
+     * @throws InvalidInputException - if it's there, but isn't a whole number in that range.
+     */
+    private static function readPriorityFromJson(array $body) : Priority
+    {
+        $value = $body['priority'] ?? Priority::DEFAULT;
+
+        if (is_int($value) === false)
+        {
+            $msg = '"priority" must be a whole number from 1 to ' . Priority::MAX_EMAIL_TOKEN_PRIORITY . '.';
+            throw new InvalidInputException($msg);
+        }
+
+        $create = function () use ($value) : Priority {
+            return Priority::forEmailToken($value);
+        };
+
+        return self::prefixError('priority', $create);
+    }
+
+
+    private static function createPriorityReader(string $text) : Closure
+    {
+        $read = function () use ($text) : Priority {
+            return Priority::forKeyFromString($text);
+        };
+
+        return $read;
+    }
+
+
+    /**
+     * Read the "allowed" list of a client IP condition, e.g. ["10.0.0.0/8", "192.168.1.20"].
+     *
+     * @param array $items - the list, which readConditionsFromJson() has checked is a list, and isn't empty.
+     *
+     * @param string $path - where it is in the request, for errors, e.g. "conditions[0].allowed".
+     *
+     * @return IpAllowList
+     *
+     * @throws InvalidInputException - if an item isn't an IP address or CIDR range.
+     */
+    private static function readNetworksFromJson(array $items, string $path) : IpAllowList
+    {
+        $networks = [];
+
+        foreach ($items as $index => $value)
+        {
+            if (!is_string($value))
+            {
+                throw new InvalidInputException("{$path}[{$index}] must be a string, such as \"10.0.0.0/8\".");
+            }
+
+            $createNetwork = function () use ($value) : IpNetwork {
+                return new IpNetwork($value);
+            };
+
+            $networks[] = self::prefixError("{$path}[{$index}]", $createNetwork);
+        }
+
+        return new IpAllowList(...$networks);
+    }
+
+
+    /**
+     * Read the optional "conditions" list of a request body, checking each condition's shape: a known "field", given
+     * at most once, and a non-empty "allowed" list. What's in each list is read by readNetworksFromJson() or
+     * readRulesFromJson().
+     *
+     * @param array $body - the decoded JSON body.
+     *
+     * @return array<string, array{allowed: array, path: string}> - each condition's "allowed" list, and where it is in
+     * the request (for errors), by its field's value.
+     *
+     * @throws InvalidInputException - if "conditions" or one of them is invalid, or a field is given twice.
+     */
+    private static function readConditionsFromJson(array $body) : array
+    {
+        $conditions = [];
+        $fields = implode(', ', array_column(ConditionField::cases(), 'value'));
+
+        foreach ((array_key_exists('conditions', $body) ? self::readList($body, 'conditions') : []) as $index => $item)
+        {
+            $path = "conditions[{$index}]";
+            $field = is_array($item) ? ConditionField::tryFrom((string)($item['field'] ?? '')) : null;
+            $allowed = is_array($item) ? ($item['allowed'] ?? null) : null;
+
+            if ($field === null)
+            {
+                throw new InvalidInputException("{$path} must be an object with a \"field\" of {$fields}.");
+            }
+
+            if (!is_array($allowed) || !array_is_list($allowed))
+            {
+                throw new InvalidInputException("{$path}.allowed must be an array.");
+            }
+
+            if (count($allowed) === 0)
+            {
+                $msg =
+                    "{$path}.allowed is empty, which would allow nobody. To allow anyone, leave out the"
+                    . " \"{$field->value}\" condition.";
+
+                throw new InvalidInputException($msg);
+            }
+
+            if (isset($conditions[$field->value]))
+            {
+                $msg = "{$path} is a second \"{$field->value}\" condition. Put all of its values in one.";
+                throw new InvalidInputException($msg);
+            }
+
+            $conditions[$field->value] = ['allowed' => $allowed, 'path' => "{$path}.allowed"];
+        }
+
+        return $conditions;
+    }
+
+
+    /**
+     * Read the "allowed" list of an address condition, e.g.
+     * [{"type": "domain", "value": "example.org"}, {"type": "address", "value": "a@b.org"}].
+     *
+     * @param array $items - the list, which readConditionsFromJson() has checked is a list, and isn't empty.
+     *
+     * @param string $path - where it is in the request, for errors, e.g. "conditions[1].allowed".
+     *
+     * @return AddressRuleSet
+     *
+     * @throws InvalidInputException - if a rule is invalid.
+     */
+    private static function readRulesFromJson(array $items, string $path) : AddressRuleSet
+    {
+        $rules = [];
+        $kinds = implode(' or ', array_column(AddressRuleKind::cases(), 'value'));
+
+        foreach ($items as $index => $item)
+        {
+            $kind = is_array($item) ? AddressRuleKind::tryFrom((string)($item['type'] ?? '')) : null;
+            $value = is_array($item) ? ($item['value'] ?? null) : null;
+
+            if ($kind === null || !is_string($value))
+            {
+                $msg =
+                    "{$path}[{$index}] must be an object with a \"type\" of {$kinds}, and a string \"value\" (the"
+                    . " domain or address). To allow anyone, leave the condition out.";
+
+                throw new InvalidInputException($msg);
+            }
+
+            $createRule = function () use ($kind, $value) : AddressRule {
+                return AddressRule::createFromStoredForm($kind, $value);
+            };
+
+            $rules[] = self::prefixError("{$path}[{$index}]", $createRule);
+        }
+
+        return new AddressRuleSet(...$rules);
+    }
+
+
+    /**
+     * @throws InvalidInputException - if the field isn't a JSON array.
+     */
+    private static function readList(array $body, string $field) : array
+    {
+        $value = $body[$field] ?? null;
+
+        if (!is_array($value) || !array_is_list($value))
+        {
+            throw new InvalidInputException("\"{$field}\" must be an array.");
+        }
+
+        return $value;
+    }
+
+
+    /**
+     * Run a callback, and put which field was being read at the start of any error it throws.
+     *
+     * @param string $field - the field's name or label.
+     *
+     * @param Closure $read - the callback.
+     *
+     * @return mixed - what the callback returned.
+     *
+     * @throws InvalidInputException
+     */
+    private static function prefixError(string $field, Closure $read) : mixed
+    {
+        try
+        {
+            $result = $read();
+        }
+        catch (InvalidInputException $e)
+        {
+            throw new InvalidInputException("{$field}: {$e->getMessage()}");
+        }
+
+        return $result;
+    }
+}

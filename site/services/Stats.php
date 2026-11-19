@@ -1,0 +1,334 @@
+<?php
+
+/*
+ * The statistics shown on the dashboard and returned by the API: how much email is coming through, from which
+ * tokens, and what happened to it.
+ */
+
+declare(strict_types = 1);
+
+use Programster\PgsqlObjects\CacheMode;
+
+
+final class Stats
+{
+    /**
+     * Get the activity counts for one token, or for everything.
+     *
+     * @param string $emailTokenId - the token's ID, or an empty string for every token.
+     *
+     * @return ActivityCounts
+     */
+    public static function getActivity(string $emailTokenId = '') : ActivityCounts
+    {
+        $messageFilter = ($emailTokenId === '') ? 'TRUE' : '"email_token_id" = ' . DB::escape($emailTokenId);
+        $eventFilter = ($emailTokenId === '') ? 'TRUE' : '"m"."email_token_id" = ' . DB::escape($emailTokenId);
+        $byService = RejectionOrigin::THIS_SERVICE->getSqlCondition();
+        $byProvider = RejectionOrigin::PROVIDER->getSqlCondition();
+        $failedAfterQueueing = MessageProgress::FAILED_AFTER_QUEUEING->getSqlCondition();
+        $retrying = MessageProgress::RETRYING->getSqlCondition();
+
+        $query = <<<SQL
+            SELECT
+                (SELECT count(*) FROM "email_message"
+                    WHERE {$messageFilter} AND "created_at" > now() - interval '1 minute') AS "last_minute",
+                (SELECT count(*) FROM "email_message"
+                    WHERE {$messageFilter} AND "created_at" > now() - interval '1 hour') AS "last_hour",
+                (SELECT count(*) FROM "email_message"
+                    WHERE {$messageFilter} AND "created_at" > now() - interval '24 hours') AS "last_24_hours",
+                (SELECT count(*) FROM "email_message"
+                    WHERE {$messageFilter} AND "created_at" > now() - interval '7 days') AS "last_7_days",
+                (SELECT count(*) FROM "email_message" WHERE {$messageFilter} AND "status" = 'queued') AS "queued_now",
+                (SELECT count(*) FROM "email_message"
+                    WHERE {$messageFilter} AND "status" = 'failed' AND "created_at" > now() - interval '24 hours')
+                    AS "failed_last_24_hours",
+                (SELECT count(*) FROM "rejected_request"
+                    WHERE {$messageFilter} AND "created_at" > now() - interval '1 hour') AS "rejected_last_hour",
+                (SELECT count(*) FROM "rejected_request"
+                    WHERE {$messageFilter} AND "created_at" > now() - interval '24 hours') AS "rejected_last_24_hours",
+                (SELECT count(*) FROM "rejected_request"
+                    WHERE {$messageFilter} AND "created_at" > now() - interval '7 days') AS "rejected_last_7_days",
+                (SELECT count(*) FROM "rejected_request"
+                    WHERE {$messageFilter} AND {$byService} AND "created_at" > now() - interval '24 hours')
+                    AS "rejected_by_service_last_24_hours",
+                (SELECT count(*) FROM "rejected_request"
+                    WHERE {$messageFilter} AND {$byProvider} AND "created_at" > now() - interval '24 hours')
+                    AS "refused_while_waiting_last_24_hours",
+                (SELECT count(*) FROM "email_message" AS "m"
+                    WHERE {$eventFilter} AND {$failedAfterQueueing} AND "m"."created_at" > now() - interval '24 hours')
+                    AS "failed_after_queueing_last_24_hours",
+                (SELECT count(*) FROM "email_message" AS "m" WHERE {$eventFilter} AND {$retrying}) AS "retrying_now",
+                "e".*
+            FROM (
+                SELECT
+                    count(*) FILTER (WHERE "event_type" = 'delivered') AS "delivered_last_7_days",
+                    count(*) FILTER (WHERE "event_type" = 'bounced') AS "bounced_last_7_days",
+                    count(*) FILTER (WHERE "event_type" = 'opened') AS "opened_last_7_days",
+                    count(*) FILTER (WHERE "event_type" = 'clicked') AS "clicked_last_7_days",
+                    count(*) FILTER (WHERE "event_type" = 'spam_report') AS "spam_reports_last_7_days"
+                FROM "email_event" AS "ev"
+                LEFT JOIN "email_message" AS "m" ON "m"."id" = "ev"."email_message_id"
+                WHERE {$eventFilter} AND "ev"."occurred_at" > now() - interval '7 days'
+            ) AS "e"
+            SQL;
+
+        return new ActivityCounts(DB::fetchRows($query)[0]);
+    }
+
+
+    /**
+     * Get how many emails were accepted in each of the last 24 hours, oldest first.
+     *
+     * @param string $emailTokenId - the token's ID, or an empty string for every token.
+     *
+     * @return HourlyVolumeCollection - 24 entries, including the current (partial) hour.
+     */
+    public static function getHourlyVolume(string $emailTokenId = '') : HourlyVolumeCollection
+    {
+        $tokenFilter = ($emailTokenId === '') ? '' : ' AND "m"."email_token_id" = ' . DB::escape($emailTokenId);
+
+        $query = <<<SQL
+            SELECT
+                "h"."hour_start",
+                count("m"."id") AS "accepted",
+                count("m"."id") FILTER (WHERE "m"."was_queued") AS "queued"
+            FROM generate_series(
+                date_trunc('hour', now()) - interval '23 hours',
+                date_trunc('hour', now()),
+                interval '1 hour'
+            ) AS "h"("hour_start")
+            LEFT JOIN "email_message" AS "m"
+                ON "m"."created_at" >= "h"."hour_start"
+                AND "m"."created_at" < "h"."hour_start" + interval '1 hour'{$tokenFilter}
+            GROUP BY "h"."hour_start"
+            ORDER BY "h"."hour_start"
+            SQL;
+
+        $volumes = [];
+
+        foreach (DB::fetchRows($query) as $row)
+        {
+            $hourStart = new DateTimeImmutable($row['hour_start']);
+            $volumes[] = new HourlyVolume($hourStart, (int)$row['accepted'], (int)$row['queued']);
+        }
+
+        return new HourlyVolumeCollection(...$volumes);
+    }
+
+
+    /**
+     * Load the most recent emails that a filter shows, newest first.
+     *
+     * @param MessageFilter $filter - which emails.
+     *
+     * @param int $limit - the most to load, from 1 to 500.
+     *
+     * @return EmailMessageCollection
+     */
+    public static function loadMessages(MessageFilter $filter, int $limit) : EmailMessageCollection
+    {
+        $conditions = [];
+
+        if ($filter->hasEmailToken())
+        {
+            $conditions[] = '"m"."email_token_id" = ' . DB::escape($filter->getEmailTokenId());
+        }
+
+        if (count($filter->getStatuses()) > 0)
+        {
+            $escaped = [];
+
+            foreach ($filter->getStatuses() as $status)
+            {
+                $escaped[] = DB::escape($status->value);
+            }
+
+            $conditions[] = '"m"."status" IN (' . implode(', ', $escaped) . ')';
+        }
+
+        if (count($filter->getEvents()) > 0)
+        {
+            // The window is of when the event happened, as the dashboard's counts of events are.
+            $types = [];
+
+            foreach ($filter->getEvents() as $type)
+            {
+                $types[] = DB::escape($type->value);
+            }
+
+            $conditions[] =
+                'EXISTS (SELECT 1 FROM "email_event" AS "ev" WHERE "ev"."email_message_id" = "m"."id"'
+                . ' AND "ev"."event_type" IN (' . implode(', ', $types) . ')'
+                . ' AND ' . $filter->getWindow()->getSqlCondition('"ev"."occurred_at"') . ')';
+        }
+        else
+        {
+            $conditions[] = $filter->getWindow()->getSqlCondition('"m"."created_at"');
+        }
+
+        $conditions[] = $filter->getProgress()->getSqlCondition();
+        $limit = max(1, min(500, $limit));
+        $where = implode(' AND ', $conditions);
+        $query =
+            "SELECT \"m\".\"id\" FROM \"email_message\" AS \"m\" WHERE {$where}"
+            . " ORDER BY \"m\".\"created_at\" DESC LIMIT {$limit}";
+
+        $messages = [];
+
+        foreach (DB::fetchRows($query) as $row)
+        {
+            $messages[] = EmailMessageTable::getInstance()->load($row['id'], CacheMode::IGNORE_CACHE);
+        }
+
+        return new EmailMessageCollection(...$messages);
+    }
+
+
+    /**
+     * Load the tracking events for an email, oldest first.
+     *
+     * @param EmailMessage $message - the email.
+     *
+     * @return EmailEventCollection
+     */
+    public static function loadEvents(EmailMessage $message) : EmailEventCollection
+    {
+        $id = DB::escape($message->getId());
+        $events = [];
+
+        $query = "SELECT \"id\" FROM \"email_event\" WHERE \"email_message_id\" = {$id} ORDER BY \"occurred_at\"";
+
+        foreach (DB::fetchRows($query) as $row)
+        {
+            $events[] = EmailEventTable::getInstance()->load($row['id'], CacheMode::IGNORE_CACHE);
+        }
+
+        return new EmailEventCollection(...$events);
+    }
+
+
+    /**
+     * Load each attempt at handing an email to a provider, oldest first.
+     *
+     * @param EmailMessage $message - the email.
+     *
+     * @return EmailAttemptCollection
+     */
+    public static function loadAttempts(EmailMessage $message) : EmailAttemptCollection
+    {
+        $id = DB::escape($message->getId());
+        $attempts = [];
+
+        $query =
+            'SELECT "provider", "dispatched_at", coalesce("finished_at"::text, \'\') AS "finished_at", "outcome",'
+            . " coalesce(\"error\", '') AS \"error\" FROM \"email_attempt\" WHERE \"email_message_id\" = {$id}"
+            . ' ORDER BY "dispatched_at"';
+
+        foreach (DB::fetchRows($query) as $row)
+        {
+            $outcome = AttemptOutcome::from($row['outcome']);
+
+            $attempts[] = new EmailAttempt(
+                $row['provider'],
+                $row['dispatched_at'],
+                $row['finished_at'],
+                $outcome,
+                $row['error']
+            );
+        }
+
+        return new EmailAttemptCollection(...$attempts);
+    }
+
+
+    /**
+     * Load the most recent rejected requests, newest first.
+     *
+     * @param int $limit - the most to load, from 1 to 500.
+     *
+     * @param string $emailTokenId - only load those for this email token, or an empty string for any (or none).
+     *
+     * @param TimeWindow $window - only load those within this window.
+     *
+     * @param RejectionOrigin $origin - only load those turned away by this service, or by a provider (or both).
+     *
+     * @return RejectedRequestCollection
+     */
+    public static function loadRejections(
+        int $limit,
+        string $emailTokenId,
+        TimeWindow $window,
+        RejectionOrigin $origin
+    ) : RejectedRequestCollection
+    {
+        $limit = max(1, min(500, $limit));
+        $rejections = [];
+        $tokenCondition = ($emailTokenId === '') ? 'TRUE' : '"email_token_id" = ' . DB::escape($emailTokenId);
+        $windowCondition = $window->getSqlCondition('"created_at"');
+        $where = "{$tokenCondition} AND {$origin->getSqlCondition()} AND {$windowCondition}";
+
+        $query = "SELECT \"id\" FROM \"rejected_request\" WHERE {$where} ORDER BY \"created_at\" DESC LIMIT {$limit}";
+
+        foreach (DB::fetchRows($query) as $row)
+        {
+            $rejections[] = RejectedRequestTable::getInstance()->load($row['id'], CacheMode::IGNORE_CACHE);
+        }
+
+        return new RejectedRequestCollection(...$rejections);
+    }
+
+
+    /**
+     * Load the email tokens that have sent the most emails in a time window, most first, for the dashboard.
+     *
+     * @param TimeWindow $window - when the emails were accepted.
+     *
+     * @param int $limit - the most tokens to load.
+     *
+     * @return EmailTokenUsageCollection
+     */
+    public static function loadMostUsedEmailTokens(TimeWindow $window, int $limit) : EmailTokenUsageCollection
+    {
+        $limit = max(1, min(100, $limit));
+        $usages = [];
+        $where = '"email_token_id" IS NOT NULL AND ' . $window->getSqlCondition('"created_at"');
+
+        $query =
+            "SELECT \"email_token_id\", count(*) AS \"email_count\" FROM \"email_message\" WHERE {$where}"
+            . " GROUP BY \"email_token_id\" ORDER BY \"email_count\" DESC, \"email_token_id\" LIMIT {$limit}";
+
+        foreach (DB::fetchRows($query) as $row)
+        {
+            $emailToken = EmailTokenRepository::load($row['email_token_id']);
+            $usages[] = new EmailTokenUsage($emailToken, (int)$row['email_count']);
+        }
+
+        return new EmailTokenUsageCollection(...$usages);
+    }
+
+
+    /**
+     * Load one email.
+     *
+     * @throws NotFoundException - if there's no such email.
+     */
+    public static function loadMessage(string $id) : EmailMessage
+    {
+        try
+        {
+            if (Uuid::isValid($id) === false)
+            {
+                throw new NotFoundException("There is no email with the ID \"{$id}\".");
+            }
+
+            /* @var $message EmailMessage */
+            $message = EmailMessageTable::getInstance()->load($id, CacheMode::IGNORE_CACHE);
+        }
+        catch (\Programster\PgsqlObjects\Exceptions\ExceptionNoSuchIdException)
+        {
+            throw new NotFoundException("There is no email with the ID \"{$id}\".");
+        }
+
+        return $message;
+    }
+}

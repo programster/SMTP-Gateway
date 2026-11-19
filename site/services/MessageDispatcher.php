@@ -1,0 +1,835 @@
+<?php
+
+/*
+ * Accepts emails, and hands them to the providers.
+ *
+ * Accepting (submit()): the SMTP server or the send endpoint records the email as queued, and wakes the queue workers.
+ * If it estimates a worker will start trying to send it within the wait set on the Settings page, it waits for the
+ * outcome by watching the email's status in the database, so the client can be told it was sent (or refused).
+ * Otherwise, or if it isn't picked up in time, the client is told it was queued.
+ *
+ * Sending (processNextQueued(), run by the queue workers): a worker claims the oldest email the rate limits allow
+ * (its token's, the global ones, and the chosen provider's), choosing the provider by the mode in settings.yaml, and
+ * hands it over. Claiming happens while holding a PostgreSQL advisory lock, so any number of workers can never
+ * between them send more than the limits allow, or claim the same email.
+ *
+ * When a provider can't be reached, or fails temporarily, the next provider is tried straight away. In fallback
+ * mode, that's also done when a provider rejects the email outright. Once every provider has been tried, the email
+ * waits (1, 5 and 15 minutes, then 1 and 4 hours) for another round, and fails after MAX_ROUNDS.
+ */
+
+declare(strict_types = 1);
+
+
+final class MessageDispatcher
+{
+    // The channel the queue workers LISTEN on, to be woken as soon as there's an email to send.
+    public const string NOTIFY_CHANNEL = 'email_queued';
+
+    // An arbitrary number identifying this service's dispatch lock among PostgreSQL advisory locks.
+    private const int DISPATCH_LOCK_ID = 727274101;
+
+    // How many rounds of trying every provider before giving up, and how long to wait (in seconds) after each.
+    private const int MAX_ROUNDS = 6;
+    private const array RETRY_DELAYS_SECONDS = [60, 300, 900, 3600, 14400];
+
+    // An email left "sending" for this long belongs to a process that died, and is put back in the queue.
+    private const int STUCK_AFTER_SECONDS = 600;
+
+    // Once a worker has started trying to send an email the client is waiting for, how long to keep waiting for the
+    // outcome (long enough for a provider's connection to time out, and the next to be tried).
+    private const int MAX_WAIT_AFTER_PICKUP_SECONDS = 75;
+
+    // How often a waiting client's connection checks the email's status.
+    private const int POLL_MICROSECONDS = 50000;
+
+
+    /**
+     * Accept an email for sending.
+     *
+     * @param AuthenticatedEmailToken $emailToken - the token it's being sent with. Its policy must already have been
+     * checked.
+     *
+     * @param EmailAddress $envelopeSender - the envelope sender (MAIL FROM).
+     *
+     * @param EmailAddressCollection $recipients - who to deliver to (To, Cc and Bcc alike).
+     *
+     * @param RawEmail $email - the email.
+     *
+     * @return SubmissionResult - whether it was sent (while the client waited) or queued, and its ID.
+     *
+     * @throws RequestRejectedException - if it's too large, has more recipients than a rate limit could ever allow,
+     * or every provider refused it while the client waited. It's recorded.
+     */
+    public static function submit(
+        AuthenticatedEmailToken $emailToken,
+        EmailAddress $envelopeSender,
+        EmailAddressCollection $recipients,
+        RawEmail $email
+    ) : SubmissionResult
+    {
+        $maxBytes = Config::get()->getMaxMessageBytes();
+
+        if ($email->getSizeInBytes() > $maxBytes)
+        {
+            $msg = "The email is larger than the limit of {$maxBytes} bytes.";
+            $emailToken->reject(RejectionReason::MESSAGE_TOO_LARGE, $msg);
+        }
+
+        self::rejectIfLimitsCanNeverAllow($emailToken, count($recipients));
+        $recipientStrings = [];
+
+        foreach ($recipients as $recipient)
+        {
+            $recipientStrings[] = (string)$recipient;
+        }
+
+        $insert = function () use ($emailToken, $envelopeSender, $recipientStrings, $email) : EmailMessage {
+            /* @var $message EmailMessage */
+            $message = EmailMessageTable::getInstance()->insert([
+                'email_token_id' => $emailToken->getEmailToken()->getId(),
+                'source' => $emailToken->getSource()->value,
+                'client_ip' => (string)$emailToken->getClientIp(),
+                'envelope_sender' => (string)$envelopeSender,
+                'recipients' => json_encode($recipientStrings),
+                'recipient_count' => count($recipientStrings),
+                'subject' => mb_substr($email->getSubject(), 0, 1000),
+                'size_bytes' => $email->getSizeInBytes(),
+                'raw_message_base64' => base64_encode($email->toString()),
+                'status' => MessageStatus::QUEUED->value,
+                'was_queued' => false,
+                'attempts' => 0,
+                'next_attempt_at' => Time::now(),
+                'dispatched_at' => null,
+                'created_at' => Time::now(),
+                'priority' => $emailToken->getPolicy()->getPriority()->getValue(),
+            ]);
+
+            self::wakeWorkers();
+            return $message;
+        };
+
+        $message = DB::transaction($insert);
+        $outcome = SubmissionOutcome::QUEUED;
+        $waitSeconds = Settings::get()->getSyncWaitSeconds();
+
+        // The email is queued by now, so if the providers can't be used (e.g. none have been set up yet), the client
+        // is told it's queued, rather than that it failed, and it's sent once they can be.
+        try
+        {
+            $isWaiting = (
+                   $waitSeconds > 0
+                && QueueEstimator::estimateSecondsUntilAttempt($emailToken, $message->getId(), count($recipientStrings))
+                    <= $waitSeconds
+            );
+        }
+        catch (ConfigurationException)
+        {
+            $isWaiting = false;
+        }
+
+        if ($isWaiting)
+        {
+            try
+            {
+                $outcome = self::waitForOutcome($message->getId(), microtime(true) + $waitSeconds);
+            }
+            catch (ProviderPermanentFailureException $e)
+            {
+                $emailToken->reject(RejectionReason::PROVIDER_REJECTED, "The email was refused: {$e->getMessage()}");
+            }
+        }
+
+        if ($outcome === SubmissionOutcome::QUEUED)
+        {
+            self::markAsHavingQueued($message->getId());
+        }
+
+        return new SubmissionResult($message->getId(), $outcome);
+    }
+
+
+    /**
+     * Queue one of the service's own emails (e.g. a password reset link), with the system priority, so it goes ahead
+     * of every token's emails. It still counts towards the global and per-provider limits, and waits for them like any
+     * other email. It doesn't wait to be sent.
+     *
+     * @param EmailAddress $envelopeSender - the envelope sender (the address set on the Settings page).
+     *
+     * @param EmailAddressCollection $recipients - who to deliver to.
+     *
+     * @param RawEmail $email - the email.
+     *
+     * @param string $clientIp - the IP address of whoever caused it to be sent (e.g. asked for the reset).
+     *
+     * @return string - the email's ID.
+     */
+    public static function submitFromService(
+        EmailAddress $envelopeSender,
+        EmailAddressCollection $recipients,
+        RawEmail $email,
+        string $clientIp
+    ) : string
+    {
+        $recipientStrings = [];
+
+        foreach ($recipients as $recipient)
+        {
+            $recipientStrings[] = (string)$recipient;
+        }
+
+        $insert = function () use ($envelopeSender, $recipientStrings, $email, $clientIp) : EmailMessage {
+            /* @var $message EmailMessage */
+            $message = EmailMessageTable::getInstance()->insert([
+                'email_token_id' => null,
+                'source' => MessageSource::SYSTEM->value,
+                'client_ip' => $clientIp,
+                'envelope_sender' => (string)$envelopeSender,
+                'recipients' => json_encode($recipientStrings),
+                'recipient_count' => count($recipientStrings),
+                'subject' => mb_substr($email->getSubject(), 0, 1000),
+                'size_bytes' => $email->getSizeInBytes(),
+                'raw_message_base64' => base64_encode($email->toString()),
+                'status' => MessageStatus::QUEUED->value,
+                'was_queued' => false,
+                'attempts' => 0,
+                'next_attempt_at' => Time::now(),
+                'dispatched_at' => null,
+                'created_at' => Time::now(),
+                'priority' => Priority::system()->getValue(),
+            ]);
+
+            self::wakeWorkers();
+            return $message;
+        };
+
+        return DB::transaction($insert)->getId();
+    }
+
+
+    /**
+     * Send the queued email that should go next, if the rate limits and providers allow one: the highest priority
+     * first, and oldest first within a priority. Emails are taken oldest first from each token, so a token that has hit
+     * its own limit doesn't hold up the others. Run by the queue
+     * workers, any number of which can run at once.
+     *
+     * @return bool - true if an email was sent (or attempted), so the caller knows to check again straight away.
+     *
+     * @throws ConfigurationException - if settings.yaml isn't valid.
+     */
+    public static function processNextQueued() : bool
+    {
+        $claim = function () : array {
+            self::acquireDispatchLock();
+            $config = ProviderRegistry::getConfig();
+            $globalLimits = GlobalRateLimitRepository::load();
+            $claimed = ['id' => '', 'provider' => '', 'attempt' => ''];
+
+            // The oldest due email from each token (and from the service itself, whose emails have no token), highest
+            // priority first.
+            $candidates = DB::fetchRows(
+                'SELECT * FROM (SELECT DISTINCT ON ("email_token_id") "id", "email_token_id", "recipient_count",'
+                . ' "tried_providers", "priority", "created_at" FROM "email_message" WHERE "status" = \'queued\''
+                . ' AND "next_attempt_at" <= now() ORDER BY "email_token_id", "created_at") AS "oldest_per_key"'
+                . ' ORDER BY "priority" DESC, "created_at"'
+            );
+
+            // Once an email is held back by the limits that every email shares (the global and per-provider ones),
+            // no lower priority email may use the room it's waiting for. One held back by its own token's limits
+            // doesn't hold anything else up.
+            $waitingPriority = 0;
+
+            foreach ($candidates as $candidate)
+            {
+                if ($claimed['id'] === '' && (int)$candidate['priority'] >= $waitingPriority)
+                {
+                    $attempt = self::tryToClaim($candidate, $config, $globalLimits);
+
+                    if ($attempt['waiting_for_shared_limits'])
+                    {
+                        $waitingPriority = max($waitingPriority, (int)$candidate['priority']);
+                    }
+
+                    $claimed = [
+                        'id' => $attempt['id'],
+                        'provider' => $attempt['provider'],
+                        'attempt' => $attempt['attempt'],
+                    ];
+                }
+            }
+
+            return $claimed;
+        };
+
+        $claimed = DB::transaction($claim);
+
+        if ($claimed['id'] !== '')
+        {
+            try
+            {
+                $email = self::loadOutgoingEmail($claimed['id']);
+                self::deliver($claimed['id'], $claimed['provider'], $claimed['attempt'], $email);
+            }
+            catch (InvalidInputException $e)
+            {
+                // The stored email couldn't be read back. This shouldn't happen, but mustn't stop the queue.
+                self::markFailed($claimed['id'], "The stored email couldn't be read: {$e->getMessage()}");
+            }
+        }
+
+        return $claimed['id'] !== '';
+    }
+
+
+    /**
+     * Describe the recipient limits (the token's own, and the global ones) that an email with this many recipients
+     * would be over, so could never be sent within. Used by the SMTP server at RCPT TO, before DATA.
+     *
+     * @param AuthenticatedEmailToken $emailToken - the email token.
+     *
+     * @param int $recipientCount - how many recipients the email would have.
+     *
+     * @return string - a description of the limits it would go over, or an empty string if it fits every one.
+     */
+    public static function describeLimitsExceededByRecipientCount(
+        AuthenticatedEmailToken $emailToken,
+        int $recipientCount
+    ) : string
+    {
+        $tokenLimits = $emailToken->getPolicy()->getRateLimits();
+        return self::describeLimitsThatCanNeverAllow($recipientCount, $tokenLimits, GlobalRateLimitRepository::load());
+    }
+
+
+    /**
+     * Put back in the queue any email left "sending" by a process that died part way through. There's a small
+     * chance the provider did receive it, in which case it will be sent twice, which is better than never.
+     *
+     * @return int - how many were put back.
+     */
+    public static function recoverStuckMessages() : int
+    {
+        $seconds = self::STUCK_AFTER_SECONDS;
+
+        $cutoff = "now() - make_interval(secs => {$seconds})";
+
+        $result = ServiceFactory::getDb()->query(
+            "UPDATE \"email_message\" SET \"status\" = 'queued', \"next_attempt_at\" = now(), \"was_queued\" = true"
+            . " WHERE \"status\" = 'sending' AND \"dispatched_at\" < {$cutoff}"
+        );
+
+        // Their attempts stay counted towards the providers' limits, as the providers may have had them.
+        ServiceFactory::getDb()->query(
+            "UPDATE \"email_attempt\" SET \"outcome\" = 'interrupted', \"finished_at\" = now()"
+            . " WHERE \"outcome\" = 'sending' AND \"dispatched_at\" < {$cutoff}"
+        );
+
+        return pg_affected_rows($result);
+    }
+
+
+    /**
+     * Try to claim a queued email for sending now: check its token's and the global limits have room, and choose a
+     * provider that can take it. Must be called while holding the dispatch lock.
+     *
+     * @param array $candidate - the email's row: id, email_token_id (null for the service's own emails),
+     * recipient_count and tried_providers.
+     *
+     * @param ProvidersConfig $config - the providers.
+     *
+     * @param RateLimitSet $globalLimits - the global limits.
+     *
+     * @return array - "id" and "provider" of the claimed email and the "attempt" recorded for it, or empty strings
+     * if it can't be sent yet, and "waiting_for_shared_limits": whether it's waiting for room under the global
+     * limits, or a provider's.
+     */
+    private static function tryToClaim(array $candidate, ProvidersConfig $config, RateLimitSet $globalLimits) : array
+    {
+        $claimed = ['id' => '', 'provider' => '', 'attempt' => '', 'waiting_for_shared_limits' => false];
+        $isFromService = ($candidate['email_token_id'] === null);
+
+        // The service's own emails have no token, so only the global and per-provider limits apply to them.
+        $tokenId = (string)$candidate['email_token_id'];
+        $tokenLimits = $isFromService ? new RateLimitSet() : EmailTokenRepository::loadRateLimits($tokenId);
+        $tokenScope = $isFromService ? RateLimitScope::global() : RateLimitScope::forEmailToken($tokenId);
+        $recipientCount = (int)$candidate['recipient_count'];
+        $blockingLimits = self::describeLimitsThatCanNeverAllow($recipientCount, $tokenLimits, $globalLimits);
+
+        if ($blockingLimits !== '')
+        {
+            // The limits were lowered after this email was queued, so it can never be sent. Fail it, rather than let
+            // it hold up the token's other emails forever.
+            $msg = "It has {$recipientCount} recipients, more than the rate limits now allow: {$blockingLimits}.";
+            self::markFailed($candidate['id'], $msg);
+        }
+        elseif (RateLimiter::allows($tokenLimits, $tokenScope, $recipientCount) === false)
+        {
+            // Waiting for its own token's limits, which don't hold anything else up.
+        }
+        elseif (RateLimiter::allows($globalLimits, RateLimitScope::global(), $recipientCount) === false)
+        {
+            $claimed['waiting_for_shared_limits'] = true;
+        }
+        else
+        {
+            $triedNames = self::getTriedNames($candidate['tried_providers']);
+            $provider = ProviderSelector::choose($config, $recipientCount, $triedNames);
+
+            if ($provider !== '')
+            {
+                $id = DB::escape($candidate['id']);
+                $escapedProvider = DB::escape($provider);
+
+                // The attempt is recorded now, so it counts towards the provider's limits straight away.
+                ServiceFactory::getDb()->query(
+                    "UPDATE \"email_message\" SET \"status\" = 'sending', \"dispatched_at\" = now(),"
+                    . " \"provider\" = {$escapedProvider}, \"attempts\" = \"attempts\" + 1 WHERE \"id\" = {$id}"
+                );
+
+                $attemptId = DB::fetchValue(
+                    'INSERT INTO "email_attempt" ("id", "email_message_id", "provider", "recipient_count", "outcome")'
+                    . " VALUES (uuidv7(), {$id}, {$escapedProvider}, {$recipientCount}, 'sending') RETURNING \"id\""
+                );
+
+                $claimed = [
+                    'id' => $candidate['id'],
+                    'provider' => $provider,
+                    'attempt' => $attemptId,
+                    'waiting_for_shared_limits' => false,
+                ];
+            }
+            else
+            {
+                $claimed['waiting_for_shared_limits'] = true;
+            }
+        }
+
+        return $claimed;
+    }
+
+
+    /**
+     * Hand a claimed email to its provider, and record the result.
+     *
+     * @param string $messageId - the email's ID.
+     *
+     * @param string $providerName - the provider chosen for it.
+     *
+     * @param string $attemptId - the attempt recorded for it (email_attempt), to record how it ended.
+     *
+     * @param OutgoingEmail $email - the email.
+     *
+     * @return void
+     */
+    private static function deliver(
+        string $messageId,
+        string $providerName,
+        string $attemptId,
+        OutgoingEmail $email
+    ) : void
+    {
+        try
+        {
+            $providerMessageId = ProviderRegistry::getProvider($providerName)->send($email);
+            self::finishAttempt($attemptId, AttemptOutcome::SENT, '');
+            self::markSent($messageId, $providerName, $providerMessageId);
+            ProviderStatusRepository::markAvailable($providerName);
+        }
+        catch (ProviderUnavailableException $e)
+        {
+            self::finishAttempt($attemptId, AttemptOutcome::UNAVAILABLE, $e->getMessage());
+            ProviderStatusRepository::markUnavailable($providerName, $e->getMessage());
+            self::tryNextProvider($messageId, $providerName, $e->getMessage(), false);
+        }
+        catch (ProviderRateLimitedException $e)
+        {
+            // Over the provider's own rate limit, rather than anything about the email, so in every mode the provider
+            // is skipped for a while, and the email goes through another (or waits). The limits here may be too high.
+            self::finishAttempt($attemptId, AttemptOutcome::RATE_LIMITED, $e->getMessage());
+            ProviderStatusRepository::markRateLimited($providerName, $e->getMessage());
+            ProviderRateLimitWarning::log($providerName, $e->getMessage());
+            self::tryNextProvider($messageId, $providerName, $e->getMessage(), false);
+        }
+        catch (ProviderTemporaryFailureException | ConfigurationException | NotFoundException $e)
+        {
+            // A 4xx reply, a provider whose settings refer to a missing environment variable, or one removed from
+            // settings.yaml since the email was claimed: try another.
+            self::finishAttempt($attemptId, AttemptOutcome::TEMPORARY_FAILURE, $e->getMessage());
+            self::tryNextProvider($messageId, $providerName, $e->getMessage(), false);
+        }
+        catch (ProviderPermanentFailureException $e)
+        {
+            self::finishAttempt($attemptId, AttemptOutcome::REFUSED, $e->getMessage());
+
+            if (ProviderRegistry::getConfig()->getMode() === ProviderMode::FALLBACK)
+            {
+                self::tryNextProvider($messageId, $providerName, $e->getMessage(), true);
+            }
+            else
+            {
+                self::markFailed($messageId, "{$providerName}: {$e->getMessage()}");
+            }
+        }
+    }
+
+
+    /**
+     * After a provider failed, put the email straight back in the queue for the next provider, or, if every provider
+     * has now been tried in this round, wait for another round (or give up).
+     *
+     * @param string $messageId - the email's ID.
+     *
+     * @param string $providerName - the provider that failed.
+     *
+     * @param string $error - why.
+     *
+     * @param bool $isPermanent - whether the provider rejected the email outright.
+     *
+     * @return void
+     */
+    private static function tryNextProvider(
+        string $messageId,
+        string $providerName,
+        string $error,
+        bool $isPermanent
+    ) : void
+    {
+        $id = DB::escape($messageId);
+        $query = "SELECT \"tried_providers\", \"retry_round\" FROM \"email_message\" WHERE \"id\" = {$id}";
+        $row = DB::fetchRows($query)[0];
+        $tried = json_decode($row['tried_providers'], true);
+        $tried[] = ['provider' => $providerName, 'permanent' => $isPermanent, 'error' => mb_substr($error, 0, 500)];
+        $triedNames = array_column($tried, 'provider');
+        $unavailable = ProviderStatusRepository::loadUnavailableNames();
+        $remaining = 0;
+
+        foreach (ProviderRegistry::getConfig()->getEnabledProviders() as $provider)
+        {
+            /* @var $provider ProviderDefinition */
+            $name = $provider->getName();
+            $remaining += (in_array($name, $triedNames, true) || in_array($name, $unavailable, true)) ? 0 : 1;
+        }
+
+        $summary = self::summariseAttempts($tried);
+        $escapedError = DB::escape($summary);
+        $escapedTried = DB::escape(json_encode($tried));
+        $everyAttemptRejected = (count(array_filter(array_column($tried, 'permanent'))) === count($tried));
+        $round = (int)$row['retry_round'] + 1;
+
+        if ($remaining > 0)
+        {
+            ServiceFactory::getDb()->query(
+                "UPDATE \"email_message\" SET \"status\" = 'queued', \"next_attempt_at\" = now(),"
+                . " \"tried_providers\" = {$escapedTried}, \"last_error\" = {$escapedError} WHERE \"id\" = {$id}"
+            );
+
+            self::wakeWorkers();
+        }
+        elseif ($everyAttemptRejected)
+        {
+            self::markFailed($messageId, "Every provider rejected it. {$summary}");
+        }
+        elseif ($round >= self::MAX_ROUNDS)
+        {
+            self::markFailed($messageId, "Gave up after {$round} rounds of trying every provider. {$summary}");
+        }
+        else
+        {
+            $delay = self::RETRY_DELAYS_SECONDS[min($round, count(self::RETRY_DELAYS_SECONDS)) - 1];
+
+            ServiceFactory::getDb()->query(
+                "UPDATE \"email_message\" SET \"status\" = 'queued', \"was_queued\" = true,"
+                . " \"retry_round\" = {$round}, \"tried_providers\" = '[]', \"last_error\" = {$escapedError},"
+                . " \"next_attempt_at\" = now() + make_interval(secs => {$delay}) WHERE \"id\" = {$id}"
+            );
+        }
+    }
+
+
+    /**
+     * Wait for a worker to try to send an email, and return the outcome. Called by the connection that submitted it.
+     *
+     * @param string $messageId - the email's ID.
+     *
+     * @param float $pickupDeadline - when to stop waiting (as a microtime(true)) if no worker has started on it.
+     *
+     * @return SubmissionOutcome - SENT if it was sent, or QUEUED if it wasn't picked up in time, or will be retried.
+     *
+     * @throws ProviderPermanentFailureException - if it failed (every provider it could use refused it).
+     */
+    private static function waitForOutcome(string $messageId, float $pickupDeadline) : SubmissionOutcome
+    {
+        $id = DB::escape($messageId);
+        $hardDeadline = $pickupDeadline + self::MAX_WAIT_AFTER_PICKUP_SECONDS;
+        $outcome = null;
+
+        while ($outcome === null)
+        {
+            $row = DB::fetchRows(
+                'SELECT "status", "last_error", "retry_round", "dispatched_at" IS NOT NULL AS "was_picked_up",'
+                . " \"next_attempt_at\" <= now() AS \"is_due\" FROM \"email_message\" WHERE \"id\" = {$id}"
+            )[0];
+
+            $now = microtime(true);
+            $wasPickedUp = ($row['was_picked_up'] === 't');
+            $isWaitingForRetry = ($wasPickedUp && ($row['is_due'] === 'f' || (int)$row['retry_round'] > 0));
+
+            if ($row['status'] === MessageStatus::SENT->value)
+            {
+                $outcome = SubmissionOutcome::SENT;
+            }
+            elseif ($row['status'] === MessageStatus::FAILED->value)
+            {
+                throw new ProviderPermanentFailureException((string)$row['last_error']);
+            }
+            elseif (
+                   $row['status'] === MessageStatus::CANCELLED->value
+                || ($row['status'] === MessageStatus::QUEUED->value && $isWaitingForRetry)
+                || ($wasPickedUp === false && $now > $pickupDeadline)
+                || $now > $hardDeadline
+            )
+            {
+                $outcome = SubmissionOutcome::QUEUED;
+            }
+            else
+            {
+                usleep(self::POLL_MICROSECONDS);
+            }
+        }
+
+        return $outcome;
+    }
+
+
+    /**
+     * Refuse an email that has more recipients than a recipient limit allows, as it could never be sent, however
+     * long it waited in the queue.
+     *
+     * @throws RequestRejectedException - if a limit could never allow it. It's recorded.
+     */
+    private static function rejectIfLimitsCanNeverAllow(AuthenticatedEmailToken $emailToken, int $recipientCount) : void
+    {
+        $blockingLimits = self::describeLimitsExceededByRecipientCount($emailToken, $recipientCount);
+
+        if ($blockingLimits !== '')
+        {
+            $msg =
+                "The email has {$recipientCount} recipients, more than the rate limits allow ({$blockingLimits}), so"
+                . " it could never be sent. Send it as several emails, each with fewer recipients.";
+
+            $emailToken->reject(RejectionReason::TOO_MANY_RECIPIENTS, $msg);
+        }
+    }
+
+
+    /**
+     * Describe the limits (a token's own, and the global ones) that an email with this many recipients could never be
+     * sent within.
+     *
+     * @return string - e.g. "the token's limit of 10 recipients per hour", or an empty string if none.
+     */
+    private static function describeLimitsThatCanNeverAllow(
+        int $recipientCount,
+        RateLimitSet $tokenLimits,
+        RateLimitSet $globalLimits
+    ) : string
+    {
+        $descriptions = [];
+
+        foreach ($tokenLimits->getLimitsThatCanNeverAllow($recipientCount) as $limit)
+        {
+            $descriptions[] = "the token's limit of {$limit->describe()}";
+        }
+
+        foreach ($globalLimits->getLimitsThatCanNeverAllow($recipientCount) as $limit)
+        {
+            $descriptions[] = "the global limit of {$limit->describe()}";
+        }
+
+        return implode(', ', $descriptions);
+    }
+
+
+    /**
+     * Record how an attempt at handing an email to a provider ended.
+     *
+     * @param string $attemptId - the attempt.
+     *
+     * @param AttemptOutcome $outcome - how it ended.
+     *
+     * @param string $error - why it failed, or an empty string if it didn't.
+     */
+    private static function finishAttempt(string $attemptId, AttemptOutcome $outcome, string $error) : void
+    {
+        $id = DB::escape($attemptId);
+        $escapedOutcome = DB::escape($outcome->value);
+        $escapedError = ($error === '') ? 'NULL' : DB::escape(mb_substr($error, 0, 1000));
+
+        ServiceFactory::getDb()->query(
+            "UPDATE \"email_attempt\" SET \"outcome\" = {$escapedOutcome}, \"finished_at\" = now(),"
+            . " \"error\" = {$escapedError} WHERE \"id\" = {$id}"
+        );
+    }
+
+
+    private static function markSent(string $messageId, string $providerName, string $providerMessageId) : void
+    {
+        $id = DB::escape($messageId);
+        $escapedProvider = DB::escape($providerName);
+        $providerId = DB::escape($providerMessageId);
+        $clearContent = self::getClearContentOnFinishSql();
+
+        ServiceFactory::getDb()->query(
+            "UPDATE \"email_message\" SET \"status\" = 'sent', \"sent_at\" = now(), \"provider\" = {$escapedProvider},"
+            . " \"provider_message_id\" = NULLIF({$providerId}, ''), \"last_error\" = NULL{$clearContent}"
+            . " WHERE \"id\" = {$id}"
+        );
+
+        self::removeAttachmentsOnFinish($messageId);
+    }
+
+
+    private static function markFailed(string $messageId, string $error) : void
+    {
+        $id = DB::escape($messageId);
+        $escapedError = DB::escape($error);
+        $clearContent = self::getClearContentOnFinishSql();
+
+        ServiceFactory::getDb()->query(
+            "UPDATE \"email_message\" SET \"status\" = 'failed', \"last_error\" = {$escapedError}{$clearContent}"
+            . " WHERE \"id\" = {$id}"
+        );
+
+        self::removeAttachmentsOnFinish($messageId);
+    }
+
+
+    /**
+     * Get the assignment that deletes a finishing email's content, if it's not to be kept: when the retention settings
+     * say so, and always for the service's own emails, as they hold password reset links, which nobody else should
+     * ever be able to read. While the retention settings are invalid, every other email's content is kept.
+     */
+    private static function getClearContentOnFinishSql() : string
+    {
+        try
+        {
+            $clearContent = Settings::get()->getRetention()->getEmailRetention()->getClearContentOnFinishSql();
+        }
+        catch (ConfigurationException)
+        {
+            $clearContent = '';
+        }
+
+        return ($clearContent !== '')
+            ? $clearContent
+            : ', "raw_message_base64" = CASE WHEN "email_token_id" IS NULL THEN NULL ELSE "raw_message_base64" END';
+    }
+
+
+    /**
+     * Remove a finished email's attachments from its stored content straight away, if its content is kept but its
+     * attachments aren't (see the retention settings). While the retention settings are invalid, they're kept.
+     */
+    private static function removeAttachmentsOnFinish(string $messageId) : void
+    {
+        try
+        {
+            $isRemoving = Settings::get()->getRetention()->getEmailRetention()->removesAttachmentsOnFinish();
+        }
+        catch (ConfigurationException)
+        {
+            $isRemoving = false;
+        }
+
+        if ($isRemoving)
+        {
+            AttachmentRemover::removeFrom($messageId);
+        }
+    }
+
+
+    /**
+     * Record that the client was told the email was queued (for the statistics), rather than sent while it waited.
+     */
+    private static function markAsHavingQueued(string $messageId) : void
+    {
+        $id = DB::escape($messageId);
+        ServiceFactory::getDb()->query("UPDATE \"email_message\" SET \"was_queued\" = true WHERE \"id\" = {$id}");
+    }
+
+
+    /**
+     * Get the names of the providers already tried, from the email's tried_providers column.
+     *
+     * @return string[]
+     */
+    private static function getTriedNames(string $triedProvidersJson) : array
+    {
+        return array_column(json_decode($triedProvidersJson, true), 'provider');
+    }
+
+
+    /**
+     * Summarise each provider's attempt in this round, for the email's last_error.
+     *
+     * @param array $tried - each attempt: "provider", "permanent" and "error".
+     *
+     * @return string
+     */
+    private static function summariseAttempts(array $tried) : string
+    {
+        $parts = [];
+
+        foreach ($tried as $attempt)
+        {
+            $parts[] = "{$attempt['provider']}: {$attempt['error']}";
+        }
+
+        return implode(' | ', $parts);
+    }
+
+
+    /**
+     * Rebuild an email from its stored form.
+     *
+     * @throws InvalidInputException - if it can't be read back.
+     */
+    private static function loadOutgoingEmail(string $messageId) : OutgoingEmail
+    {
+        $message = Stats::loadMessage($messageId);
+        $recipients = [];
+
+        foreach (json_decode($message->getRecipients(), true) as $recipient)
+        {
+            $recipients[] = new EmailAddress($recipient);
+        }
+
+        $raw = base64_decode((string)$message->getRawMessageBase64(), true);
+
+        if ($raw === false || $raw === '')
+        {
+            throw new InvalidInputException('The email has no stored content.');
+        }
+
+        $sender = new EmailAddress($message->getEnvelopeSender());
+        return new OutgoingEmail($messageId, $sender, new EmailAddressCollection(...$recipients), new RawEmail($raw));
+    }
+
+
+    /**
+     * Wake the queue workers (sent when the current transaction commits, or straight away outside one).
+     */
+    private static function wakeWorkers() : void
+    {
+        ServiceFactory::getDb()->query("SELECT pg_notify('" . self::NOTIFY_CHANNEL . "', '')");
+    }
+
+
+    /**
+     * Take the dispatch lock, which is held until the current transaction ends.
+     */
+    private static function acquireDispatchLock() : void
+    {
+        ServiceFactory::getDb()->query('SELECT pg_advisory_xact_lock(' . self::DISPATCH_LOCK_ID . ')');
+    }
+}

@@ -1,0 +1,22 @@
+# Layered over docker-dev-compose.yml by run-tests.sh, for each of its test stacks, to keep them apart from each other
+# and from your own development stack:
+#  - each gets its own settings.yaml (which the tests change) and its own logs, under
+#    tests/.run/<TEST_STACK>, rather than sharing config-dev and logs,
+#  - none reads .env, so your own settings can't change what the tests expect. Everything comes from tests/test.env
+#    and tests/settings.yaml, and the ports and settings run-tests.sh adds for each stack, and
+#  - the TypeScript compiler isn't run, as the tests don't need the JavaScript, and several stacks compiling into
+#    site/public/js at once would get in each other's way.
+# Paths are relative to the repository's root, as run-tests.sh sets that as the project directory.
+services:
+  app:
+    env_file: !reset []
+    volumes: !override
+      - ./site:/var/www/site
+      - ./README.md:/var/www/documentation/README.md:ro
+      - ./docs:/var/www/documentation/docs:ro
+      - ./tests/.run/${TEST_STACK}/logs:/logs
+      - ./tests/.run/${TEST_STACK}/tls:/tls:ro
+      - ./tests/.run/${TEST_STACK}/config:/config
+
+  typescript:
+    profiles: ["never"]

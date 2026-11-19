@@ -1,0 +1,54 @@
+# The test stacks' settings (see SettingsFile for what each section holds). tests/runner/src/TestStack.php copies
+# them into each stack's config/settings.yaml, adding a retention section with the suite's own retention settings.
+# The providers are the development stack's two Mailpit containers, so no test ever sends real email.
+
+general:
+  timezone: "Europe/London"
+
+security:
+  require_mfa: true
+
+proxies:
+  behind_cloudflare: false
+  trusted_proxies: []
+
+sending:
+  system_email_from: "noreply@example.org"
+  sync_wait_seconds: 5
+
+google_sso:
+  enabled: true
+  client_id: "test-client.apps.googleusercontent.com"
+  client_secret: "test-secret"
+  bypass_mfa: "never"
+
+providers:
+  # The development stack's providers: the two Mailpit containers in docker-dev-compose.yml, which catch every email
+  # rather than sending it. Use Mailpit's Chaos (in its web interface) to make one refuse emails, and try the modes.
+  #
+  # mode: one of round_robin, overflow, fallback.
+  #   round_robin: Take turns between the providers, skipping any at their rate limits.
+  #   overflow: Use the first provider, and the next ones only while the earlier ones are at their rate limits.
+  #   fallback: Use the first provider, and the next ones only if it can't be reached or rejects the email.
+  mode: "overflow"
+
+  providers:
+    - name: "mailpit"
+      type: "custom"
+      enabled: true
+      host: "mailpit"
+      port: 1025
+      security: "none"
+      username: ""
+      password: ""
+      rate_limits: []
+
+    - name: "mailpit-secondary"
+      type: "custom"
+      enabled: true
+      host: "mailpit-secondary"
+      port: 1025
+      security: "none"
+      username: ""
+      password: ""
+      rate_limits: []

@@ -1,0 +1,295 @@
+{
+    "_readme": [
+        "This file locks the dependencies of your project to a known state",
+        "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
+        "This file is @generated automatically"
+    ],
+    "content-hash": "840c9b0635899a83028cab5a6fefcfa0",
+    "packages": [
+        {
+            "name": "programster/autoloader",
+            "version": "1.0.3",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/programster/package-autoloader.git",
+                "reference": "171cdcfcdf09313ef4df5ceea68f84ebabd42660"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/programster/package-autoloader/zipball/171cdcfcdf09313ef4df5ceea68f84ebabd42660",
+                "reference": "171cdcfcdf09313ef4df5ceea68f84ebabd42660",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">= 8.1"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Programster\\Autoloader\\": ""
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Stuart Page",
+                    "email": "stuart.page@irap.org"
+                },
+                {
+                    "name": "Stuart Page",
+                    "email": "sdpagent@gmail.com"
+                }
+            ],
+            "description": "An package to make it easy to autoload code.",
+            "homepage": "https://github.com/programster/package-autoloader",
+            "keywords": [
+                "autoloader"
+            ],
+            "support": {
+                "source": "https://github.com/programster/package-autoloader/tree/1.0.3"
+            },
+            "time": "2025-07-09T08:55:25+00:00"
+        },
+        {
+            "name": "programster/collections",
+            "version": "4.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/programster/package-collections.git",
+                "reference": "893f7dd0f1f4c7cf6c0427288c535b4a516f045b"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/programster/package-collections/zipball/893f7dd0f1f4c7cf6c0427288c535b4a516f045b",
+                "reference": "893f7dd0f1f4c7cf6c0427288c535b4a516f045b",
+                "shasum": ""
+            },
+            "require": {
+                "php": "^8.2"
+            },
+            "require-dev": {
+                "phpstan/phpstan": "^2.3"
+            },
+            "suggest": {
+                "phpstan/extension-installer": "Loads this package's PHPStan rules (extension.neon), which report maps created with elements that won't have string keys, and writes to readonly collections and maps with array syntax."
+            },
+            "type": "library",
+            "extra": {
+                "phpstan": {
+                    "includes": [
+                        "extension.neon"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Programster\\Collections\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Stuart Page",
+                    "email": "sdpagent@gmail.com",
+                    "homepage": "https://blog.programster.org",
+                    "role": "Developer"
+                }
+            ],
+            "description": "Strictly typed collections, including readonly ones for defensive programming.",
+            "homepage": "https://github.com/programster/package-collections",
+            "keywords": [
+                "collection",
+                "library"
+            ],
+            "support": {
+                "issues": "https://github.com/programster/package-collections/issues",
+                "source": "https://github.com/programster/package-collections/tree/4.0.0"
+            },
+            "time": "2026-11-18T10:58:30+00:00"
+        },
+        {
+            "name": "programster/pgsql-lib",
+            "version": "3.2.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/programster/package-pgsql-lib.git",
+                "reference": "a632e390deaa4cbeb025748682655bcb18953c84"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/programster/package-pgsql-lib/zipball/a632e390deaa4cbeb025748682655bcb18953c84",
+                "reference": "a632e390deaa4cbeb025748682655bcb18953c84",
+                "shasum": ""
+            },
+            "require": {
+                "ext-pgsql": "*",
+                "php": "^8.2"
+            },
+            "require-dev": {
+                "programster/autoloader": "^1.0.3",
+                "programster/pgsql-migrations": "^1.1"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Programster\\PgsqlLib\\": "src/",
+                    "Programster\\PgsqlLib\\Exceptions\\": "src/exceptions"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Stuart Page",
+                    "email": "sdpagent@gmail.com",
+                    "homepage": "https://blog.programster.org",
+                    "role": "Developer"
+                }
+            ],
+            "description": "A library for interfacing with a PostgreSQL database in PHP.",
+            "homepage": "https://github.com/programster/package-pgsql-lib",
+            "keywords": [
+                "pgsql",
+                "postgresql"
+            ],
+            "support": {
+                "issues": "https://github.com/programster/package-pgsql-lib/issues",
+                "source": "https://github.com/programster/package-pgsql-lib/tree/3.2.0"
+            },
+            "time": "2026-11-18T12:01:18+00:00"
+        },
+        {
+            "name": "programster/pgsql-task-queue",
+            "version": "1.0.0-alpha6",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/programster/package-pgsql-task-queue.git",
+                "reference": "c79466b35a4662dc24d1d989c7a6735150268f4d"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/programster/package-pgsql-task-queue/zipball/c79466b35a4662dc24d1d989c7a6735150268f4d",
+                "reference": "c79466b35a4662dc24d1d989c7a6735150268f4d",
+                "shasum": ""
+            },
+            "require": {
+                "ext-pgsql": "*",
+                "php": "^8.2",
+                "programster/collections": "^4.0",
+                "programster/pgsql-lib": "^3.2",
+                "psr/clock": "^1.0"
+            },
+            "require-dev": {
+                "phpstan/phpstan": "^2.1"
+            },
+            "suggest": {
+                "ext-pcntl": "Lets a worker stop cleanly on SIGTERM and SIGINT, once it has finished the task it's on."
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Programster\\PgsqlTaskQueue\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Stuart Page",
+                    "email": "sdpagent@gmail.com",
+                    "homepage": "https://blog.programster.org",
+                    "role": "Developer"
+                }
+            ],
+            "description": "A simple PostgreSQL task queue for PHP: tasks that can depend on each other, taken and run by any number of workers.",
+            "homepage": "https://github.com/programster/package-pgsql-task-queue",
+            "keywords": [
+                "job queue",
+                "pgsql",
+                "postgresql",
+                "queue",
+                "task queue",
+                "worker"
+            ],
+            "support": {
+                "issues": "https://github.com/programster/package-pgsql-task-queue/issues",
+                "source": "https://github.com/programster/package-pgsql-task-queue/tree/1.0.0-alpha6"
+            },
+            "time": "2026-11-18T12:06:05+00:00"
+        },
+        {
+            "name": "psr/clock",
+            "version": "1.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/php-fig/clock.git",
+                "reference": "e41a24703d4560fd0acb709162f73b8adfc3aa0d"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/php-fig/clock/zipball/e41a24703d4560fd0acb709162f73b8adfc3aa0d",
+                "reference": "e41a24703d4560fd0acb709162f73b8adfc3aa0d",
+                "shasum": ""
+            },
+            "require": {
+                "php": "^7.0 || ^8.0"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Psr\\Clock\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "PHP-FIG",
+                    "homepage": "https://www.php-fig.org/"
+                }
+            ],
+            "description": "Common interface for reading the clock.",
+            "homepage": "https://github.com/php-fig/clock",
+            "keywords": [
+                "clock",
+                "now",
+                "psr",
+                "psr-20",
+                "time"
+            ],
+            "support": {
+                "issues": "https://github.com/php-fig/clock/issues",
+                "source": "https://github.com/php-fig/clock/tree/1.0.0"
+            },
+            "time": "2022-11-25T14:36:26+00:00"
+        }
+    ],
+    "packages-dev": [],
+    "aliases": [],
+    "minimum-stability": "stable",
+    "stability-flags": {
+        "programster/pgsql-task-queue": 15
+    },
+    "prefer-stable": false,
+    "prefer-lowest": false,
+    "platform": {
+        "php": "^8.5",
+        "ext-curl": "*",
+        "ext-pgsql": "*",
+        "ext-posix": "*"
+    },
+    "platform-dev": {},
+    "plugin-api-version": "2.9.0"
+}

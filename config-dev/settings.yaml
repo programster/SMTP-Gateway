@@ -1,0 +1,47 @@
+# The settings that are changed on the Settings and Providers pages of the web interface (or through
+# the API), which check them before every save. A setting written as "${NAME}" is read from the
+# environment variable NAME (e.g. set in .env), so secrets can be kept out of this file. Any setting
+# (or section) that's left out has its default.
+
+general:
+  # Times are shown in this time zone in the web interface.
+  timezone: "Europe/London"
+
+retention:
+  # How many days each part of an email, and the logs, are kept. For content and attachments, -1 is not
+  # kept, and 0 is as long as what they're part of (the record, or the content).
+  email_record_days: 90
+  email_content_days: 30
+  email_attachment_days: 0
+  log_days: 90
+
+providers:
+  # The development stack's providers: the two Mailpit containers in docker-dev-compose.yml, which catch every email
+  # rather than sending it. Use Mailpit's Chaos (in its web interface) to make one refuse emails, and try the modes.
+  #
+  # mode: one of round_robin, overflow, fallback.
+  #   round_robin: Take turns between the providers, skipping any at their rate limits.
+  #   overflow: Use the first provider, and the next ones only while the earlier ones are at their rate limits.
+  #   fallback: Use the first provider, and the next ones only if it can't be reached or rejects the email.
+  mode: "overflow"
+
+  providers:
+    - name: "mailpit"
+      type: "custom"
+      enabled: true
+      host: "mailpit"
+      port: 1025
+      security: "none"
+      username: ""
+      password: ""
+      rate_limits: []
+
+    - name: "mailpit-secondary"
+      type: "custom"
+      enabled: true
+      host: "mailpit-secondary"
+      port: 1025
+      security: "none"
+      username: ""
+      password: ""
+      rate_limits: []

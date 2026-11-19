@@ -1,0 +1,28 @@
+.env
+.sass-cache
+
+# Ignore PHP package files
+site/vendor
+
+# Ignore the TypeScript compiler and its output, which is built from site/ts.
+site/node_modules
+site/package-lock.json
+site/public/js/*
+!site/public/js/.gitkeep
+
+# Ignore IDE files
+.idea
+
+# ignore all libreoffice lock files
+.~lock*
+
+# The settings (settings.yaml), which may contain secrets written out in full. Download it from the web interface
+# (which replaces any such secrets with "${ENV_VAR}" references) to get a copy that's safe to commit.
+config/*
+!config/.gitkeep
+
+# What tests/run-tests.sh creates while it runs: the test stacks' settings, settings.yaml, logs and state.
+tests/.run
+
+# Python's compiled bytecode, written when the integration tests run.
+__pycache__/

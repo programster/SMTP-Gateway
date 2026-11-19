@@ -1,0 +1,51 @@
+{
+    "require": {
+        "ext-iconv": "*",
+        "ext-mbstring": "*",
+        "ext-openssl": "*",
+        "ext-pcntl": "*",
+        "ext-pgsql": "*",
+        "ext-posix": "*",
+        "chillerlan/php-qrcode": "^6.0",
+        "firebase/php-jwt": "^7.2.1",
+        "guzzlehttp/guzzle": "^8.4",
+        "lbuchs/webauthn": "^2.2",
+        "league/commonmark": "^2.7",
+        "phpmailer/phpmailer": "^6.9",
+        "programster/abstract-view": "^1.1.1",
+        "programster/autoloader": "^1.0.3",
+        "programster/collections": "^4.0",
+        "programster/core-libs": "^4.0",
+        "programster/google-sso": "^1.0.1",
+        "programster/log": "^4.0",
+        "programster/orm-generator": "^1.1",
+        "programster/pgsql-logger": "^3.0.0-alpha1@alpha",
+        "programster/pgsql-migrations": "^1.2",
+        "programster/pgsql-objects": "^5.0.0-alpha6@alpha",
+        "programster/swagger": "^4.0",
+        "slim/psr7": "^1.5",
+        "slim/slim": "4.*",
+        "spomky-labs/otphp": "^11.5",
+        "symfony/dotenv": "^5.3",
+        "zbateson/mail-mime-parser": "^4.0"
+    },
+    "config": {
+        "sort-packages": true,
+        "preferred-install": {
+            "programster/google-sso": "source",
+            "*": "dist"
+        },
+        "platform": {
+            "php": "8.5.0",
+            "ext-simplexml": "1",
+            "ext-mbstring": "1",
+            "ext-pgsql": "1",
+            "ext-dom": "1",
+            "ext-xml": "1",
+            "ext-xmlwriter": "1",
+            "ext-curl": "1",
+            "ext-gd": "1",
+            "ext-zip": "1"
+        }
+    }
+}

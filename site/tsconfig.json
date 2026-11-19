@@ -1,0 +1,14 @@
+{
+    "compilerOptions": {
+        "target": "es2020",
+        "module": "es2020",
+        "lib": ["es2020", "dom"],
+        "rootDir": "ts",
+        "outDir": "public/js",
+        "strict": true,
+        "noImplicitReturns": true,
+        "noUnusedLocals": true,
+        "removeComments": false
+    },
+    "include": ["ts/**/*.ts"]
+}

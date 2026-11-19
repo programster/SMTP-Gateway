@@ -1,0 +1,6 @@
+.git
+.env
+site/vendor
+site/node_modules
+logs
+tls

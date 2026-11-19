@@ -1,0 +1,665 @@
+:root {
+    --bg: #f6f7f9;
+    --surface: #ffffff;
+    --text: #1d2330;
+    --muted: #5d6676;
+    --border: #d9dde4;
+    --accent: #2459c9;
+    --accent-text: #ffffff;
+    --danger: #b42318;
+    --success-bg: #e6f4ea;
+    --success-text: #1e5b2e;
+    --error-bg: #fdecea;
+    --error-text: #8a1c12;
+    --warning-bg: #fdf3dc;
+    --warning-text: #7a4d00;
+    --bar-sent: #6b93e8;
+    --bar-queued: #1f3f8a;
+    --code-bg: #eef0f4;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #14171c;
+        --surface: #1d2128;
+        --text: #e6e9ee;
+        --muted: #a0a8b6;
+        --border: #343a45;
+        --accent: #7aa2f7;
+        --accent-text: #0e1320;
+        --danger: #f2837a;
+        --success-bg: #183524;
+        --success-text: #9fdcb0;
+        --error-bg: #3d1a17;
+        --error-text: #f6b4ad;
+        --warning-bg: #3a2d10;
+        --warning-text: #f3d08a;
+        --bar-sent: #4d74c9;
+        --bar-queued: #9bb8f5;
+        --code-bg: #262b34;
+    }
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+}
+
+a { color: var(--accent); }
+h1 { font-size: 1.6rem; margin: 0 0 1rem; }
+h2 { font-size: 1.25rem; margin: 2rem 0 0.75rem; }
+h3 { font-size: 1rem; margin: 1.25rem 0 0.5rem; color: var(--muted); }
+code, pre, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em; }
+code { background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 4px; overflow-wrap: anywhere; }
+pre { background: var(--code-bg); padding: 0.75rem; border-radius: 6px; overflow-x: auto; margin: 0.5rem 0; }
+
+.site-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1.5rem;
+    padding: 0.75rem 1rem;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+}
+
+.site-name { font-weight: 700; text-decoration: none; color: var(--text); }
+
+/* Once logged in, the menu is in a side panel on the left, and the page beside it. */
+.has-sidebar { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 100vh; }
+
+.sidebar {
+    position: sticky;
+    top: 0;
+    height: 100vh;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    padding: 1rem 0.75rem;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+}
+
+.sidebar .site-name { padding: 0 0.5rem; font-size: 1.05rem; }
+.sidebar ul { list-style: none; margin: 0; padding: 0; }
+.sidebar-menu { flex: 1; }
+.sidebar-account { border-top: 1px solid var(--border); padding-top: 0.75rem; }
+.sidebar-account form { margin: 0; }
+
+.nav-link, .nav-section > summary {
+    display: block;
+    width: 100%;
+    padding: 0.4rem 0.5rem;
+    border-radius: 6px;
+    color: var(--text);
+    text-align: left;
+    text-decoration: none;
+    font-weight: normal;
+    cursor: pointer;
+}
+
+button.nav-link { background: none; border: 0; font: inherit; }
+
+/* An entry's icon (see Icon), beside its label, and a little fainter than it, unless it's the current page. */
+.nav-link, .nav-section > summary { display: flex; align-items: center; gap: 0.6rem; }
+.nav-link > .icon, .nav-section > summary > .icon { flex: none; opacity: 0.8; }
+.nav-link[aria-current=page] > .icon { opacity: 1; }
+.nav-link:hover, .nav-section > summary:hover { background: var(--code-bg); }
+.nav-link[aria-current=page] { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+
+/* A section's own arrow, which turns when it's open, in place of the browser's marker. */
+.nav-section > summary { list-style: none; font-weight: 600; }
+.nav-section > summary::-webkit-details-marker { display: none; }
+.nav-section > summary::after { content: "\203A"; margin-left: auto; color: var(--muted); transition: transform 0.15s; }
+.nav-section[open] > summary::after { transform: rotate(90deg); }
+.nav-section ul { margin: 0.1rem 0 0.3rem 0.75rem; padding-left: 0.5rem; border-left: 1px solid var(--border); }
+
+.page { min-width: 0; }
+
+/* Rows added one at a time (see DynamicRows.ts): each row's inputs, its remove button, and any error beside it. */
+.dynamic-row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin-bottom: 0.5rem; }
+.dynamic-row > input[type=text], .dynamic-row > input[type=number] { flex: 1 1 12rem; width: auto; }
+.dynamic-row > select { flex: 1 1 10rem; width: auto; }
+.dynamic-row .row-error { flex-basis: 100%; color: var(--danger); font-size: 0.85rem; }
+.dynamic-row .row-error:empty { display: none; }
+.dynamic-rows [data-role=add-row] { margin-top: 0.1rem; }
+
+/* The provider form: each type's fields, each secret's choice of where it comes from, and the modes. */
+.provider-type-fields {
+    margin: 1rem 0;
+    padding: 0.5rem 1rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+.provider-type-fields legend { font-weight: 600; padding: 0 0.4rem; }
+.secret-sources { display: flex; flex-wrap: wrap; gap: 0.25rem 1.25rem; margin-bottom: 0.4rem; }
+.mode-option { display: flex; gap: 0.6rem; align-items: flex-start; font-weight: normal; margin: 0.6rem 0; }
+.mode-option input { margin-top: 0.3rem; }
+.mode-option .hint { display: block; margin: 0.1rem 0 0; }
+details.advanced > summary { cursor: pointer; font-weight: 600; }
+details.advanced[open] > summary { margin-bottom: 0.5rem; }
+
+/* A page of the documentation, rendered from its Markdown. */
+.documentation { max-width: 880px; }
+.documentation h1 { margin-top: 0; }
+.documentation h2 { border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; }
+.documentation table { margin: 0.75rem 0; }
+.documentation th, .documentation td { vertical-align: top; text-align: left; }
+.documentation li { margin: 0.2rem 0; }
+
+/* On a narrow screen, the side panel goes above the page instead. */
+@media (max-width: 760px) {
+    .has-sidebar { display: block; }
+    .sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--border); }
+}
+
+main { max-width: 1200px; margin: 0 auto; padding: 1.5rem 1rem 3rem; }
+.site-footer { text-align: center; color: var(--muted); padding: 1rem; font-size: 0.85rem; }
+
+.card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+}
+
+.narrow { max-width: 460px; margin: 2rem auto; }
+.muted, .hint { color: var(--muted); }
+.hint { font-size: 0.85rem; margin: 0.25rem 0 0; }
+
+.flash { padding: 0.6rem 0.9rem; border-radius: 6px; }
+.flash-success { background: var(--success-bg); color: var(--success-text); }
+.flash-error { background: var(--error-bg); color: var(--error-text); }
+.flash-warning { background: var(--warning-bg); color: var(--warning-text); }
+
+label { display: block; font-weight: 600; margin: 0.9rem 0 0.25rem; }
+label.inline { display: inline; font-weight: normal; margin: 0; }
+
+/* Browsers indent checkboxes and radios a few pixels, which puts them out of line with the text above and below. */
+input[type=checkbox], input[type=radio] { margin-left: 0; }
+
+/* A group of fields, in the site's own border rather than the browser's grooved one. */
+fieldset { margin: 0; padding: 0.5rem 1rem 0.9rem; border: 1px solid var(--border); border-radius: 8px; }
+legend { padding: 0 0.4rem; font-weight: 600; }
+
+input[type=text],
+input[type=email],
+input[type=url],
+input[type=tel],
+input[type=password],
+input[type=number],
+input[type=search],
+input[type=datetime-local],
+select,
+textarea {
+    width: 100%;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg);
+    color: var(--text);
+    font: inherit;
+}
+
+textarea { min-height: 5.5rem; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+button, .button {
+    display: inline-block;
+    padding: 0.5rem 1rem;
+    border: 0;
+    border-radius: 6px;
+    background: var(--accent);
+    color: var(--accent-text);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+button.danger { background: var(--danger); color: #fff; }
+button.secondary, .button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--border); }
+button:disabled { opacity: 0.6; cursor: wait; }
+.icon-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.35rem;
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid transparent;
+    border-radius: 6px;
+}
+
+.icon-button:hover, .icon-button:focus-visible { color: var(--danger); border-color: var(--border); }
+.icon { display: block; }
+.icon-button.neutral:hover, .icon-button.neutral:focus-visible { color: var(--accent); }
+.button .icon, button .icon { display: inline-block; vertical-align: -0.2em; }
+
+/* Text only for screen readers, e.g. a heading over a column of buttons. */
+.visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+/* A page's heading, with its buttons beside it, e.g. a provider's Edit and Remove. */
+.page-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.page-actions { display: flex; gap: 0.5rem; }
+
+/* A list of labels and values, e.g. a provider's type and status. */
+.details { display: grid; grid-template-columns: max-content 1fr; gap: 0.5rem 1.5rem; margin: 0; }
+.details dt { font-weight: 600; }
+.details dd { margin: 0; }
+
+/*
+ * The rows of the enabled providers, dragged by their handle into another order (see SortableRows.ts): the others
+ * slide aside, and the one being dragged is lifted above them.
+ */
+td.drag-cell { width: 1%; }
+.drag-handle { cursor: grab; touch-action: none; }
+.drag-handle:hover, .drag-handle:focus-visible { color: var(--accent); }
+.is-sorting, .is-sorting .drag-handle { cursor: grabbing; user-select: none; }
+.is-sorting > tr { transition: transform 0.15s ease; }
+.is-sorting > tr.is-dragging {
+    position: relative;
+    z-index: 1;
+    transition: none;
+    background: var(--surface);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+}
+
+.order-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
+.order-bar[hidden] { display: none; }
+
+/* The dashboard's widgets: who and what has been using the service. */
+.widgets { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
+.widget { margin: 0; }
+.widget h3 { margin-top: 0; }
+.widget h3 a { color: var(--text); text-decoration: none; }
+.widget h3 a:hover, .widget h3 a:focus-visible { color: var(--accent); text-decoration: underline; }
+.widget-list { margin: 0; padding-left: 1.2rem; }
+ul.widget-list { list-style: none; padding-left: 0; }
+.widget-list li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 0.75rem; padding: 0.3rem 0; }
+.widget-list li + li { border-top: 1px solid var(--border); }
+ol.widget-list li { display: list-item; }
+ol.widget-list li .hint { float: right; }
+.period-switch { display: flex; gap: 0.25rem; margin-bottom: 0.5rem; }
+.period-switch a { padding: 0.15rem 0.5rem; border-radius: 6px; font-size: 0.85rem; text-decoration: none; }
+.period-switch a[aria-current] { background: var(--accent); color: var(--accent-text); }
+td.row-actions { width: 1%; white-space: nowrap; text-align: right; }
+
+dialog {
+    width: min(420px, calc(100vw - 2rem));
+    padding: 1.25rem;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+}
+
+dialog::backdrop { background: rgb(0 0 0 / 0.45); }
+
+/*
+ * Every dialog slides down from just above where it ends up, and fades in, as Bootstrap's modals do, and leaves the
+ * same way. A browser without @starting-style (or "allow-discrete") just shows and hides it, as before.
+ */
+dialog, dialog::backdrop {
+    opacity: 0;
+    transition:
+        opacity 0.2s ease-out,
+        transform 0.3s ease-out,
+        overlay 0.3s allow-discrete,
+        display 0.3s allow-discrete;
+}
+
+dialog { transform: translateY(-50px); }
+dialog[open], dialog[open]::backdrop { opacity: 1; }
+dialog[open] { transform: none; }
+
+@starting-style {
+    dialog[open], dialog[open]::backdrop { opacity: 0; }
+    dialog[open] { transform: translateY(-50px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    dialog, dialog::backdrop { transition: none; }
+    dialog { transform: none; }
+}
+
+/* A help dialog (see ViewHelpDialog): its title and close button, then each term and what it means. */
+.help-dialog { width: min(560px, calc(100vw - 2rem)); }
+.dialog-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+.help-entries dt { font-weight: 600; margin-top: 0.9rem; }
+.help-entries dd { margin: 0.2rem 0 0; }
+.help-button { display: inline-flex; vertical-align: middle; padding: 0.15rem; margin-left: 0.25rem; }
+
+/* A set of radio choices, each on its own line, with room between them, and its summary beside it, if it has one. */
+.choices .choice { display: flex; gap: 0.6rem; align-items: flex-start; font-weight: normal; margin: 0.55rem 0; }
+.choices .choice input { margin-top: 0.3rem; }
+.choices .choice .hint { display: block; margin: 0.1rem 0 0; }
+.set-password { margin: 0.25rem 0 0 1.6rem; }
+.set-password[hidden] { display: none; }
+dialog h3 { margin-top: 0; color: var(--text); }
+.link-button { background: none; border: 0; padding: 0; color: var(--accent); font-weight: normal; cursor: pointer; }
+.inline-form { display: inline; margin: 0; }
+.form-actions { margin-top: 1.25rem; display: flex; gap: 0.75rem; flex-wrap: wrap; align-items: center; }
+
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0 1.5rem; }
+/* An API key's age (see ViewKeyAge): yellow as it nears a year, red from a year. */
+.key-age { white-space: nowrap; }
+.key-age.age-warning, .key-age.age-danger { padding: 0.05rem 0.45rem; border-radius: 999px; font-weight: 600; }
+.key-age.age-warning { background: var(--warning-bg); color: var(--warning-text); }
+.key-age.age-danger { background: var(--error-bg); color: var(--error-text); }
+
+/* A settings section's form, with more room between its parts than most forms, as each is a setting of its own. */
+.settings-form > h3, .settings-form .grid-2 > div > h3 { margin-top: 2rem; }
+.settings-form > h3:first-of-type { margin-top: 1.25rem; }
+.settings-form > label, .settings-form .grid-3 label { margin-top: 1.25rem; }
+.settings-form > .hint, .settings-form > fieldset, .settings-form .grid-2 > fieldset { margin-bottom: 0.75rem; }
+.settings-form fieldset { margin-top: 1.25rem; }
+.settings-form .dynamic-rows { margin-top: 0.5rem; }
+.settings-form .form-actions { margin-top: 2rem; }
+
+/*
+ * In every form (and card with a field in it), the text (headings, labels, paragraphs and hints, and checkboxes and
+ * radios with theirs) is indented 2px, so it lines up with where a field's border and rounded corners make its edge
+ * look, rather than its outermost pixel. Only the boxes (fields, rows of them, fieldsets and buttons) sit at the edge
+ * itself. A hint inside a label (e.g. a radio's) is already indented with it.
+ */
+:is(form, .card:has(input:not([type=hidden]), select, textarea)) :is(label, h2, h3, p, .hint):not(label *, .flash) {
+    padding-left: 2px;
+}
+
+.cloudflare-status { margin-top: 1.5rem; }
+
+.grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0 1.5rem; }
+.rate-limit-row { display: grid; grid-template-columns: 1fr 1.6fr 1.3fr auto; gap: 0.5rem; margin-bottom: 0.5rem; }
+.filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0 1rem; align-items: end; }
+
+/*
+ * The logs' filters line up along their tops, so the "Regular expression" box can sit under the message's, in line
+ * with its left edge, with the buttons on a row of their own.
+ */
+.log-filters { align-items: start; }
+@media (min-width: 700px) {
+    .log-filters .search-field, .log-filters .context-field { grid-column: span 2; }
+}
+
+.context-inputs { display: flex; gap: 0.5rem; }
+.context-inputs input { min-width: 0; }
+
+.page-size { display: flex; align-items: center; gap: 0.5rem; margin: 0; }
+.page-size label { margin: 0; }
+.log-filters .regex-option { margin: 0.35rem 0 0; }
+
+.log-filters .form-actions { grid-column: 1 / -1; margin-top: 0.75rem; }
+
+/* A table whose rows each open a page: the row's link covers the whole row, so it can be middle-clicked anywhere. */
+.clickable-row { position: relative; }
+.clickable-row:hover { background: var(--code-bg); }
+.row-link { color: var(--text); text-decoration: none; }
+.row-link::after { content: ""; position: absolute; inset: 0; }
+.row-link:focus-visible { outline: none; }
+.clickable-row:has(.row-link:focus-visible) { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.sort-link { color: inherit; text-decoration: none; white-space: nowrap; }
+.sort-link:hover, .sort-link:focus-visible { text-decoration: underline; }
+
+.pagination {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 1rem 0;
+}
+
+.pagination .pages { display: flex; flex-wrap: wrap; gap: 0.25rem; align-items: center; }
+.pagination .pages a, .pagination .pages .current { padding: 0.2rem 0.55rem; border-radius: 6px; }
+.pagination .pages a { text-decoration: none; }
+.pagination .pages a { border: 1px solid var(--border); }
+.pagination .pages .current { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+.log-context { overflow-x: auto; white-space: pre; }
+
+.table-wrap { overflow-x: auto; }
+td.differs { background: var(--warning-bg); color: var(--warning-text); font-weight: 600; }
+table { width: 100%; border-collapse: collapse; background: var(--surface); }
+th, td { text-align: left; padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); }
+td.num, th.num { text-align: right; }
+
+.badge { display: inline-block; padding: 0.05rem 0.5rem; border-radius: 999px; font-size: 0.8rem; background: var(--code-bg); }
+.badge-sent, .badge-delivered { background: var(--success-bg); color: var(--success-text); }
+.badge-failed, .badge-cancelled, .badge-revoked, .badge-error, .badge-critical, .badge-alert, .badge-emergency, .badge-bounced, .badge-dropped { background: var(--error-bg); color: var(--error-text); }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 0.75rem; }
+.tile { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; }
+a.tile { display: block; color: var(--text); text-decoration: none; }
+a.tile:hover, a.tile:focus-visible { border-color: var(--accent); }
+/* A row whose tiles each say what they count has wider tiles, so the line fits. */
+.tiles:has(.tile-description) { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+.tile-description { display: block; margin-top: 0.2rem; font-size: 0.8rem; color: var(--muted); }
+.tile-value { display: block; font-size: 1.5rem; font-weight: 700; }
+.tile-label { color: var(--muted); font-size: 0.85rem; }
+
+.secret-box { display: flex; gap: 0.5rem; align-items: stretch; margin: 0.25rem 0 0.75rem; }
+.secret-box input { flex: 1; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+.chart { margin: 1rem 0; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; }
+.chart figcaption { color: var(--muted); font-size: 0.85rem; margin-bottom: 0.5rem; }
+.legend-queued { color: var(--bar-queued); font-weight: 700; }
+.chart-bars { display: flex; align-items: flex-end; gap: 3px; height: 160px; padding-bottom: 1.4rem; position: relative; }
+.chart-bar { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; position: relative; min-width: 6px; }
+.chart-bar-sent { background: var(--bar-sent); border-radius: 2px 2px 0 0; }
+.chart-bar-queued { background: var(--bar-queued); }
+.chart-bar-label { position: absolute; bottom: -1.4rem; left: 50%; transform: translateX(-50%); font-size: 0.65rem; color: var(--muted); }
+.chart-bar:nth-child(odd) .chart-bar-label { visibility: hidden; }
+
+details summary { cursor: pointer; color: var(--accent); }
+.qr { background: #fff; padding: 0.5rem; border-radius: 6px; width: 220px; height: 220px; }
+
+@media (max-width: 640px) {
+    .chart-bar-label { display: none; }
+    .rate-limit-row { grid-template-columns: 1fr auto; }
+}
+
+/* Bar heights, in steps of 5%, as classes (the Content-Security-Policy doesn't allow inline styles). */
+.h-0 { height: 0%; }
+.h-5 { height: 5%; }
+.h-10 { height: 10%; }
+.h-15 { height: 15%; }
+.h-20 { height: 20%; }
+.h-25 { height: 25%; }
+.h-30 { height: 30%; }
+.h-35 { height: 35%; }
+.h-40 { height: 40%; }
+.h-45 { height: 45%; }
+.h-50 { height: 50%; }
+.h-55 { height: 55%; }
+.h-60 { height: 60%; }
+.h-65 { height: 65%; }
+.h-70 { height: 70%; }
+.h-75 { height: 75%; }
+.h-80 { height: 80%; }
+.h-85 { height: 85%; }
+.h-90 { height: 90%; }
+.h-95 { height: 95%; }
+.h-100 { height: 100%; }
+
+.yaml-editor { min-height: 28rem; white-space: pre; overflow-wrap: normal; overflow-x: auto; tab-size: 2; }
+
+/* Sender checks (ViewSenderChecks, SenderChecksPanel.ts). */
+.badge-check-ok { background: var(--success-bg); color: var(--success-text); }
+.badge-check-info { background: var(--code-bg); color: var(--text); }
+.badge-check-warning { background: var(--warning-bg); color: var(--warning-text); }
+.badge-check-error { background: var(--error-bg); color: var(--error-text); }
+.sender-check-group { border-top: 1px solid var(--border); padding: 0.5rem 0; }
+.sender-check-group summary { cursor: pointer; font-weight: 600; overflow-wrap: anywhere; }
+.sender-check-list { list-style: none; padding: 0; margin: 0.5rem 0 0.25rem; }
+.sender-check-list li { margin: 0 0 0.6rem; overflow-wrap: anywhere; }
+.sender-check-list .hint { margin-top: 0.15rem; }
+
+/* Backup codes (ViewBackupCodesPage, BackupCodes.ts, and the form on the second factor page). */
+@font-face {
+    font-family: "Atkinson Hyperlegible Mono";
+    src: url("/vendor/atkinson-hyperlegible-mono/atkinson-hyperlegible-mono-latin-500-normal.woff2") format("woff2");
+    font-weight: 500;
+    font-display: swap;
+}
+.backup-codes-page { max-width: 560px; }
+/* The site's address, on a line of its own, kept whole (an address that's too long for it ends in "..."). */
+.backup-codes-site {
+    display: block;
+    font-size: 0.75em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.backup-codes {
+    display: grid;
+    grid-template-columns: repeat(2, max-content);
+    gap: 0.6rem 2.5rem;
+    margin: 1rem 0;
+    padding-left: 2.5rem;
+}
+.backup-codes code {
+    font-family: "Atkinson Hyperlegible Mono", ui-monospace, monospace;
+    font-weight: 500;
+    font-size: 1.2rem;
+    letter-spacing: 0.06em;
+    background: none;
+    padding: 0;
+}
+.backup-code-login { margin-top: 1.5rem; }
+.backup-code-login[open] > summary { margin-bottom: 0.5rem; }
+.print-only { display: none; }
+
+@media print {
+    @page { margin: 2cm; }
+    .sidebar, .site-header, .site-footer, .flash, .no-print { display: none !important; }
+    body.has-sidebar { display: block; }
+    body { background: #fff; color: #000; }
+    .page, main { margin: 0; padding: 0; max-width: none; }
+    .print-only { display: block; }
+
+    /* The backup codes, centred on the page, in a dashed box. */
+    .backup-codes-page { max-width: none; margin: 3cm auto 0; text-align: center; }
+    .backup-codes-page h1 { font-size: 18pt; margin: 0 0 0.3rem; }
+    .backup-codes-for { color: #444; margin: 0 0 1.5rem; }
+    .backup-codes-card {
+        display: inline-block;
+        border: 1.5px dashed #000;
+        border-radius: 8px;
+        padding: 1rem 2.5rem;
+        background: #fff;
+    }
+    .backup-codes { justify-content: center; gap: 0.8rem 3rem; padding-left: 0; list-style-position: inside; }
+    .backup-codes code { font-size: 16pt; color: #000; }
+    .backup-codes-card .print-only { font-size: 10pt; color: #444; max-width: 22rem; margin: 0.5rem auto 0; }
+}
+
+
+/* Tabs (Tabs.ts), e.g. an email's HTML and plain text on its page. */
+.tab-list { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--border); margin-bottom: 1rem; }
+.tab-list [role=tab] {
+    background: none;
+    color: var(--muted);
+    border: none;
+    border-bottom: 2px solid transparent;
+    border-radius: 0;
+    margin-bottom: -1px;
+    padding: 0.5rem 0.9rem;
+    font-weight: 600;
+}
+.tab-list [role=tab]:hover { color: var(--text); }
+.tab-list [role=tab][aria-selected=true] { color: var(--accent); border-bottom-color: var(--accent); }
+.email-html {
+    display: block;
+    width: 100%;
+    height: 32rem;
+    max-height: 80vh;
+    min-height: 200px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: #fff;
+    resize: vertical;
+}
+.email-text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    max-height: 70vh;
+    overflow: auto;
+    margin: 0;
+    padding: 0.75rem 1rem;
+    background: var(--code-bg);
+    border-radius: 6px;
+}
+
+/*
+ * Toggle switches (ViewToggle): a checkbox drawn as a track with a knob that slides across. The checkbox itself is
+ * kept (invisible, over the whole toggle), so clicking, the keyboard and screen readers all work as they do for a
+ * checkbox.
+ */
+.toggle {
+    display: inline-flex;
+    align-items: flex-start;
+    line-height: 1.5rem;
+    gap: 0.6rem;
+    position: relative;
+    font-weight: normal;
+    margin: 0.25rem 0;
+    cursor: pointer;
+}
+.toggle input[role=switch] {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    opacity: 0;
+    cursor: pointer;
+}
+.toggle-track {
+    flex: none;
+    position: relative;
+    width: 2.75rem;
+    height: 1.5rem;
+    border-radius: 999px;
+    background: var(--border);
+    transition: background-color 0.2s ease;
+}
+.toggle-track::after {
+    content: "";
+    position: absolute;
+    top: 0.1875rem;
+    left: 0.1875rem;
+    width: 1.125rem;
+    height: 1.125rem;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    transition: transform 0.2s ease;
+}
+.toggle input[role=switch]:checked + .toggle-track { background: var(--accent); }
+.toggle input[role=switch]:checked + .toggle-track::after { transform: translateX(1.25rem); }
+.toggle-label .hint { display: block; line-height: 1.4; margin: 0; }
+.choices .toggle { display: flex; margin: 0.55rem 0; }
+.toggle input[role=switch]:focus-visible + .toggle-track { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+    .toggle-track, .toggle-track::after { transition: none; }
+}
+
+/* The users page: the "show archived accounts" toggle above the table, and a blocked or archived account's badge. */
+.archived-filter { margin: 0 0 1rem; }
+.badge-blocked { background: var(--error-bg); color: var(--error-text); }

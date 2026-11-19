@@ -1,0 +1,4 @@
+# Put the SMTP server's TLS certificate here, in PEM format: fullchain.pem (the certificate, followed by its
+# intermediates) and privkey.pem (its unencrypted private key). See SMTP_TLS_CERT_FILE in .env.example.
+*
+!.gitignore
