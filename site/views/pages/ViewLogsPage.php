@@ -61,7 +61,6 @@ class ViewLogsPage extends Programster\AbstractView\AbstractView
         $filter = $this->m_filter;
         $entries = $this->m_result->getEntries();
         $levels = $filter->getLevels();
-        $chosenLevel = (count($levels) > 0) ? $levels[0] : null;
         $categories = $filter->getCategories();
         $chosenCategory = (count($categories) > 0) ? $categories[0] : null;
         $sort = $this->m_page->getSort();
@@ -82,16 +81,18 @@ class ViewLogsPage extends Programster\AbstractView\AbstractView
             placeholder="e.g. failed">
         <div class="regex-option"><?= new ViewToggle('regex', 'Regular expression', $filter->isRegex()) ?></div>
     </div>
-    <div>
-        <label for="level">Level</label>
-        <select id="level" name="level">
-            <option value="">Any level</option>
+    <div class="level-field">
+        <label for="level">Levels</label>
+        <select id="level" name="level[]" multiple size="<?= count(LogLevel::cases()) ?>"
+            aria-describedby="level-hint">
             <?php foreach (LogLevel::cases() as $level): ?>
-                <option value="<?= $level->value ?>"<?= ($level === $chosenLevel) ? ' selected' : '' ?>><?= Html::e(
+                <option value="<?= $level->value ?>"<?= $levels->contains($level) ? ' selected' : '' ?>><?= Html::e(
                     $level->getLabel()
                 ) ?></option>
             <?php endforeach; ?>
         </select>
+        <p class="hint" id="level-hint">None for every level. Shift-click to choose a range (e.g. Error to Emergency),
+            or Ctrl-click (&#8984;-click on a Mac) to add or remove one.</p>
     </div>
     <div>
         <label for="category">Category</label>

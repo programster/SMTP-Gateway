@@ -68,4 +68,9 @@ readonly class PreviousSettings
 
         return $result;
     }
+
+
+    # Accessors
+    public function exists() : bool { return $this->m_exists; }
+    public function getSettings() : ConfigSettingCollection { return clone $this->m_settings; }
 }

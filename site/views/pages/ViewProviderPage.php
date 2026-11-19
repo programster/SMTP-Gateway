@@ -210,19 +210,9 @@ class ViewProviderPage extends Programster\AbstractView\AbstractView
     {
         $value = $setting->getValue();
 
-        if ($value instanceof ConfigValue && $value->isReference())
+        if ($value instanceof ConfigValue && $setting->isSecret() && $value->toConfigString() !== '')
         {
-            $state = $value->isAvailable()
-                ? '<span class="badge badge-sent">set</span>'
-                : '<span class="badge badge-failed">not set</span>';
-
-            $html = '<code>' . Html::e($value->toConfigString()) . '</code> ' . $state;
-        }
-        elseif ($value instanceof ConfigValue && $setting->isSecret() && $value->toConfigString() !== '')
-        {
-            $html =
-                '&bull;&bull;&bull;&bull; <span class="hint">(written out in full: a <code>${ENV_VAR}</code>'
-                . ' reference would keep it out of the file)</span>';
+            $html = '&bull;&bull;&bull;&bull; <span class="hint">(set, never shown)</span>';
         }
         elseif ($value instanceof ConfigValue)
         {

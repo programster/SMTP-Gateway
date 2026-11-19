@@ -28,9 +28,8 @@ final class SettingsFile
 
     private const string HEADER =
         "# The settings that are changed on the Settings and Providers pages of the web interface (or through\n"
-        . "# the API), which check them before every save. A setting written as \"\${NAME}\" is read from the\n"
-        . "# environment variable NAME (e.g. set in .env), so secrets can be kept out of this file. Any setting\n"
-        . "# (or section) that's left out has its default.";
+        . "# the API), which check them before every save. Any setting (or section) that's left out has its\n"
+        . "# default. It holds the providers' passwords, keys and tokens, so keep it as safe as they are.";
 
 
     /**
@@ -204,28 +203,22 @@ final class SettingsFile
 
 
     /**
-     * Get the whole file as YAML that's safe to commit to version control: the secrets that are written out in full
-     * are replaced with references to environment variables to put them in.
+     * Get the whole file, for downloading as a backup, with a comment at the top saying it holds every secret in
+     * full (the providers' passwords, keys and tokens, and the Google login's client secret), so it mustn't be
+     * committed to version control or shared.
      *
      * @return string
      *
-     * @throws SettingsFileInvalidException - if the file can't be read, or isn't valid YAML.
+     * @throws SettingsFileInvalidException - if the file can't be read.
      */
     public static function export() : string
     {
-        $raw = self::readFile();
-        $sections = self::readSections($raw);
-        $texts = [];
+        $warning =
+            "# A copy of settings.yaml, with every secret in it written out in full: the providers' passwords, keys\n"
+            . "# and tokens, and the Google login's client secret. Keep it as safe as they are: don't commit it to\n"
+            . "# version control, or share it.\n\n";
 
-        foreach (SettingsSection::cases() as $section)
-        {
-            if (isset($sections[$section->value]))
-            {
-                $texts[] = self::exportSection($raw, $section, $sections[$section->value]);
-            }
-        }
-
-        return self::formatFile(...$texts);
+        return $warning . self::readFile();
     }
 
 
@@ -301,7 +294,7 @@ final class SettingsFile
             }
         }
 
-        $yaml = GoogleSsoConfigParser::toYaml($config, SecretOutput::AS_IS);
+        $yaml = GoogleSsoConfigParser::toYaml($config);
         return self::saveSection(SettingsSection::GOOGLE_SSO, $yaml, $basedOnVersion);
     }
 
@@ -771,59 +764,6 @@ final class SettingsFile
         return ($afterKey !== '' && !str_starts_with($afterKey, '#'))
             ? $afterKey
             : trim(implode("\n", $dedented), "\n");
-    }
-
-
-    /**
-     * Get a section for export(): the providers and Google sign-in with their secrets replaced with references, if they
-     * can be read, and anything else as it's written.
-     *
-     * @param string $raw - the file's contents.
-     *
-     * @param SettingsSection $section
-     *
-     * @param mixed $data - the section, as decoded.
-     *
-     * @return string
-     */
-    private static function exportSection(string $raw, SettingsSection $section, mixed $data) : string
-    {
-        try
-        {
-            $text = match ($section) {
-                SettingsSection::PROVIDERS => self::exportProviders($data),
-                SettingsSection::GOOGLE_SSO => self::exportGoogleSso($data),
-                default => self::getSectionText($raw, $section, $data),
-            };
-        }
-        catch (InvalidInputException)
-        {
-            // An invalid section can't be read to find its secrets, so it's left out, rather than exported with them.
-            $text = "# The {$section->value} section was left out, as it isn't valid.";
-        }
-
-        return $text;
-    }
-
-
-    /**
-     * @throws InvalidInputException - if the section isn't valid.
-     */
-    private static function exportProviders(mixed $data) : string
-    {
-        $config = ProvidersConfigParser::parse($data, new ProviderDefinitionCollection());
-        $yaml = ProvidersConfigParser::toYaml($config, SecretOutput::EXPORT);
-        return self::formatSection(SettingsSection::PROVIDERS, $yaml);
-    }
-
-
-    /**
-     * @throws InvalidInputException - if the section isn't valid.
-     */
-    private static function exportGoogleSso(mixed $data) : string
-    {
-        $yaml = GoogleSsoConfigParser::toYaml(GoogleSsoConfigParser::parse($data), SecretOutput::EXPORT);
-        return self::formatSection(SettingsSection::GOOGLE_SSO, $yaml);
     }
 
 

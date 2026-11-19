@@ -17,8 +17,10 @@ which keep it in `config/settings.yaml`. The main settings in `.env` are:
 The limits all default to values that suit a VPS with 1 GB of memory and 2 vCPUs. See
 [Running on a small server](small-servers.md) for setting them for a bigger one.
 
-Any secret that `settings.yaml` refers to as `"${NAME}"` (e.g. a provider's API key) goes in `.env`
-too, with any name, followed by a restart.
+The providers' passwords, keys and tokens, and the Google login's client secret, aren't kept in `.env`:
+they're entered in the web interface, and kept in `settings.yaml`. Settings aren't read from environment
+variables, so a `"${NAME}"` reference to one, which an earlier version allowed, is refused, saying which
+setting to put the value in instead.
 
 ## Settings
 
@@ -68,12 +70,21 @@ only believed when the request really came from one of Cloudflare's addresses, s
 its address by sending the header itself. Responses go back the way the request came, through your
 proxy and Cloudflare, as they're sent over the same connection.
 
+If they aren't set up right, the dashboard says so at the top, as the logs would show the wrong
+addresses, IP address restrictions couldn't work, and the limit on failed logins would count everyone's
+failures against the proxy. It only looks at requests that say they were forwarded (with an
+`X-Forwarded-For` or `CF-Connecting-IP` header), so a service reached directly, inside a home or office
+network, is never warned about. It warns when the request came from a private address that isn't a
+trusted proxy (naming it, to add to the trusted proxies), when it came through Cloudflare but **Behind
+Cloudflare** is off, or when the address it ends up with is still a private one. **Don't show this
+again** hides it in that browser.
+
 Only the web interface and the HTTP API are affected: Cloudflare doesn't proxy SMTP, so the SMTP
 server always sees the address that connected to it.
 
-`config/settings.yaml` itself is git-ignored, as it may contain secrets. **Download settings.yaml**, on
-the Providers page, gives a copy that's safe to commit: secrets written out in full are replaced with
-`${ENV_VAR}` references, with a comment saying which variable to put each in.
+`config/settings.yaml` itself is git-ignored, as it holds secrets. **Download settings.yaml**, on the
+Providers page, gives a copy of it as a backup, with every secret in it written out in full, so keep it
+as safe as they are: don't commit it to version control, or share it.
 
 ## Upgrading from providers.yaml
 

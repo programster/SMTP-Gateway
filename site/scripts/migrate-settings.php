@@ -143,7 +143,7 @@ function readOldSettings(string $oldProvidersPath) : array
             $bypass
         );
 
-        $yaml = GoogleSsoConfigParser::toYaml($googleSso, SecretOutput::AS_IS);
+        $yaml = GoogleSsoConfigParser::toYaml($googleSso);
         $sections[] = SettingsFile::formatSection(SettingsSection::GOOGLE_SSO, $yaml);
     }
 

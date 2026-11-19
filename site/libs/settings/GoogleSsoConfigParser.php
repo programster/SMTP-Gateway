@@ -16,7 +16,6 @@ declare(strict_types = 1);
 
 final class GoogleSsoConfigParser
 {
-    private const string EXPORT_SECRET_NAME = 'GOOGLE_SSO_CLIENT_SECRET';
 
 
     /**
@@ -57,26 +56,13 @@ final class GoogleSsoConfigParser
 
 
     /**
-     * Get the section as YAML, without its "google_sso:" key or indentation.
-     *
+     * Get the section as YAML, without its "google_sso:" key or indentation, with the secret as it is.
      * @param GoogleSsoConfig $config
-     *
-     * @param SecretOutput $secretOutput - how to write the secret if it's written out in full, rather than a reference:
-     * as it is (AS_IS, for saving the file), or as a reference to GOOGLE_SSO_CLIENT_SECRET (EXPORT, for a copy that's
-     * safe to commit). MASKED is treated as EXPORT, as this section is never edited as YAML.
-     *
      * @return string
      */
-    public static function toYaml(GoogleSsoConfig $config, SecretOutput $secretOutput) : string
+    public static function toYaml(GoogleSsoConfig $config) : string
     {
-        $secret = $config->getClientSecret();
-        $isHiddenSecret = ($secret->isReference() === false && $secret->toConfigString() !== '');
-        $isExported = ($isHiddenSecret && $secretOutput !== SecretOutput::AS_IS);
-
-        $secretLine = $isExported
-            ? 'client_secret: ' . SettingsYaml::quote('${' . self::EXPORT_SECRET_NAME . '}')
-                . '  # Was written out in full, so has been left out. Put it in this environment variable.'
-            : 'client_secret: ' . SettingsYaml::quote($secret->toConfigString());
+        $secretLine = 'client_secret: ' . SettingsYaml::quote($config->getClientSecret()->toConfigString());
 
         $lines = [
             '# Logging in to the web interface with Google, set on the Settings page.',

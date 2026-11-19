@@ -641,9 +641,9 @@ final class OpenApiDocument
             . ' and a list of'
             . " \"providers\", each with a \"name\", \"type\" ({$types}), \"enabled\", \"rate_limits\" (each with a"
             . ' "unit", "max" and "period_seconds"), and the settings for its type (see "Types of provider" in the'
-            . ' README, e.g. sendgrid: api_key and webhook_public_key). A setting written as "${NAME}" is read from'
-            . ' the environment variable NAME. Secrets written out in full are returned as "<unchanged>", and kept'
-            . ' as they are if sent back that way. Unknown settings are refused.';
+            . ' README, e.g. sendgrid: api_key and webhook_public_key). Secrets (passwords, keys and tokens) are'
+            . ' returned as "<unchanged>", and kept as they are if sent back that way. Settings can\'t be read from'
+            . ' environment variables, so a "${NAME}" reference to one is refused. Unknown settings are refused.';
 
         $config = new SchemaObject($configDescription);
 
@@ -724,9 +724,9 @@ final class OpenApiDocument
     private static function createProvidersExportPath() : Path
     {
         $description =
-            'The providers (settings.yaml\'s providers section) as YAML that\'s safe to commit to version control:'
-            . ' secrets written out in full are replaced with "${ENV_VAR}" references, with a comment saying which'
-            . ' variable to put each in. 404, with the error code 31, before any providers have been set up.';
+            'The providers (settings.yaml\'s providers section) as YAML, as a backup, with every secret (password,'
+            . ' key and token) written out in full, so it mustn\'t be committed to version control or shared. 404,'
+            . ' with the error code 31, before any providers have been set up.';
 
         $response = new Response($description, new ContentMap(new MediaType(MimeType::PLAIN_TEXT, new SchemaString())));
 

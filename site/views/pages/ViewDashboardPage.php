@@ -12,6 +12,7 @@ class ViewDashboardPage extends Programster\AbstractView\AbstractView
     private readonly ProvidersOverview $m_providers;
     private readonly bool $m_userHasSecondFactor;
     private readonly DashboardUsage $m_usage;
+    private readonly ProxyWarning $m_proxyWarning;
 
 
     public function __construct(
@@ -21,7 +22,8 @@ class ViewDashboardPage extends Programster\AbstractView\AbstractView
         RateLimitSet $globalLimits,
         ProvidersOverview $providers,
         bool $userHasSecondFactor,
-        DashboardUsage $usage
+        DashboardUsage $usage,
+        ProxyWarning $proxyWarning
     )
     {
         $this->m_overall = $overall;
@@ -31,6 +33,7 @@ class ViewDashboardPage extends Programster\AbstractView\AbstractView
         $this->m_providers = $providers;
         $this->m_userHasSecondFactor = $userHasSecondFactor;
         $this->m_usage = $usage;
+        $this->m_proxyWarning = $proxyWarning;
     }
 
 
@@ -39,6 +42,7 @@ class ViewDashboardPage extends Programster\AbstractView\AbstractView
         $usage = $this->m_usage;
 ?>
 <h1>Dashboard</h1>
+<?= new ViewProxyWarning($this->m_proxyWarning) ?>
 <?php if ($this->m_userHasSecondFactor === false): ?>
     <?php /* Only reachable when a second factor isn't required, as otherwise the account would be setting one up. */ ?>
     <p class="flash flash-error">Your account has no two-factor authentication. <a href="/account">Set it up</a> to

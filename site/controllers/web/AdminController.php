@@ -243,8 +243,7 @@ class AdminController extends AbstractController
         $to = self::getQueryParam($request, 'to');
         $search = (string)($request->getQueryParams()['search'] ?? '');
         $isRegex = self::getQueryParam($request, 'regex') === '1';
-        $level = LogLevel::tryFrom(self::getQueryParam($request, 'level'));
-        $levels = ($level === null) ? new LogLevelCollection() : new LogLevelCollection($level);
+        $levels = self::readLogLevels($request->getQueryParams()['level'] ?? '');
         $category = LogCategory::tryFrom(self::getQueryParam($request, 'category'));
         $categories = ($category === null) ? new LogCategoryCollection() : new LogCategoryCollection($category);
         $contextName = self::getQueryParam($request, 'context_name');
@@ -579,5 +578,32 @@ class AdminController extends AbstractController
             : 'Give them the password somewhere safe.';
 
         return "The account was restored as \"{$restored->getEmail()}\". {$then}";
+    }
+
+
+    /**
+     * Read the log levels to show from the query string: a list (level[]=error&level[]=critical, as the form sends
+     * them) or one value of them, comma-separated (level=error,critical, as the page's own links have them). Any that
+     * isn't a level (e.g. from a mistyped link) is ignored, and none means every level.
+     *
+     * @param mixed $value - the "level" parameter, as PHP decoded it.
+     *
+     * @return LogLevelCollection - in the order of LogLevel's cases, from the least severe.
+     */
+    private static function readLogLevels(mixed $value) : LogLevelCollection
+    {
+        $given = is_array($value) ? $value : explode(',', is_string($value) ? $value : '');
+        $names = array_map('trim', array_filter($given, 'is_string'));
+        $levels = [];
+
+        foreach (LogLevel::cases() as $level)
+        {
+            if (in_array($level->value, $names, true))
+            {
+                $levels[] = $level;
+            }
+        }
+
+        return new LogLevelCollection(...$levels);
     }
 }

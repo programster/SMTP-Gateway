@@ -484,12 +484,7 @@ class ViewSettingsPage extends Programster\AbstractView\AbstractView
     <label for="client_secret">Client secret</label>
     <input type="password" id="client_secret" name="client_secret" autocomplete="new-password"
         placeholder="<?= $hasSecret ? 'Leave empty to keep the current secret' : '' ?>">
-    <p class="hint"><?= $hasSecret
-        ? ($secret->isReference()
-            ? 'Read from the environment variable ' . Html::e($secret->getEnvVarName()) . '.'
-            : 'Set.')
-        : 'Not set.' ?> It's never shown. It can also be a <code>${ENV_VAR}</code> reference, to read it from the
-        environment (e.g. <code>.env</code>, then restart).</p>
+    <p class="hint"><?= $hasSecret ? 'Set.' : 'Not set.' ?> It's never shown, once saved.</p>
     <fieldset class="choices">
         <legend>Whether logging in with Google skips this service's own second factor
             <?= new ViewHelpButton('google-mfa-help', $helpTitle) ?></legend>

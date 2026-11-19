@@ -115,7 +115,7 @@ $config = ProvidersConfigParser::parse(
         'providers' => [
             [
                 'name' => 'mailgun', 'type' => 'mailgun', 'region' => 'eu',
-                'smtp_username' => 'postmaster@mg.good.test', 'smtp_password' => '${MAILGUN_SMTP_PASSWORD}',
+                'smtp_username' => 'postmaster@mg.good.test', 'smtp_password' => 'mailgun-smtp-password',
                 'api_key' => 'key-secret', 'webhook_signing_key' => '',
             ],
         ],

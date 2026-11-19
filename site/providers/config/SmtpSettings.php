@@ -10,6 +10,10 @@ declare(strict_types = 1);
 
 readonly class SmtpSettings implements ProviderSettingsInterface
 {
+    // The settings that say which server the password is sent to, and how: if any of them changes, a saved password
+    // can't be kept, and has to be entered again (see findServerChanges()).
+    public const array SERVER_SETTINGS = ['host', 'port', 'security', 'username'];
+
     private ConfigValue $m_host;
     private int $m_port;
     private SmtpSecurity $m_security;
@@ -27,7 +31,7 @@ readonly class SmtpSettings implements ProviderSettingsInterface
      *
      * @param ConfigValue $username - the username to log in with, or an empty value to not log in.
      *
-     * @param ConfigValue $password - the password. Usually a reference, e.g. "${MAIL_SERVER_PASSWORD}".
+     * @param ConfigValue $password - the password, or an empty value to not log in.
      *
      * @param string $dkimSelector - the selector the server DKIM-signs email with (e.g. mailcow's "dkim"), so the
      * sender checks can look for each sender's DKIM key, or an empty string if it isn't known.
@@ -49,7 +53,7 @@ readonly class SmtpSettings implements ProviderSettingsInterface
             throw new InvalidInputException("The port must be from 1 to 65535, not {$port}.");
         }
 
-        if ($host->isReference() === false && trim($host->toConfigString()) === '')
+        if (trim($host->toConfigString()) === '')
         {
             throw new InvalidInputException('The host must be set.');
         }
@@ -68,6 +72,59 @@ readonly class SmtpSettings implements ProviderSettingsInterface
         $this->m_username = $username;
         $this->m_password = $password;
         $this->m_dkimSelector = $dkimSelector;
+    }
+
+
+    /**
+     * Find which of the settings that say where the password is sent (SERVER_SETTINGS) differ between a provider's
+     * saved settings and new ones. If any do, a saved password mustn't be kept without being entered again, or anyone
+     * who can change the providers could have it sent to a server of their own, by changing only the host.
+     *
+     * @param ConfigSettingCollection $saved - the provider's settings as they're saved.
+     *
+     * @param array<string, mixed> $new - its new settings, as they're written in settings.yaml (e.g. "port" => 587).
+     *
+     * @return string[] - the names of those that differ, e.g. ["host"], or none.
+     */
+    public static function findServerChanges(ConfigSettingCollection $saved, array $new) : array
+    {
+        $savedValues = [];
+        $changed = [];
+
+        foreach ($saved as $setting)
+        {
+            /* @var $setting ConfigSetting */
+            $value = $setting->getValue();
+            $text = ($value instanceof ConfigValue) ? $value->toConfigString() : (string)$value;
+            $savedValues[$setting->getName()] = $text;
+        }
+
+        foreach (self::SERVER_SETTINGS as $name)
+        {
+            $newValue = $new[$name] ?? '';
+            $isSame = (is_scalar($newValue) && trim((string)$newValue) === trim($savedValues[$name] ?? ''));
+
+            if ($isSame === false)
+            {
+                $changed[] = $name;
+            }
+        }
+
+        return $changed;
+    }
+
+
+    /**
+     * Say why a saved password can't be kept: the settings that say where it's sent have changed.
+     *
+     * @param string ...$changed - the settings that changed, e.g. "host" (see findServerChanges()).
+     *
+     * @return string
+     */
+    public static function describePasswordNeeded(string ...$changed) : string
+    {
+        return 'Enter the password again, as the ' . implode(', ', $changed) . ' changed: a saved password is only'
+            . ' ever sent to the server it was saved for, so it can\'t be moved to another without being entered.';
     }
 
 

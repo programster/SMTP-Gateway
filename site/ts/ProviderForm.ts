@@ -1,7 +1,6 @@
 /*
  * The form for adding or editing a provider. When adding, choosing the type shows that type's fields and hides the
- * others', disabling them so they're neither required nor sent. Each secret's source (entered, or an environment
- * variable) shows its own input, and disables the other's. Where its webhook is to be pointed has the name added
+ * others', disabling them so they're neither required nor sent. Where its webhook is to be pointed has the name added
  * to the end as it's typed.
  *
  * It's saved with fetch() rather than by leaving the page, so if the server refuses it (e.g. the name's already
@@ -47,18 +46,6 @@ export class ProviderForm
             if (fieldset instanceof HTMLFieldSetElement)
             {
                 this.m_typeFields.push(fieldset);
-            }
-        }
-
-        const secrets = form.querySelectorAll('[data-role=secret]');
-
-        for (let index = 0; index < secrets.length; index++)
-        {
-            const secret = secrets[index];
-
-            if (secret instanceof HTMLElement)
-            {
-                this.setUpSecret(secret);
             }
         }
 
@@ -161,50 +148,6 @@ export class ProviderForm
         for (const webhookUrl of this.m_webhookUrls)
         {
             webhookUrl.textContent = Elements.getData(webhookUrl, 'webhookBase') + end;
-        }
-    }
-
-
-    private setUpSecret(secret: HTMLElement): void
-    {
-        const sources = secret.querySelectorAll('input[data-role=source]');
-
-        for (let index = 0; index < sources.length; index++)
-        {
-            const source = sources[index];
-
-            if (source instanceof HTMLInputElement)
-            {
-                source.addEventListener('change', this.showSecretSource.bind(this, secret));
-            }
-        }
-
-        this.showSecretSource(secret);
-    }
-
-
-    // Show the input for where the secret comes from, and hide and disable the other's.
-    private showSecretSource(secret: HTMLElement): void
-    {
-        const checked = secret.querySelector('input[data-role=source]:checked');
-        const chosen = (checked instanceof HTMLInputElement) ? checked.value : '';
-        const panels = secret.querySelectorAll('[data-source]');
-
-        for (let index = 0; index < panels.length; index++)
-        {
-            const panel = panels[index];
-
-            if (panel instanceof HTMLElement)
-            {
-                const isChosen = (panel.dataset.source === chosen);
-                panel.hidden = !isChosen;
-                const inputs = panel.querySelectorAll('input');
-
-                for (let inputIndex = 0; inputIndex < inputs.length; inputIndex++)
-                {
-                    inputs[inputIndex].disabled = !isChosen;
-                }
-            }
         }
     }
 }

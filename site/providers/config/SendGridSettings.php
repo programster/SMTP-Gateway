@@ -15,7 +15,7 @@ readonly class SendGridSettings implements ProviderSettingsInterface
 
     /**
      * @param ConfigValue $apiKey - the API key, which needs the "Mail Send" permission (and optionally read access to
-     * the rest that SendGridSenderChecker checks). Usually a reference, e.g. "${SENDGRID_API_KEY}".
+     * the rest that SendGridSenderChecker checks).
      *
      * @param ConfigValue $webhookPublicKey - the public key from SendGrid's "Signed Event Webhook" settings, or an
      * empty value to leave the event webhook switched off.

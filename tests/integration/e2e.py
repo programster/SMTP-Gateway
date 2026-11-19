@@ -312,6 +312,23 @@ suite.check('bad status filter is 400', call_api('GET', '/messages?status=bogus'
 suite.check('stats show the rejections in the last hour and week too', activity['rejectedLastHour'] >= 4
             and activity['rejectedLast7Days'] >= activity['rejectedLast24Hours'], activity)
 
+# A provider's events are only recorded for this service's own emails: SendGrid's webhook, for one, reports every
+# email its account sends, by other systems too, and those are ignored, so nothing about them is kept.
+own_id = stack.sql("SELECT id FROM email_message ORDER BY created_at LIMIT 1")
+other_id = '00000000-0000-4000-8000-000000000000'
+recorded = stack.run_php(
+    "$at = new DateTimeImmutable(); $delivered = EmailEventType::DELIVERED;"
+    f" echo EventRecorder::record('mailpit', new ProviderEventCollection("
+    f"new ProviderEvent('{own_id}', 'event-own', $delivered, 'a@example.com', $at, ''),"
+    f" new ProviderEvent('{other_id}', 'event-other', $delivered, 'someone@elsewhere.example', $at, ''),"
+    " new ProviderEvent('', 'event-none', $delivered, 'nobody@elsewhere.example', $at, '')));"
+)
+kept = stack.sql("SELECT provider_event_id FROM email_event WHERE provider_event_id LIKE 'event-%' ORDER BY 1")
+suite.check('an event about one of this service\'s emails is recorded', recorded == '1' and kept == 'event-own',
+            (recorded, kept))
+is_forgotten = stack.sql("SELECT count(*) FROM email_event WHERE recipient LIKE '%@elsewhere.example'") == '0'
+suite.check('but not one about another system\'s email, nor who it went to', is_forgotten)
+
 # The dashboard's tiles link to what they counted.
 page = web.get('/')
 links = ['href="/messages?within=7d"', 'href="/messages?status=queued"', 'href="/rejections?by=service&amp;within=24h"',
@@ -345,6 +362,22 @@ page = web.get(f'/email-tokens/{key_id}')
 suite.check('an email token\'s tiles filter by it too', f'href="/messages?email_token={key_id}&amp;within=7d"' in page)
 is_shown = re.search(r'Last used: [^<]+, from\s+<span', page) is not None
 suite.check('and its page says where it was last used from', is_shown)
+
+# The warning about proxies. The test client connects straight to the stack, from Docker's network, so isn't warned:
+# a private address that wasn't forwarded is someone inside the same network. A request through an untrusted proxy
+# (with an X-Forwarded-For header) is, until it's dismissed in this browser (only).
+suite.check('the dashboard doesn\'t warn a client that connects directly', 'proxy-warning' not in web.get('/'))
+forwarded = {'X-Forwarded-For': '203.0.113.9'}
+page = web.request('GET', '/', headers=forwarded).get_body()
+suite.check('but warns about a proxy the service doesn\'t trust', 'class="flash flash-warning proxy-warning"' in page
+            and 'seem to come through a proxy the service doesn\'t trust' in page)
+response = web.post_form('/', '/proxy-warning/dismiss', {})
+cookie = response.get_header('Set-Cookie')
+suite.check('dismissing it sets a cookie, for this browser', response.get_status() == 303
+            and cookie.startswith('proxy_warning_dismissed=1;') and 'HttpOnly' in cookie, cookie)
+suite.check('which stops it showing', 'proxy-warning' not in web.request('GET', '/', headers=forwarded).get_body())
+other_browser = WebClient.create_logged_in().request('GET', '/', headers=forwarded).get_body()
+suite.check('but only in this browser', 'proxy-warning' in other_browser)
 
 # The dashboard's widgets: who and what was used last, from where, and the most used email tokens.
 page = web.get('/')
@@ -464,6 +497,15 @@ suite.check('each entry\'s time is how long ago it was', is_relative, page[page.
 page = web.get('/admin/logs?level=warning')
 levels = set(re.findall(r'class="badge badge-(\w+)"', page))
 suite.check('the logs are filtered by level', levels == {'warning'}, levels)
+page = web.get('/admin/logs?level%5B%5D=warning&level%5B%5D=notice')
+levels = set(re.findall(r'class="badge badge-(\w+)"', page))
+suite.check('or by several, as the form sends them', len(levels) > 0 and levels <= {'warning', 'notice'}, levels)
+is_selected = ('<option value="notice" selected>' in page and '<option value="warning" selected>' in page
+               and '<option value="info" selected>' not in page)
+suite.check('which are shown as chosen', is_selected)
+suite.check('and kept in the page\'s own links', 'level=notice%2Cwarning' in page)
+linked = set(re.findall(r'class="badge badge-(\w+)"', web.get('/admin/logs?level=notice,warning')))
+suite.check('which filter the same way', linked == levels, (linked, levels))
 page = web.get('/admin/logs?sort=severe&per_page=25')
 first_level = re.search(r'class="badge badge-(\w+)"', page).group(1)
 most_severe = stack.sql("SELECT max(level)::text FROM log")

@@ -75,4 +75,60 @@ foreach ($badLists as $description => $text)
     $suite->checkThrows("{$description} is refused", CloudflareFetchException::class, $parse);
 }
 
+// Private addresses: those only used inside a network, which a request usually only comes from through a proxy.
+$private = ['10.1.2.3', '172.16.0.1', '172.31.255.255', '192.168.1.1', '127.0.0.1', '169.254.1.1', '100.64.0.1',
+    'fd00::1', '::1', 'fe80::1', '::ffff:192.168.0.1'];
+$public = ['172.32.0.1', '8.8.8.8', '203.0.113.9', '2001:4860::1'];
+$wronglyPublic = [];
+$wronglyPrivate = [];
+
+foreach ($private as $address)
+{
+    if ((new IpAddress($address))->isPrivate() === false)
+    {
+        $wronglyPublic[] = $address;
+    }
+}
+
+foreach ($public as $address)
+{
+    if ((new IpAddress($address))->isPrivate())
+    {
+        $wronglyPrivate[] = $address;
+    }
+}
+
+$areAllPrivate = ($wronglyPublic === []);
+$wrong = implode(', ', $wronglyPublic);
+$suite->check('private, loopback, link-local and CGNAT ones are private', $areAllPrivate, $wrong);
+$suite->check('and public ones aren\'t', $wronglyPrivate === [], implode(', ', $wronglyPrivate));
+
+// The dashboard's warning about proxies, from a request (with no trusted proxies, and not behind Cloudflare).
+$factory = new \Slim\Psr7\Factory\ServerRequestFactory();
+
+$warn = function (string $connection, array $headers = [], array $cookies = []) use ($factory) : ProxyWarningKind {
+    $request = $factory->createServerRequest('GET', '/', ['REMOTE_ADDR' => $connection])->withCookieParams($cookies);
+
+    foreach ($headers as $name => $value)
+    {
+        $request = $request->withHeader($name, $value);
+    }
+
+    return ProxyWarning::createForRequest($request)->getKind();
+};
+
+$kind = $warn('172.18.0.5', ['X-Forwarded-For' => '203.0.113.9']);
+$isRight = ($kind === ProxyWarningKind::UNTRUSTED_PROXY);
+$suite->check('a private address forwarding for someone is a proxy to trust', $isRight, $kind->name);
+$kind = $warn('104.16.0.1', ['CF-Connecting-IP' => '203.0.113.9']);
+$isRight = ($kind === ProxyWarningKind::CLOUDFLARE);
+$suite->check('a request through Cloudflare, not set up, is warned about', $isRight, $kind->name);
+$kind = $warn('192.168.1.20');
+$isRight = ($kind === ProxyWarningKind::NONE);
+$suite->check('a private address that wasn\'t forwarded isn\'t warned about', $isRight, $kind->name);
+$kind = $warn('203.0.113.9');
+$suite->check('a public address isn\'t', $kind === ProxyWarningKind::NONE, $kind->name);
+$kind = $warn('172.18.0.5', ['X-Forwarded-For' => '203.0.113.9'], [ProxyWarning::DISMISSED_COOKIE => '1']);
+$suite->check('nor is anything, once dismissed in the browser', $kind === ProxyWarningKind::NONE, $kind->name);
+
 $suite->finish();

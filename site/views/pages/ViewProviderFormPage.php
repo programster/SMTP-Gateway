@@ -270,8 +270,8 @@ class ViewProviderFormPage extends Programster\AbstractView\AbstractView
 
 
     /**
-     * Render a secret: a choice of entering it (it's never shown, and when editing, left blank keeps the one there
-     * is), or reading it from an environment variable, by name.
+     * Render a secret: a password input, which is never filled in (when editing, leaving it blank keeps the one
+     * there is).
      *
      * @param string $name - its input's name.
      *
@@ -281,36 +281,13 @@ class ViewProviderFormPage extends Programster\AbstractView\AbstractView
      */
     private function renderSecret(string $name, ProviderField $field) : void
     {
-        $source = SecretSource::tryFrom($this->m_values["{$name}_source"] ?? '') ?? SecretSource::ENTERED;
-        $isEntered = ($source === SecretSource::ENTERED);
         $isSet = isset($this->m_secretsSet[$name]);
         $placeholder = $isSet ? 'Set: leave blank to keep it' : '';
         $required = ($field->isRequired() && !$isSet && !$this->m_isEditing) ? ' required' : '';
-        $envVar = $this->m_values["{$name}_env"] ?? '';
-        $enteredHidden = $isEntered ? '' : ' hidden';
-        $envHidden = $isEntered ? ' hidden' : '';
 ?>
-<div class="secret-field" data-role="secret">
-    <div class="secret-sources">
-        <label class="inline"><input type="radio" name="<?= Html::e("{$name}_source") ?>"
-            value="<?= SecretSource::ENTERED->value ?>" data-role="source" <?= $isEntered ? 'checked' : '' ?>>
-            Enter it here</label>
-        <label class="inline"><input type="radio" name="<?= Html::e("{$name}_source") ?>"
-            value="<?= SecretSource::ENVIRONMENT->value ?>" data-role="source" <?= $isEntered ? '' : 'checked' ?>>
-            Read it from an environment variable</label>
-    </div>
-    <div data-source="<?= SecretSource::ENTERED->value ?>"<?= $enteredHidden ?>>
-        <input type="password" id="<?= Html::e($name) ?>" name="<?= Html::e($name) ?>" autocomplete="new-password"
-            placeholder="<?= Html::e($placeholder) ?>"<?= $isEntered ? $required : '' ?>>
-        <p class="hint">Written into <?= Html::e(SettingsFile::getPath()) ?>. It's never shown again.</p>
-    </div>
-    <div data-source="<?= SecretSource::ENVIRONMENT->value ?>"<?= $envHidden ?>>
-        <input type="text" name="<?= Html::e("{$name}_env") ?>" value="<?= Html::e($envVar) ?>"
-            aria-label="<?= Html::e($field->getLabel()) ?>: the environment variable" pattern="[A-Z_][A-Z0-9_]*">
-        <p class="hint">Written as <code>${NAME}</code>, which keeps the secret out of the file. Add the variable to
-            <code>.env</code>, and restart, for it to be read.</p>
-    </div>
-</div>
+<input type="password" id="<?= Html::e($name) ?>" name="<?= Html::e($name) ?>" autocomplete="new-password"
+    placeholder="<?= Html::e($placeholder) ?>"<?= $required ?>>
+<p class="hint">Written into <?= Html::e(SettingsFile::getPath()) ?>. It's never shown again.</p>
 <?php
     }
 }

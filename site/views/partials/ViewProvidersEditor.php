@@ -39,11 +39,9 @@ class ViewProvidersEditor extends Programster\AbstractView\AbstractView
     <textarea id="yaml" name="yaml" class="yaml-editor" spellcheck="false"
         required><?= Html::e($this->m_yaml) ?></textarea>
     <p class="hint">
-        Secrets written out in full (rather than as <code>${ENV_VAR}</code> references) are shown as
+        Secrets (passwords, keys and tokens) are shown as
             <code><?= Html::e(ProvidersConfigParser::UNCHANGED) ?></code>, and are kept as they are unless you replace
             them.
-        A <code>${ENV_VAR}</code> reference reads the variable from the environment (e.g. <code>.env</code>): after
-            adding a reference to a new variable, add it to <code>.env</code> and restart.
         They're checked before they're saved (in the providers section of
             <code><?= Html::e(SettingsFile::getPath()) ?></code>), and the queue workers use them from their next
             email.

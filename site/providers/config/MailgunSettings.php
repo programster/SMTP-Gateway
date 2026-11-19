@@ -43,7 +43,7 @@ readonly class MailgunSettings implements ProviderSettingsInterface
     {
         $isLogin = (MailgunProvider::extractDomain($smtpUsername->toConfigString()) !== '');
 
-        if ($smtpUsername->isReference() === false && $isLogin === false)
+        if ($isLogin === false)
         {
             throw new InvalidInputException('"smtp_username" must be an SMTP login, e.g. postmaster@mg.example.org.');
         }

@@ -54,6 +54,7 @@ function createSuites(bool $isLoadTesting) : SuiteCollection
         $unitTests,
         Suite::createPython('e2e', 'integration.e2e', 28),
         Suite::createPython('accounts', 'integration.accounts', 1),
+        Suite::createPython('login-throttle', 'integration.login_throttle', 35),
         Suite::createPython('google-login', 'integration.google_login', 1),
         Suite::createPython('content-retention', 'integration.content_retention', 1),
         Suite::createPython('priority', 'integration.priority', 43),

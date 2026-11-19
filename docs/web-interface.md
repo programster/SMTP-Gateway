@@ -119,8 +119,8 @@ docker exec -u www-data <container> php /var/www/site/scripts/reset-password.php
 
 Switch it on under **Settings > SSO**, with `PUBLIC_URL` set in
 `.env`, and the ID and secret of an OAuth client of type "Web application" from the Google Cloud
-console (**APIs & Services > Credentials**). The secret is never shown again once saved, and can also be
-a `"${NAME}"` reference to a variable in `.env`. Add the redirect URI the page shows (`PUBLIC_URL`
+console (**APIs & Services > Credentials**). The secret is never shown again once saved. Add the
+redirect URI the page shows (`PUBLIC_URL`
 followed by `/login/google/callback`, e.g. `https://smtp.example.org/login/google/callback`) to the
 client's authorised redirect URIs. The login page then has a **Log in with Google** button, straight
 away. Only existing accounts can log in this way, when Google has verified that the Google account has

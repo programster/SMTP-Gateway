@@ -9,9 +9,7 @@ The providers are set under **Settings > Providers** in the web interface, which
   Mailtrap, or your own SMTP server), then shows that type's fields: e.g. an API key for SendGrid, an SMTP
   login and password for Mailgun, or a public and secret key for Mailjet. Each field says what it is, and
   where to find it in the provider's dashboard. Its own rate limits are on the same form.
-* Each **secret** (a password, key or token) can be entered there, which writes it into
-  `settings.yaml`, or read from an environment variable, by its name, which writes a `${NAME}`
-  reference and keeps the secret out of the file (add the variable to `.env`, and restart). A secret is
+* Each **secret** (a password, key or token) is entered there, and written into `settings.yaml`. It's
   never shown again, and when editing, one left blank keeps the value it has.
 * The enabled providers are listed first, and the disabled ones below. Drag an enabled provider by its
   handle (or focus the handle and use the up and down arrow keys) to change the order they're tried in,
@@ -49,8 +47,8 @@ providers:
   - name: "sendgrid-main"
     type: "sendgrid"
     enabled: true
-    api_key: "${SENDGRID_API_KEY}"
-    webhook_public_key: "${SENDGRID_WEBHOOK_PUBLIC_KEY}"
+    api_key: "SG.xxxx"
+    webhook_public_key: "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE..."
     rate_limits:
       - unit: "emails"      # emails (requests to the provider), or recipients
         max: 10
@@ -62,8 +60,8 @@ providers:
     host: "mail.example.org"
     port: 587
     security: "tls"         # tls (STARTTLS), ssl (implicit TLS) or none
-    username: "${MAIL_SERVER_USERNAME}"
-    password: "${MAIL_SERVER_PASSWORD}"
+    username: "relay@example.org"
+    password: "xxxx"
     dkim_selector: "dkim"   # optional: the selector it DKIM-signs with, for the sender checks
     rate_limits: []
 ```
@@ -71,8 +69,9 @@ providers:
 A fresh install has none. Until the first is added, the dashboard and the Providers page say so, and
 emails are accepted and queued, and sent once it's added.
 
-* A setting written as `${NAME}` is read from the environment variable `NAME` (put it in `.env`), so the
-  file can be committed without any secrets in it. After referring to a new variable, restart.
+* Settings aren't read from environment variables: a value written as a reference to one (`${NAME}`),
+  which an earlier version allowed, is refused, so put the value itself in instead. Secrets are shown as
+  `<unchanged>` in the YAML editor and the API, and kept as they are if they're saved that way.
 * The **mode** decides how emails are shared between the enabled providers:
   * `round_robin`: take turns, skipping any provider at its rate limits.
   * `overflow`: use the first provider, and the next ones only while the earlier ones are at their
@@ -190,6 +189,20 @@ SendGrid's event webhook posts what happens to each email after it's sent (deliv
 on) to the service, which records it against the email (see [Tracking](tracking.md)). It's optional:
 without it, emails are still sent, but nothing after SendGrid accepts them is recorded.
 
+**It reports your whole SendGrid account's email, not just this service's.** A webhook belongs to the
+account (or subuser), not to an API key, so SendGrid posts events for every email the account sends,
+including those your other systems send with their own keys. The service ignores every event that isn't
+about one of its own emails (it tags each email it sends with its ID, which SendGrid sends back), so
+they aren't stored or counted, and nothing about another system's email (such as who it went to) is
+kept. SendGrid is still told they were received, so it doesn't retry them.
+
+Even so, your other systems' events are still being sent here. To keep them in SendGrid, give this
+service a [subuser](https://www.twilio.com/docs/sendgrid/ui/account-and-settings/subusers) of its own
+(Settings > Subuser Management, on plans that have subusers), with its own sending domain, API key and
+event webhook, so its webhook only reports this service's email. It's the cleaner setup, especially if
+the account sends a lot of email from elsewhere, as each of those events is still a request the service
+has to check and throw away.
+
 The service only accepts events signed by SendGrid, checked with the provider's `webhook_public_key`.
 Until that's set, its webhook address answers 404, so set the webhook up in this order:
 
@@ -245,14 +258,14 @@ tested it:
 
 | Status    | Means                                                                                        |
 |-----------|----------------------------------------------------------------------------------------------|
-| 200       | The events were accepted, and recorded.                                                      |
+| 200       | The events were accepted. Real ones about this service's emails are recorded.                |
 | 401       | They're from SendGrid, but `webhook_public_key` isn't the key it signs them with. The **Logs** page also shows "Webhook request with an invalid signature". |
 | 404       | `webhook_public_key` isn't saved yet, or the address doesn't end with the provider's name.   |
 | (no line) | SendGrid couldn't reach the service: check the address in SendGrid, and that it's reachable from the internet. |
 
-The test events aren't about any email the service sent, so they're recorded without one, and don't
-show on any email's page. They do count towards the dashboard's overall delivered, bounced, opened,
-clicked and spam report numbers for the next 7 days, though.
+The test events aren't about any email the service sent, so they're ignored, like events about your
+other systems' email: a 200 in the log is what shows the webhook works. To see an event recorded, send
+an email through the provider, and look at its page a minute or so later.
 
 #### Creating the webhook with SendGrid's API
 
@@ -391,3 +404,9 @@ An SMTP server of your own, e.g. mailcow or Postfix. It can't report events.
 * **`username`** and **`password`** (optional): its login, if it needs one.
 * **`dkim_selector`** (optional): for the sender checks, to check each sender's domain publishes a DKIM
   key with it.
+
+Its saved password is only ever sent to the server it was saved for: changing the `host`, `port`,
+`security` or `username` means entering the password again, so nobody can have it sent to a server of
+their own just by changing the host. The web session that entered it is the exception, so a typo in the
+host can be fixed straight away. On the form, any other session has to type it again, as does a change
+through the YAML editor or the API that keeps it as `<unchanged>`.

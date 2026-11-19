@@ -201,4 +201,51 @@ $parseOldType = function () : void {
 
 $suite->checkThrows('the old "smtp" type is rejected', InvalidInputException::class, $parseOldType);
 
+// A saved password, kept as "<unchanged>", can't go to a different server (host, port, security or username).
+$saved = ProvidersConfigParser::parse(
+    [
+        'mode' => 'overflow',
+        'providers' => [
+            [
+                'name' => 'relay', 'type' => 'custom', 'host' => 'relay.example.org', 'port' => 587,
+                'security' => 'tls', 'username' => 'me', 'password' => 'relay-secret', 'dkim_selector' => '',
+            ],
+        ],
+    ],
+    new ProviderDefinitionCollection()
+);
+
+$keepPassword = function (array $changes) use ($saved) : ProvidersConfig {
+    $provider = [
+        'name' => 'relay', 'type' => 'custom', 'host' => 'relay.example.org', 'port' => 587, 'security' => 'tls',
+        'username' => 'me', 'password' => '<unchanged>', 'dkim_selector' => '',
+    ];
+
+    return ProvidersConfigParser::parse(
+        ['mode' => 'overflow', 'providers' => [array_merge($provider, $changes)]],
+        $saved->getProviders()
+    );
+};
+
+$changes = [
+    'host' => ['host' => 'smtp.attacker.example'],
+    'port' => ['port' => 2525],
+    'security' => ['security' => 'none'],
+    'username' => ['username' => 'someone-else'],
+];
+
+foreach ($changes as $name => $change)
+{
+    $moveIt = function () use ($keepPassword, $change) : void {
+        $keepPassword($change);
+    };
+
+    $suite->checkThrows("a kept password can't be sent to a changed {$name}", InvalidInputException::class, $moveIt);
+}
+
+$kept = $keepPassword(['dkim_selector' => 'dkim']);
+$yaml = ProvidersConfigParser::toYaml($kept, SecretOutput::AS_IS);
+$isKept = str_contains($yaml, 'password: "relay-secret"');
+$suite->check('but it\'s kept when nothing it\'s sent to changes', $isKept, $yaml);
+
 $suite->finish();

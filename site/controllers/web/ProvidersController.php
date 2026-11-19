@@ -67,6 +67,7 @@ class ProvidersController extends AbstractController
             $type = self::readType($request);
             $entry = ProviderFormInput::readEntry($getField, $type, new ConfigSettingCollection());
             ProvidersFormService::add($entry, $version);
+            self::rememberEnteredPassword($getField, $type, (string)$entry['name'], false);
             self::logChange('A provider was added', (string)$entry['name']);
             WebSession::flash("The provider \"{$entry['name']}\" was added.");
             $result = self::respondSaved($request, $response, '/providers');
@@ -113,8 +114,11 @@ class ProvidersController extends AbstractController
         try
         {
             $current = $provider->getSettings()->getSettings();
-            $entry = ProviderFormInput::readEntry($getField, $provider->getType(), $current);
+            $hasEntered = WebSession::hasEnteredProviderPassword($provider->getName());
+            $reentry = $hasEntered ? PasswordReentry::NOT_REQUIRED : PasswordReentry::REQUIRED_FOR_NEW_SERVER;
+            $entry = ProviderFormInput::readEntry($getField, $provider->getType(), $current, $reentry);
             ProvidersFormService::edit($provider->getName(), $entry, $version);
+            self::rememberEnteredPassword($getField, $provider->getType(), (string)$entry['name'], $hasEntered);
             self::logChange('A provider was changed', (string)$entry['name']);
             WebSession::flash("The provider \"{$entry['name']}\" was saved.");
             $result = self::respondSaved($request, $response, '/providers/' . rawurlencode((string)$entry['name']));
@@ -520,6 +524,35 @@ class ProvidersController extends AbstractController
         }
 
         return self::redirect($response, '/providers/' . rawurlencode($name));
+    }
+
+
+    /**
+     * Remember that this session entered a custom provider's password, once it's saved, so the session can change the
+     * server it's sent to without entering it again (see WebSession::rememberEnteredProviderPassword()).
+     *
+     * @param Closure(string): string $getField - gets a form field's value by name.
+     *
+     * @param ProviderType $type - the provider's type.
+     *
+     * @param string $name - its name, as it's been saved.
+     *
+     * @param bool $hadEntered - whether this session had already entered it (under its name before the save, in case
+     * it was renamed).
+     *
+     * @return void
+     */
+    private static function rememberEnteredPassword(
+        Closure $getField,
+        ProviderType $type,
+        string $name,
+        bool $hadEntered
+    ) : void
+    {
+        if ($type === ProviderType::CUSTOM && ($hadEntered || ProviderFormInput::isCustomPasswordEntered($getField)))
+        {
+            WebSession::rememberEnteredProviderPassword($name);
+        }
     }
 
 

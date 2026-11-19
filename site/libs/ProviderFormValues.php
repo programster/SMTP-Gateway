@@ -3,7 +3,7 @@
 /*
  * What the provider form's inputs are filled in with, by input name (see ProviderFormInput::getInputName()): a new
  * provider's defaults, an existing provider's settings, or what was sent when saving failed. A secret's value is
- * never among them, so it can't end up in the page: only where it comes from (SecretSource), and a variable's name.
+ * never among them, so it can't end up in the page.
  */
 
 declare(strict_types = 1);
@@ -12,8 +12,7 @@ declare(strict_types = 1);
 final class ProviderFormValues
 {
     /**
-     * Get the values a new provider's form starts with: enabled, and each type's defaults, with each secret to be
-     * entered, and its variable's name filled in with a suggestion, in case it's to come from the environment.
+     * Get the values a new provider's form starts with: enabled, and each type's defaults, with each secret blank.
      *
      * @return array<string, string>
      */
@@ -27,12 +26,6 @@ final class ProviderFormValues
             {
                 $name = ProviderFormInput::getInputName($type, $field);
                 $values[$name] = $field->getDefault();
-
-                if ($field->getKind() === ProviderFieldKind::SECRET)
-                {
-                    $values["{$name}_source"] = SecretSource::ENTERED->value;
-                    $values["{$name}_env"] = strtoupper($name);
-                }
             }
         }
 
@@ -41,8 +34,8 @@ final class ProviderFormValues
 
 
     /**
-     * Get the values a provider's form starts with when editing it: its settings, with each secret that's a "${NAME}"
-     * reference shown as coming from that variable, and each written out in full left blank (to keep it).
+     * Get the values a provider's form starts with when editing it: its settings, with each secret left blank (to
+     * keep it).
      *
      * @param ProviderDefinition $provider - the provider.
      *
@@ -66,23 +59,8 @@ final class ProviderFormValues
         {
             $name = ProviderFormInput::getInputName($type, $field);
             $value = $settings[$field->getKey()] ?? '';
-            $isReference = ($value instanceof ConfigValue && $value->isReference());
             $text = ($value instanceof ConfigValue) ? $value->toConfigString() : (string)$value;
-
-            if ($field->getKind() === ProviderFieldKind::SECRET && $isReference)
-            {
-                $values["{$name}_source"] = SecretSource::ENVIRONMENT->value;
-                $values["{$name}_env"] = $value->getEnvVarName();
-                $values[$name] = '';
-            }
-            elseif ($field->getKind() === ProviderFieldKind::SECRET)
-            {
-                $values[$name] = '';
-            }
-            else
-            {
-                $values[$name] = $text;
-            }
+            $values[$name] = ($field->getKind() === ProviderFieldKind::SECRET) ? '' : $text;
         }
 
         return $values;
@@ -91,7 +69,7 @@ final class ProviderFormValues
 
     /**
      * Get what a form sent, to fill it in with again after it failed to save. Secrets' values are left out, so they
-     * have to be entered again: only where each comes from, and its variable's name, are kept.
+     * have to be entered again.
      *
      * @param Closure(string): string $getField - gets a form field's value by name.
      *
@@ -122,8 +100,8 @@ final class ProviderFormValues
 
 
     /**
-     * Get which of a provider's secrets have a value written out in full now, by input name, so the form can say it
-     * will be kept if it's left blank.
+     * Get which of a provider's secrets are set now, by input name, so the form can say it will be kept if it's left
+     * blank.
      *
      * @param ProviderDefinition $provider - the provider.
      *
@@ -137,7 +115,7 @@ final class ProviderFormValues
         foreach ($provider->getSettings()->getSettings() as $setting)
         {
             $value = $setting->getValue();
-            $isWritten = ($value instanceof ConfigValue && !$value->isReference() && $value->toConfigString() !== '');
+            $isWritten = ($value instanceof ConfigValue && $value->toConfigString() !== '');
 
             if ($setting->isSecret() && $isWritten)
             {

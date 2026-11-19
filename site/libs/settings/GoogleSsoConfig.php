@@ -22,7 +22,7 @@ readonly class GoogleSsoConfig
      *
      * @param string $clientId - the OAuth client's ID, from the Google Cloud console.
      *
-     * @param ConfigValue $clientSecret - its secret, written out, or as a "${NAME}" reference.
+     * @param ConfigValue $clientSecret - its secret.
      *
      * @param SsoMfaBypass $mfaBypass - whether logging in with Google skips this service's own second factor.
      *

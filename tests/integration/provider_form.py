@@ -38,30 +38,11 @@ def get_version(page: str) -> str:
     return match.group(1) if match else ''
 
 
-# Each type's secrets, every one of which a browser sends the source of (its radio is always checked).
-SECRET_FIELDS = {
-    'sendgrid': ['api_key'],
-    'mailgun': ['smtp_password', 'api_key', 'webhook_signing_key'],
-    'postmark': ['server_token', 'account_token', 'webhook_secret'],
-    'brevo': ['smtp_key', 'api_key', 'webhook_secret'],
-    'mailjet': ['secret_key', 'webhook_secret'],
-    'mailersend': ['smtp_password', 'api_token', 'webhook_secret'],
-    'mailtrap': ['smtp_token', 'api_token', 'webhook_secret'],
-    'custom': ['password'],
-}
-
-
-def with_sources(type_name: str, fields: dict) -> dict:
-    """Add "entered" as the source of each of a type's secrets, as a browser would, unless the fields give one."""
-    sources = {f'{type_name}_{key}_source': 'entered' for key in SECRET_FIELDS[type_name]}
-    return sources | fields
-
-
 def add(type_name: str, name: str, fields: dict, version: str = '') -> Response:
     """Post the add form, disabled, based on the current version (or the one given)."""
     page = web.get('/providers/new')
     form = {'version': version or get_version(page), 'type': type_name, 'name': name, 'enabled': ''}
-    return web.post_form('/providers/new', '/providers/new', form | with_sources(type_name, fields))
+    return web.post_form('/providers/new', '/providers/new', form | fields)
 
 
 def read_settings() -> str:
@@ -100,7 +81,7 @@ suite.check('each has a pencil to edit it', pencil in page)
 # A provider's own page.
 page = web.get('/providers/test-mailgun')
 suite.check('a provider has a page of its own', 'SMTP username' in page and 'postmaster@mg.example.org' in page)
-suite.check('which never shows a secret', 'mailgun-secret' not in page and 'written out in full' in page)
+suite.check('which never shows a secret', 'mailgun-secret' not in page and '(set, never shown)' in page)
 suite.check('and has buttons to edit and remove it', 'href="/providers/test-mailgun/edit"' in page
             and 'data-action="/providers/test-mailgun/remove"' in page and 'id="remove-provider-dialog"' in page)
 suite.check('and says it\'s disabled, so not tried', 'Not tried, as it&apos;s disabled.' in page)
@@ -113,13 +94,12 @@ suite.check('the secrets entered are saved', 'SG.sendgrid-secret' in read_settin
 pages = page + web.get('/providers/test-sendgrid/edit') + web.get('/providers/new')
 suite.check('but never shown in a page', not any(secret in pages for secret in SECRETS))
 
-# A secret read from an environment variable.
-fields = {'sendgrid_api_key_source': 'environment', 'sendgrid_api_key_env': 'OTHER_SENDGRID_KEY'}
-response = add('sendgrid', 'test-reference', fields)
-suite.check('a secret from an environment variable is saved as a reference', response.get_status() == 303
-            and 'api_key: "${OTHER_SENDGRID_KEY}"' in read_settings())
-page = web.get('/providers/test-reference/edit')
-suite.check('and shown as that variable when editing', 'value="OTHER_SENDGRID_KEY"' in page)
+# Secrets are entered: they can't be read from an environment variable, even by typing a reference to one.
+suite.check('the form doesn\'t offer reading a secret from the environment', 'environment variable'
+            not in web.get('/providers/new'))
+response = add('sendgrid', 'test-reference', {'sendgrid_api_key': '${OTHER_SENDGRID_KEY}'})
+is_refused = response.get_status() == 400 and 'aren&apos;t read from environment variables' in response.get_body()
+suite.check('a secret typed as a reference to one is refused', is_refused, response.get_status())
 
 # The mistakes it refuses, keeping what was entered.
 response = add('mailjet', 'test-incomplete', {'mailjet_api_key': 'public-key'})
@@ -128,10 +108,6 @@ suite.check('a missing required field is refused, keeping the name', is_refused,
 response = add('sendgrid', 'test-sendgrid', REQUIRED['sendgrid'])
 is_refused = response.get_status() == 400 and 'two providers called' in response.get_body()
 suite.check('a name that\'s taken is refused', is_refused, response.get_status())
-fields = {'sendgrid_api_key_source': 'environment', 'sendgrid_api_key_env': 'not-a-name'}
-response = add('sendgrid', 'test-bad-reference', fields)
-is_refused = response.get_status() == 400 and 'capital letters' in response.get_body()
-suite.check('an environment variable name that isn\'t one is refused', is_refused, response.get_status())
 response = add('sendgrid', 'test-stale', REQUIRED['sendgrid'], version='0' * 64)
 is_refused = response.get_status() == 400 and 'changed since' in response.get_body()
 suite.check('a change based on an old version is refused', is_refused, response.get_status())
@@ -143,7 +119,7 @@ def add_with_script(type_name: str, name: str, fields: dict) -> Response:
     form = {'csrf_token': find_csrf_token(page), 'version': get_version(page), 'type': type_name, 'name': name,
             'enabled': ''}
     headers = {'Accept': 'application/json'}
-    return web.request('POST', '/providers/new', form | with_sources(type_name, fields), headers=headers)
+    return web.request('POST', '/providers/new', form | fields, headers=headers)
 
 
 # Saving with the form's script, which keeps the form (and the secrets entered in it) when it's refused.
@@ -169,8 +145,7 @@ page = web.get('/providers/test-postmark/edit')
 suite.check('the edit form has the type fixed', 'name="type" value="postmark"' in page and '<select id="provider-type"'
             not in page)
 form = {'version': get_version(page), 'name': 'test-postmark', 'enabled': '', 'postmark_server_token': '',
-        'postmark_server_token_source': 'entered', 'postmark_message_stream': 'broadcast',
-        'postmark_account_token_source': 'entered', 'postmark_webhook_secret_source': 'entered'}
+        'postmark_message_stream': 'broadcast'}
 response = web.post_form('/providers/test-postmark/edit', '/providers/test-postmark/edit', form)
 saved = read_settings()
 suite.check('a provider is edited', response.get_status() == 303 and 'message_stream: "broadcast"' in saved,
@@ -181,14 +156,50 @@ suite.check('and its secret, left blank, is kept', 'server_token: "postmark-secr
 # Renaming, which keeps its secrets.
 page = web.get('/providers/test-brevo/edit')
 form = {'version': get_version(page), 'name': 'test-brevo-renamed', 'enabled': '',
-        'brevo_smtp_login': 'login@example.org', 'brevo_smtp_key': '', 'brevo_smtp_key_source': 'entered',
-        'brevo_api_key_source': 'entered',
-        'brevo_webhook_secret_source': 'entered'}
+        'brevo_smtp_login': 'login@example.org', 'brevo_smtp_key': ''}
 response = web.post_form('/providers/test-brevo/edit', '/providers/test-brevo/edit', form)
 names = provider_names()
 is_renamed = response.get_status() == 303 and 'test-brevo-renamed' in names and 'test-brevo' not in names
 suite.check('a provider is renamed', is_renamed, names)
 suite.check('keeping its secret', 'smtp_key: "brevo-secret"' in read_settings())
+
+
+# A custom provider's saved password can't be sent to a different server without being entered again, so nobody can
+# have it sent to their own by changing only the host. The session that entered it can, e.g. to fix a typo.
+relay = {'custom_host': 'relay.example.org', 'custom_port': '587', 'custom_security': 'tls',
+         'custom_username': 'relay@example.org', 'custom_password': 'relay-secret', 'custom_dkim_selector': ''}
+response = add('custom', 'test-relay', relay)
+suite.check('a custom provider with a login is added', response.get_status() == 303, response.get_status())
+other = WebClient.create_logged_in()
+
+
+def edit_relay(client: WebClient, fields: dict) -> Response:
+    """Save the custom provider's edit form, leaving its password blank unless the fields give one."""
+    path = '/providers/test-relay/edit'
+    form = {'version': get_version(client.get(path)), 'name': 'test-relay', 'enabled': ''}
+    return client.post_form(path, path, form | relay | {'custom_password': ''} | fields)
+
+
+response = edit_relay(other, {'custom_host': 'smtp.attacker.example'})
+is_refused = response.get_status() == 400 and 'Enter the password again, as the host changed' in response.get_body()
+suite.check('another session can\'t change its host, keeping its saved password', is_refused, response.get_status())
+suite.check('so the password isn\'t moved', 'smtp.attacker.example' not in read_settings())
+response = edit_relay(other, {'custom_security': 'none'})
+suite.check('nor its security, which would send it unencrypted', response.get_status() == 400
+            and 'as the security changed' in response.get_body(), response.get_status())
+response = edit_relay(web, {'custom_host': 'relay-typo.example.org'})
+suite.check('but the session that entered it can, e.g. to fix a typo', response.get_status() == 303
+            and 'relay-typo.example.org' in read_settings(), response.get_status())
+response = edit_relay(other, {'custom_host': 'relay2.example.org', 'custom_password': 'relay-secret'})
+suite.check('and another session can, with the password entered again', response.get_status() == 303
+            and 'relay2.example.org' in read_settings(), response.get_status())
+response = edit_relay(other, {'custom_host': 'relay3.example.org'})
+suite.check('after which that session knows it too', response.get_status() == 303, response.get_status())
+third = WebClient.create_logged_in()
+response = edit_relay(third, {'custom_host': 'relay3.example.org', 'custom_dkim_selector': 'dkim'})
+saved = read_settings()
+suite.check('and any session can keep it when nothing it\'s sent to changes', response.get_status() == 303
+            and 'dkim_selector: "dkim"' in saved and 'password: "relay-secret"' in saved, response.get_status())
 
 
 def set_enabled(name: str, action: str) -> Response:

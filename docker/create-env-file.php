@@ -71,30 +71,6 @@ define('REPLACED_ENV_VARS', [
  *
  * @return void
  */
-/**
- * Get the names of the environment variables that settings.yaml refers to (as "${NAME}"), so they're passed through
- * too, whatever they're called. An earlier version's providers.yaml is read too, as it's carried over to settings.yaml
- * after this runs, on the first start after upgrading.
- *
- * @return string[]
- */
-function getSettingsReferences() : array
-{
-    $settingsPath = getenv('SETTINGS_FILE') ?: '/config/settings.yaml';
-    $oldProvidersPath = getenv('PROVIDERS_CONFIG_FILE') ?: dirname($settingsPath) . '/providers.yaml';
-    $names = [];
-
-    foreach ([$settingsPath, $oldProvidersPath] as $path)
-    {
-        $contents = is_readable($path) ? (string)file_get_contents($path) : '';
-        preg_match_all('/\$\{([A-Z_][A-Z0-9_]*)\}/', $contents, $matches);
-        $names = [...$names, ...$matches[1]];
-    }
-
-    return array_values(array_unique($names));
-}
-
-
 function main(string $outputFilepath) : void
 {
     $lines = [];
@@ -102,7 +78,7 @@ function main(string $outputFilepath) : void
     $badValues = [];
     $replaced = [];
 
-    $names = [...REQUIRED_ENV_VARS, ...OPTIONAL_ENV_VARS, ...MIGRATED_ENV_VARS, ...getSettingsReferences()];
+    $names = [...REQUIRED_ENV_VARS, ...OPTIONAL_ENV_VARS, ...MIGRATED_ENV_VARS];
 
     foreach (array_unique($names) as $name)
     {

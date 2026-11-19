@@ -198,19 +198,27 @@ $suite->checkThrows($name, InvalidInputException::class, $saveInvalidWholeFile);
 SettingsFile::saveWholeFile("general:\n  timezone: \"Europe/Berlin\"\n", SettingsFile::getFileVersion());
 $suite->check('a valid whole file is saved', Settings::get()->getTimezone()->getName() === 'Europe/Berlin');
 
-// Exporting replaces secrets written out in full with references.
+// The export is a backup: the whole file, with every secret in full, under a warning saying so.
 $useFile("google_sso:\n  enabled: false\n  client_id: \"id\"\n  client_secret: \"google-secret\"\n");
 SettingsFile::saveProviders(SettingsFile::parseProvidersYaml($mailpitProviders), $emptyVersion);
 $exported = SettingsFile::export();
 
-$isSafe = (
-       !str_contains($exported, 'google-secret')
-    && !str_contains($exported, 'plaintext-secret')
-    && str_contains($exported, '${GOOGLE_SSO_CLIENT_SECRET}')
-    && str_contains($exported, '${PROVIDER_MAILPIT_PASSWORD}')
+$isBackup = (
+       str_contains($exported, 'google-secret')
+    && str_contains($exported, 'plaintext-secret')
+    && str_starts_with($exported, '# A copy of settings.yaml, with every secret in it written out in full')
 );
 
-$suite->check('the export has no secrets written out in full', $isSafe, $exported);
+$suite->check('the export holds every secret, saying so at the top', $isBackup, $exported);
+
+// Settings aren't read from environment variables, so a reference to one is refused, saying so.
+$useReference = function () : void {
+    ConfigValue::createFromString('${SENDGRID_API_KEY}');
+};
+
+$suite->checkThrows('a reference to an environment variable is refused', InvalidInputException::class, $useReference);
+$isValue = (ConfigValue::createFromString('a${b}c')->resolve() === 'a${b}c');
+$suite->check('but a value only containing "${" is just a value', $isValue);
 
 // The mistakes each setting refuses, where the setting is made.
 $noSecret = ConfigValue::createFromString('');
@@ -265,17 +273,6 @@ foreach ($refused as $what => $code)
 }
 
 $useFile('', false);
-
-$enableWithMissingVariable = function () use ($emptyVersion) : void {
-    $secret = ConfigValue::createReference('NOT_A_SET_VARIABLE');
-    SettingsFile::saveGoogleSso(new GoogleSsoConfig(true, 'id', $secret, SsoMfaBypass::NEVER), $emptyVersion);
-};
-
-$suite->checkThrows(
-    'Google can\'t be switched on with its secret in a variable that isn\'t set',
-    InvalidInputException::class,
-    $enableWithMissingVariable
-);
 
 array_map('unlink', glob("{$folder}/*"));
 rmdir($folder);

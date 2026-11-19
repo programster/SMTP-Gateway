@@ -92,23 +92,19 @@ is_kept = (
 suite.check('saving the providers keeps the other settings', is_kept, on_disk[:1500])
 exported = call_api('GET', '/providers/export', auth).get_body()
 
-is_replaced = (
-        'plaintext-secret-123' not in exported
-    and '${PROVIDER_MAILPIT_SECONDARY_PASSWORD}' in exported
-    and 'left out' in exported
-)
-
-suite.check('the export replaces it with a reference', is_replaced, exported[-600:])
+is_full = 'plaintext-secret-123' in exported
+suite.check('the API\'s export is a backup, with the secret in full', is_full, exported[-600:])
 downloaded = web.request('GET', '/providers/export').get_body()
 
-is_safe = (
-        'plaintext-secret-123' not in downloaded
-    and 'test-secret' not in downloaded
-    and '${GOOGLE_SSO_CLIENT_SECRET}' in downloaded
+is_backup = (
+        'plaintext-secret-123' in downloaded
+    and 'test-secret' in downloaded
     and 'timezone: "Europe/London"' in downloaded
+    and downloaded.startswith('# A copy of settings.yaml, with every secret in it written out in full')
 )
 
-suite.check('the downloaded settings.yaml has every secret replaced with a reference', is_safe, downloaded[:1500])
+suite.check('the downloaded settings.yaml is a backup, with every secret, under a warning', is_backup,
+            downloaded[:1500])
 page = web.get('/providers')
 is_hidden = 'mailpit-secondary' in page and 'plaintext-secret-123' not in page and '&lt;unchanged&gt;' in page
 suite.check('the providers page doesn\'t show it', is_hidden)

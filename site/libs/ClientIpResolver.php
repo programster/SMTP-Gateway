@@ -80,7 +80,7 @@ final class ClientIpResolver
 
         // Walk back along the chain of your proxies, from the nearest, to the first address that isn't one. Anything
         // before it could have been made up by the client. A hop that isn't an address ends the walk there.
-        while ($isWalking && $index < count($hops) && self::isWithin($client, $trustedProxies))
+        while ($isWalking && $index < count($hops) && $trustedProxies->includesAddress($client))
         {
             $isWalking = IpAddress::isValid($hops[$index]);
 
@@ -92,7 +92,7 @@ final class ClientIpResolver
             $index++;
         }
 
-        if (IpAddress::isValid($cloudflareClient) && self::isWithin($client, $cloudflare))
+        if (IpAddress::isValid($cloudflareClient) && $cloudflare->includesAddress($client))
         {
             $client = new IpAddress($cloudflareClient);
         }
@@ -117,25 +117,11 @@ final class ClientIpResolver
         $remoteAddress = new IpAddress((string)($server['REMOTE_ADDR'] ?? ''));
 
         $isFromProxy = (
-               self::isWithin($remoteAddress, $proxies->getTrustedProxies())
-            || ($proxies->isBehindCloudflare() && self::isWithin($remoteAddress, CloudflareNetworks::loadNetworks()))
+               $proxies->getTrustedProxies()->includesAddress($remoteAddress)
+            || ($proxies->isBehindCloudflare() && CloudflareNetworks::loadNetworks()->includesAddress($remoteAddress))
         );
 
         $isProxiedHttps = ($isFromProxy && strtolower($request->getHeaderLine('X-Forwarded-Proto')) === 'https');
         return $isDirectHttps || $isProxiedHttps;
-    }
-
-
-    private static function isWithin(IpAddress $address, IpNetworkCollection $networks) : bool
-    {
-        $isWithin = false;
-
-        foreach ($networks as $network)
-        {
-            /* @var $network IpNetwork */
-            $isWithin = ($isWithin || $network->contains($address));
-        }
-
-        return $isWithin;
     }
 }

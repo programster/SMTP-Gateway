@@ -11,5 +11,9 @@ unsubscribes can be recorded against each email too, through its webhook at
 [SendGrid's event webhook](providers.md#sendgrids-event-webhook), which has which options to choose,
 and the `curl` commands for creating it with SendGrid's API.
 
+Only events about this service's own emails are recorded. A provider's webhook can also report email
+sent by other systems through the same account (SendGrid's does, for the whole account), and those are
+ignored, so they aren't counted, and nothing about them is kept.
+
 A provider's webhook stays switched off (404) until it has its key or secret (`webhook_public_key`,
 `webhook_signing_key` or `webhook_secret`), as events that can't be checked can't be trusted.

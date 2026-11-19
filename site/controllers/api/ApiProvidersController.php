@@ -90,14 +90,14 @@ class ApiProvidersController extends AbstractController
 
 
     /**
-     * Get the providers as YAML that's safe to commit to version control (the providers section of settings.yaml,
-     * with secrets written out in full replaced with references to environment variables to put them in).
+     * Get the providers as YAML (the providers section of settings.yaml), with every secret written out in full, as a
+     * backup. It mustn't be committed to version control or shared.
      */
     public function export(Request $request, Response $response) : Response
     {
         try
         {
-            $yaml = ProvidersConfigParser::toYaml(ProviderRegistry::getConfig(), SecretOutput::EXPORT);
+            $yaml = ProvidersConfigParser::toYaml(ProviderRegistry::getConfig(), SecretOutput::AS_IS);
         }
         catch (ProvidersNotConfiguredException $e)
         {

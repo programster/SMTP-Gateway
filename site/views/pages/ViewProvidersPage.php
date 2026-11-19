@@ -70,8 +70,8 @@ class ViewProvidersPage extends Programster\AbstractView\AbstractView
         <a href="/rate-limits">Global rate limits</a>) and each email token's. A provider that can't be connected to
         is skipped for <?= ProviderStatusRepository::UNAVAILABLE_SECONDS ?> seconds, then tried again.</p>
     <p><a class="button secondary" href="/providers/export">Download settings.yaml</a> <span class="hint">All the
-        settings, including these providers. Safe to commit to version control: secrets written out in full are
-        replaced with <code>${ENV_VAR}</code> references.</span></p>
+        settings, including these providers, as a backup. <strong>It holds every password, key and token in
+        full</strong>, so keep it as safe as they are: don't commit it to version control, or share it.</span></p>
 </div>
 <h2>Enabled</h2>
 <p class="hint">Drag a provider by its handle (or focus the handle, and use the up and down arrow keys) to change the

@@ -17,7 +17,7 @@ key = create_email_token(web, 'no-providers')
 dashboard = web.get('/')
 suite.check('the dashboard says there are no providers yet', 'No providers have been set up yet' in dashboard)
 page = web.get('/providers')
-is_first = 'Add your first one below' in page and 'api_key: &quot;${SENDGRID_API_KEY}&quot;' in page
+is_first = 'Add your first one below' in page and 'api_key: &quot;SG.your-api-key&quot;' in page
 suite.check('the providers page asks for the first one, with an example', is_first)
 suite.check('the settings page has the defaults', '<option value="UTC" selected>' in web.get('/admin/settings/general'))
 

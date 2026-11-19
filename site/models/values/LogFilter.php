@@ -140,7 +140,7 @@ readonly class LogFilter
     {
         $params = ['from' => $this->m_from, 'to' => $this->m_to, 'search' => $this->m_search];
         $params['regex'] = $this->m_isRegex ? '1' : '';
-        $params['level'] = (count($this->m_levels) > 0) ? $this->m_levels[0]->value : '';
+        $params['level'] = implode(',', $this->m_levels->column('value'));
         $params['category'] = (count($this->m_categories) > 0) ? $this->m_categories[0]->value : '';
         $params['context_name'] = $this->m_context->getName();
         $params['context_value'] = $this->m_context->getValue();

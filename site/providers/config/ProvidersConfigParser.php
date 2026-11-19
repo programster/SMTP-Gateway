@@ -11,8 +11,8 @@
  *       - name: sendgrid-main
  *         type: sendgrid
  *         enabled: true
- *         api_key: ${SENDGRID_API_KEY}
- *         webhook_public_key: ${SENDGRID_WEBHOOK_PUBLIC_KEY}
+ *         api_key: SG.xxxx
+ *         webhook_public_key: MFkwEwYHKoZI...
  *         rate_limits:
  *           - { unit: emails, max: 10, period_seconds: 1 }
  *       - name: mailcow
@@ -21,8 +21,8 @@
  *         host: mail.example.org
  *         port: 587
  *         security: tls
- *         username: ${MAIL_SERVER_USERNAME}
- *         password: ${MAIL_SERVER_PASSWORD}
+ *         username: relay@example.org
+ *         password: xxxx
  *         dkim_selector: dkim
  *         rate_limits: []
  */
@@ -111,7 +111,7 @@ final class ProvidersConfigParser
             foreach ($provider->getSettings()->getSettings() as $setting)
             {
                 /* @var $setting ConfigSetting */
-                $output[$setting->getName()] = self::presentSetting($provider, $setting, $secretOutput);
+                $output[$setting->getName()] = self::presentSetting($setting, $secretOutput);
             }
 
             $output['rate_limits'] = [];
@@ -150,9 +150,8 @@ final class ProvidersConfigParser
 
         $lines = [
             '# The providers that ' . SERVICE_NAME . ' sends email through, and how emails are shared between them.',
-            '# A setting written as "${NAME}" is read from the environment variable NAME (e.g. set in .env), so',
-            '# secrets can be kept out of this file. They can be edited here, on the Providers page of the web',
-            '# interface, or through the API, which check them before they are saved.',
+            '# They can be edited here, on the Providers page of the web interface, or through the API, which check',
+            '# them before they are saved.',
             '#',
             "# mode: one of {$modes}.",
         ];
@@ -168,7 +167,6 @@ final class ProvidersConfigParser
 
         foreach ($data['providers'] as $index => $provider)
         {
-            $definition = $config->getProviders()->toArray()[$index];
             $prefix = '  - ';
 
             foreach ($provider as $key => $value)
@@ -186,8 +184,7 @@ final class ProvidersConfigParser
                 }
                 else
                 {
-                    $comment = self::getExportComment($definition, (string)$key, $secretOutput);
-                    $lines[] = $prefix . $key . ': ' . self::quote($value) . $comment;
+                    $lines[] = $prefix . $key . ': ' . self::quote($value);
                 }
 
                 $prefix = '    ';
@@ -437,6 +434,15 @@ final class ProvidersConfigParser
             throw new InvalidInputException('"security" must be tls (STARTTLS), ssl (implicit TLS) or none.');
         }
 
+        // A saved password kept as "<unchanged>" can't go to a different server without being entered again.
+        $isKept = ($previous->exists() && ($data['password'] ?? '') === self::UNCHANGED);
+        $changed = $isKept ? SmtpSettings::findServerChanges($previous->getSettings(), $data) : [];
+
+        if (count($changed) > 0)
+        {
+            throw new InvalidInputException(SmtpSettings::describePasswordNeeded(...$changed));
+        }
+
         $username = self::readValue($data, 'username', false, false, $previous);
         $password = self::readValue($data, 'password', false, true, $previous);
 
@@ -495,7 +501,7 @@ final class ProvidersConfigParser
 
 
     /**
-     * Read a setting that can refer to an environment variable.
+     * Read a setting's value.
      *
      * @param array $data - the provider's data.
      *
@@ -509,7 +515,8 @@ final class ProvidersConfigParser
      *
      * @return ConfigValue
      *
-     * @throws InvalidInputException - if it's missing, isn't a string, or is "<unchanged>" with no previous value.
+     * @throws InvalidInputException - if it's missing, isn't a string, is "<unchanged>" with no previous value, or is a
+     * reference to an environment variable (see ConfigValue).
      */
     private static function readValue(
         array $data,
@@ -535,8 +542,8 @@ final class ProvidersConfigParser
             catch (NotFoundException)
             {
                 $msg =
-                    "\"{$key}\" is \"" . self::UNCHANGED . "\", but there's no existing value to keep. Give its value,"
-                    . ' or a "${ENV_VAR}" reference.';
+                    "\"{$key}\" is \"" . self::UNCHANGED . "\", but there's no existing value to keep. Give its"
+                    . ' value.';
 
                 throw new InvalidInputException($msg);
             }
@@ -599,71 +606,20 @@ final class ProvidersConfigParser
      *
      * @return string|int
      */
-    private static function presentSetting(
-        ProviderDefinition $provider,
-        ConfigSetting $setting,
-        SecretOutput $secretOutput
-    ) : string|int
+    private static function presentSetting(ConfigSetting $setting, SecretOutput $secretOutput) : string|int
     {
         $value = $setting->getValue();
+        $isSecretValue = ($setting->isSecret() && $value instanceof ConfigValue && $value->toConfigString() !== '');
 
-        $isHiddenSecret = (
-               $setting->isSecret()
-            && $value instanceof ConfigValue
-            && $value->isReference() === false
-            && $value->toConfigString() !== ''
-        );
-
+        $isMasked = ($isSecretValue && $secretOutput === SecretOutput::MASKED);
 
         $output = match (true) {
-            $value instanceof ConfigValue && $isHiddenSecret === false => $value->toConfigString(),
-            $value instanceof ConfigValue && $secretOutput === SecretOutput::AS_IS => $value->toConfigString(),
-            $value instanceof ConfigValue && $secretOutput === SecretOutput::MASKED => self::UNCHANGED,
-            $value instanceof ConfigValue => '${' . self::getExportEnvVarName($provider, $setting->getName()) . '}',
+            $value instanceof ConfigValue && $isMasked => self::UNCHANGED,
+            $value instanceof ConfigValue => $value->toConfigString(),
             default => $value,
         };
 
         return $output;
-    }
-
-
-    /**
-     * The comment for an exported secret that was written out in full, saying which environment variable to put it
-     * in, so the exported file can be loaded back.
-     */
-    private static function getExportComment(
-        ProviderDefinition $provider,
-        string $key,
-        SecretOutput $secretOutput
-    ) : string
-    {
-        $comment = '';
-
-        foreach ($provider->getSettings()->getSettings() as $setting)
-        {
-            /* @var $setting ConfigSetting */
-            $value = $setting->getValue();
-
-            if (
-                   $secretOutput === SecretOutput::EXPORT
-                && $setting->getName() === $key
-                && $setting->isSecret()
-                && $value instanceof ConfigValue
-                && $value->isReference() === false
-                && $value->toConfigString() !== ''
-            )
-            {
-                $comment = '  # Was written out in full, so has been left out. Put it in this environment variable.';
-            }
-        }
-
-        return $comment;
-    }
-
-
-    private static function getExportEnvVarName(ProviderDefinition $provider, string $key) : string
-    {
-        return strtoupper(preg_replace('/[^a-z0-9]+/i', '_', "PROVIDER_{$provider->getName()}_{$key}"));
     }
 
 

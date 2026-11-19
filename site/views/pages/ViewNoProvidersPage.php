@@ -12,8 +12,8 @@ class ViewNoProvidersPage extends Programster\AbstractView\AbstractView
 {
     // What the editor starts with: a provider of each of the two most common types, to be changed.
     public const string EXAMPLE_YAML = <<<'YAML'
-        # Add your providers below, and save. A setting written as "${NAME}" is read from the environment variable
-        # NAME (e.g. set in .env, then restart), so secrets can be kept out of settings.yaml.
+        # Add your providers below, and save. (Or use "Add a provider" on the Providers page, which asks for
+        # each setting.)
         #
         # mode: round_robin, overflow or fallback: how emails are shared between the providers.
         mode: "overflow"
@@ -22,7 +22,7 @@ class ViewNoProvidersPage extends Programster\AbstractView\AbstractView
           - name: "sendgrid"
             type: "sendgrid"
             enabled: true
-            api_key: "${SENDGRID_API_KEY}"
+            api_key: "SG.your-api-key"
             rate_limits: []
 
           # Or an SMTP server of your own, e.g. mailcow:
@@ -32,8 +32,8 @@ class ViewNoProvidersPage extends Programster\AbstractView\AbstractView
           #   host: "mail.example.org"
           #   port: 587
           #   security: "tls"
-          #   username: "${MAIL_SERVER_USERNAME}"
-          #   password: "${MAIL_SERVER_PASSWORD}"
+          #   username: "relay@example.org"
+          #   password: "your-password"
           #   rate_limits: []
         YAML;
 

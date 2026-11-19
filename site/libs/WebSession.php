@@ -138,6 +138,7 @@ final class WebSession
         // A new session ID, so one planted before logging in (session fixation) is useless.
         session_regenerate_id(true);
         unset($_SESSION['pending_user_id'], $_SESSION['pending_since'], $_SESSION['webauthn_challenge']);
+        unset($_SESSION['entered_provider_passwords']);
         $_SESSION['user_id'] = $user->getId();
         $_SESSION['session_version'] = $user->getSessionVersion();
         $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
@@ -359,6 +360,33 @@ final class WebSession
         $codes = array_values(array_map('strval', (array)($_SESSION['new_backup_codes'] ?? [])));
         unset($_SESSION['new_backup_codes']);
         return $codes;
+    }
+
+
+    /**
+     * Remember that this session entered a custom provider's password, so it can change the server the password's
+     * sent to without entering it again (e.g. to fix a typo in the host). Only this session is trusted with that: any
+     * other has to enter the password again (see SmtpSettings::findServerChanges()). It's forgotten when the session
+     * logs out, or another account logs in.
+     *
+     * @param string $providerName - the provider's name, as it was saved.
+     *
+     * @return void
+     */
+    public static function rememberEnteredProviderPassword(string $providerName) : void
+    {
+        $_SESSION['entered_provider_passwords'][$providerName] = true;
+    }
+
+
+    /**
+     * Whether this session entered a custom provider's password (see rememberEnteredProviderPassword()).
+     * @param string $providerName - the provider's name.
+     * @return bool
+     */
+    public static function hasEnteredProviderPassword(string $providerName) : bool
+    {
+        return ($_SESSION['entered_provider_passwords'][$providerName] ?? false) === true;
     }
 
 

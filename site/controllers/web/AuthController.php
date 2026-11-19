@@ -59,43 +59,58 @@ class AuthController extends AbstractController
     {
         $email = trim(self::getFormField($request, 'email'));
         $password = self::getFormField($request, 'password');
-        $clientIp = (string)ClientIpResolver::resolve($request);
+        $clientIpAddress = ClientIpResolver::resolve($request);
+        $clientIp = (string)$clientIpAddress;
         $userId = '';
 
         try
         {
             $user = AdminUserRepository::loadByEmail($email);
             $userId = $user->getId();
-            $isValid = AdminUserRepository::verifyPassword($user, $password);
+
+            $checkPassword = function () use ($user, $password) : bool {
+                return AdminUserRepository::verifyPassword($user, $password);
+            };
         }
         catch (NotFoundException)
         {
             // Spend about the same time as checking a real password, so the response time doesn't reveal which
             // email addresses have accounts.
-            password_hash($password, PASSWORD_DEFAULT);
-            $isValid = false;
+            $checkPassword = function () use ($password) : bool {
+                password_hash($password, PASSWORD_DEFAULT);
+                return false;
+            };
         }
 
-        if ($isValid === false)
+        try
         {
-            // The account's ID if there is one: never the address typed, which may be anyone's.
-            $context = ($userId === '') ? [] : ['user_id' => $userId];
-            $context['client_ip'] = $clientIp;
-            ServiceFactory::getLogger(LogCategory::ACCESS)->warning('Failed web login', $context);
-            self::slowDown();
-            $page = self::createLoginPage('Invalid email address or password.');
-            $result = self::renderPage($response, 'Log in', $page, 401);
+            $isValid = LoginThrottle::attempt($clientIpAddress, $checkPassword);
+
+            if ($isValid === false)
+            {
+                // The account's ID if there is one: never the address typed, which may be anyone's.
+                $context = ($userId === '') ? [] : ['user_id' => $userId];
+                $context['client_ip'] = $clientIp;
+                ServiceFactory::getLogger(LogCategory::ACCESS)->warning('Failed web login', $context);
+                self::slowDown();
+                $page = self::createLoginPage('Invalid email address or password.');
+                $result = self::renderPage($response, 'Log in', $page, 401);
+            }
+            elseif ($user->getStatus()->canLogIn() === false)
+            {
+                $context = ['user_id' => $user->getId(), 'client_ip' => $clientIp];
+                ServiceFactory::getLogger(LogCategory::ACCESS)->warning('Blocked account tried to log in', $context);
+                $page = self::createLoginPage(self::BLOCKED_MESSAGE);
+                $result = self::renderPage($response, 'Log in', $page, 403);
+            }
+            else
+            {
+                $result = $this->continueLogin($request, $response, $user, LoginMethod::PASSWORD);
+            }
         }
-        elseif ($user->getStatus()->canLogIn() === false)
+        catch (LoginThrottledException $e)
         {
-            $context = ['user_id' => $user->getId(), 'client_ip' => $clientIp];
-            ServiceFactory::getLogger(LogCategory::ACCESS)->warning('Blocked account tried to log in', $context);
-            $page = self::createLoginPage(self::BLOCKED_MESSAGE);
-            $result = self::renderPage($response, 'Log in', $page, 403);
-        }
-        else
-        {
-            $result = $this->continueLogin($request, $response, $user, LoginMethod::PASSWORD);
+            $result = self::renderPage($response, 'Log in', self::createLoginPage($e->getMessage()), 429);
         }
 
         return $result;
@@ -263,16 +278,29 @@ class AuthController extends AbstractController
     public function verifyTotp(Request $request, Response $response) : Response
     {
         $user = WebSession::getPendingUser();
+        $code = self::getFormField($request, 'code');
 
-        if (TotpService::verify($user, self::getFormField($request, 'code')))
+        $checkCode = function () use ($user, $code) : bool {
+            return TotpService::verify($user, $code);
+        };
+
+        try
         {
-            $result = self::redirect($response, $this->completeLogin($request, $user, LoginMethod::AUTHENTICATOR_APP));
+            if (LoginThrottle::attempt(ClientIpResolver::resolve($request), $checkCode))
+            {
+                $next = $this->completeLogin($request, $user, LoginMethod::AUTHENTICATOR_APP);
+                $result = self::redirect($response, $next);
+            }
+            else
+            {
+                self::slowDown();
+                $error = "That code isn't right, or has already been used.";
+                $result = self::renderSecondFactor($response, $user, false, $error, 401);
+            }
         }
-        else
+        catch (LoginThrottledException $e)
         {
-            self::slowDown();
-            $error = "That code isn't right, or has already been used.";
-            $result = self::renderSecondFactor($response, $user, false, $error, 401);
+            $result = self::renderSecondFactor($response, $user, false, $e->getMessage(), 429);
         }
 
         return $result;
@@ -286,36 +314,50 @@ class AuthController extends AbstractController
     public function verifyBackupCode(Request $request, Response $response) : Response
     {
         $user = WebSession::getPendingUser();
+        $backupCode = self::getFormField($request, 'backup_code');
 
-        if (BackupCodeService::redeem($user, self::getFormField($request, 'backup_code')))
+        $redeemCode = function () use ($user, $backupCode) : bool {
+            return BackupCodeService::redeem($user, $backupCode);
+        };
+
+        try
         {
-            $numLeft = BackupCodeService::loadStatus($user)->getNumUnused();
+            $isRedeemed = LoginThrottle::attempt(ClientIpResolver::resolve($request), $redeemCode);
 
-            ServiceFactory::getLogger(LogCategory::ACCESS)->warning('Backup code used to log in', [
-                'user_id' => $user->getId(),
-                'backup_codes_left' => $numLeft,
-            ]);
+            if ($isRedeemed)
+            {
+                $numLeft = BackupCodeService::loadStatus($user)->getNumUnused();
 
-            // With none left, completeLogin() gives the account new ones, and goes to the page that shows them.
-            $next = $this->completeLogin($request, $user, LoginMethod::BACKUP_CODE);
-            $left = ($numLeft === 1) ? '1 backup code' : "{$numLeft} backup codes";
+                ServiceFactory::getLogger(LogCategory::ACCESS)->warning('Backup code used to log in', [
+                    'user_id' => $user->getId(),
+                    'backup_codes_left' => $numLeft,
+                ]);
 
-            $advice = ($numLeft <= BackupCodeStatus::RUNNING_LOW)
-                ? ' Generate new ones under "My account" before you run out.'
-                : ' If you\'ve lost your authenticator app or security key, set up a new one under "My account".';
+                // With none left, completeLogin() gives the account new ones, and goes to the page that shows them.
+                $next = $this->completeLogin($request, $user, LoginMethod::BACKUP_CODE);
+                $left = ($numLeft === 1) ? '1 backup code' : "{$numLeft} backup codes";
 
-            $message = ($numLeft === 0)
-                ? 'You logged in with your last backup code, so you have new ones below. Save them now.'
-                : "You logged in with a backup code, which can't be used again. You have {$left} left.{$advice}";
+                $advice = ($numLeft <= BackupCodeStatus::RUNNING_LOW)
+                    ? ' Generate new ones under "My account" before you run out.'
+                    : ' If you\'ve lost your authenticator app or security key, set up a new one under "My account".';
 
-            WebSession::flash($message);
-            $result = self::redirect($response, $next);
+                $message = ($numLeft === 0)
+                    ? 'You logged in with your last backup code, so you have new ones below. Save them now.'
+                    : "You logged in with a backup code, which can't be used again. You have {$left} left.{$advice}";
+
+                WebSession::flash($message);
+                $result = self::redirect($response, $next);
+            }
+            else
+            {
+                self::slowDown();
+                $error = "That backup code isn't right, or has already been used.";
+                $result = self::renderSecondFactor($response, $user, true, $error, 401);
+            }
         }
-        else
+        catch (LoginThrottledException $e)
         {
-            self::slowDown();
-            $error = "That backup code isn't right, or has already been used.";
-            $result = self::renderSecondFactor($response, $user, true, $error, 401);
+            $result = self::renderSecondFactor($response, $user, true, $e->getMessage(), 429);
         }
 
         return $result;
@@ -442,6 +484,7 @@ class AuthController extends AbstractController
 
         $clientIp = ClientIpResolver::resolve($request);
         AdminUserRepository::recordLogin($user, $clientIp);
+        LoginThrottle::clear($clientIp);
 
         ServiceFactory::getLogger(LogCategory::ACCESS)->info('Web login', [
             'user_id' => $user->getId(),

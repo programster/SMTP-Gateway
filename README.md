@@ -37,8 +37,8 @@ docker compose up -d
 
 Then open the web interface (port 80 by default), log in with `ADMIN_EMAIL` and the password you hashed, and
 set up two-factor authentication (you'll be taken straight there, as it's required by default). A fresh
-install has no providers, so add one under **Providers** (e.g. SendGrid, with its API key in `.env` as
-`SENDGRID_API_KEY`, referred to as `"${SENDGRID_API_KEY}"`). Emails sent before then are queued, and
+install has no providers, so add one under **Providers** (e.g. SendGrid, with its API key). Emails sent
+before then are queued, and
 sent once it's added. Then create an email token under **Email tokens**, and look through **Settings**.
 
 ## Documentation

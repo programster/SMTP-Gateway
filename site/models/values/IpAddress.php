@@ -49,6 +49,39 @@ readonly class IpAddress
     }
 
 
+    /**
+     * Check whether it's an address that's only used inside a network, never on the internet: a private address
+     * (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16, or IPv6's fc00::/7), the machine's own (loopback), a link-local
+     * one, or a carrier-grade NAT one (100.64.0.0/10). A web request from one has usually come through a proxy on the
+     * same network, unless the service is reached directly from inside a home or office network.
+     *
+     * @return bool
+     */
+    public function isPrivate() : bool
+    {
+        static $networks = null;
+
+        if ($networks === null)
+        {
+            $ranges = [
+                '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.0/8', '169.254.0.0/16', '100.64.0.0/10',
+                'fc00::/7', '::1/128', 'fe80::/10',
+            ];
+
+            $created = [];
+
+            foreach ($ranges as $range)
+            {
+                $created[] = new IpNetwork($range);
+            }
+
+            $networks = new IpNetworkCollection(...$created);
+        }
+
+        return $networks->includesAddress($this);
+    }
+
+
     public function isIpv4() : bool
     {
         return strlen($this->m_packed) === 4;

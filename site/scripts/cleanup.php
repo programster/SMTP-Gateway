@@ -51,12 +51,12 @@ function cleanUp(EmailRetentionPolicy $retention, int $logDays) : void
     $queries = [
         "emails older than {$recordDays} days" =>
             "DELETE FROM \"email_message\" WHERE \"created_at\" < {$recordCutoff} AND {$finished}",
-        "unmatched events older than {$recordDays} days" =>
-            "DELETE FROM \"email_event\" WHERE \"email_message_id\" IS NULL AND \"occurred_at\" < {$recordCutoff}",
         "rejected requests older than {$recordDays} days" =>
             "DELETE FROM \"rejected_request\" WHERE \"created_at\" < {$recordCutoff}",
         "logs older than {$logDays} days" =>
             "DELETE FROM \"log\" WHERE \"created_at\" < extract(epoch FROM {$logCutoff})",
+        'failed login counts whose window ended over a day ago' =>
+            'DELETE FROM "login_throttle" WHERE "window_started_at" < now() - interval \'1 day\'',
     ];
 
     foreach ($queries as $description => $query)
