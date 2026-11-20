@@ -151,6 +151,7 @@ details.advanced[open] > summary { margin-bottom: 0.5rem; }
 /* A page of the documentation, rendered from its Markdown. */
 .documentation { max-width: 880px; }
 .documentation h1 { margin-top: 0; }
+.documentation img { max-width: 100%; height: auto; }
 .documentation h2 { border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; }
 /* Headings get smaller with each level, and stay in the text's colour (unlike the site's muted h3, for forms). */
 .documentation h3 { font-size: 1.1rem; margin-top: 1.75rem; color: var(--text); }

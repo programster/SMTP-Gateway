@@ -442,6 +442,10 @@ suite.check('unknown email token is a 404 page', web.request('GET', '/email-toke
 # The documentation, in the side panel.
 page = web.get('/documentation')
 suite.check('the documentation\'s overview is the README', '<h1 id="smtp-gateway">SMTP Gateway</h1>' in page)
+suite.check('with its header image', 'src="/images/header.svg"' in page)
+header = web.request('GET', '/images/header.svg')
+is_svg = header.get_status() == 200 and 'image/svg+xml' in header.get_header('Content-Type')
+suite.check('which the site serves', is_svg)
 page = web.get('/documentation/rate-limits')
 suite.check('a page of the documentation is shown', 'id="rate-limits-and-the-queue"' in page)
 suite.check('its links go to the other pages', 'href="/documentation/retention#disk-space"' in page)

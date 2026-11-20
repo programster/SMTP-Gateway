@@ -1,0 +1,125 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300" width="1200" height="300" role="img" aria-labelledby="title description">
+    <title id="title">SMTP Gateway</title>
+    <desc id="description">Your services send email through the SMTP gateway, over SMTP or a JSON API, each with its own token. The gateway checks and rate limits each email, then sends it through one of your providers.</desc>
+    <style>
+        :root
+        {
+            --background: #f5f7fb;
+            --surface: #ffffff;
+            --border: #d9dde4;
+            --text: #1d2330;
+            --muted: #5d6675;
+            --accent: #2459c9;
+            --accent-soft: #e4ecfb;
+            --line: #a9b3c4;
+        }
+
+        @media (prefers-color-scheme: dark)
+        {
+            :root
+            {
+                --background: #151a23;
+                --surface: #1d2430;
+                --border: #343a45;
+                --text: #e6e9ee;
+                --muted: #a0a8b6;
+                --accent: #7aa2f7;
+                --accent-soft: #24304a;
+                --line: #4d5767;
+            }
+        }
+
+        text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+        .background { fill: var(--background); }
+        .card { fill: var(--surface); stroke: var(--border); stroke-width: 1.5; }
+        .gateway { fill: var(--surface); stroke: var(--accent); stroke-width: 3; }
+        .label { fill: var(--text); font-size: 17px; }
+        .heading { fill: var(--muted); font-size: 13px; font-weight: 600; letter-spacing: 0.12em; }
+        .name { fill: var(--text); font-size: 28px; font-weight: 700; }
+        .chip { fill: var(--accent-soft); }
+        .chip-text { fill: var(--accent); font-size: 13px; font-weight: 600; }
+        .tagline { fill: var(--muted); font-size: 15px; }
+        .route { fill: none; stroke: var(--line); stroke-width: 2.5; }
+        .route-fallback { stroke-dasharray: 6 6; }
+        .icon { fill: none; stroke: var(--muted); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+        .shield { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 2.5; stroke-linejoin: round; }
+        .tick { fill: none; stroke: var(--accent); stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; }
+        .envelope { fill: var(--surface); stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+        .envelope-flap { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+    </style>
+
+    <defs>
+        <!-- An email, centred on (0, 0). -->
+        <g id="envelope">
+            <rect class="envelope" x="-16" y="-11" width="32" height="22" rx="3"/>
+            <path class="envelope-flap" d="M-15 -9 L0 2 L15 -9"/>
+        </g>
+
+        <!-- A service: a window, centred on (0, 0). -->
+        <g id="service-icon">
+            <rect class="icon" x="-12" y="-9" width="24" height="18" rx="3"/>
+            <path class="icon" d="M-12 -3 H12"/>
+        </g>
+
+        <!-- A provider: a cloud, centred on (0, 0). -->
+        <g id="provider-icon">
+            <path class="icon" d="M-8 8 H8 A6 6 0 0 0 8 -4 A8.5 8.5 0 0 0 -8 -2 A5 5 0 0 0 -8 8 Z"/>
+        </g>
+    </defs>
+
+    <rect class="background" width="1200" height="300" rx="16"/>
+
+    <!-- The routes: in from each service, and out to each provider. -->
+    <path class="route" d="M230 85 C350 85 350 125 470 125"/>
+    <path class="route" d="M230 150 H470"/>
+    <path class="route" d="M230 215 C350 215 350 175 470 175"/>
+    <path class="route" d="M730 125 C850 125 850 85 970 85"/>
+    <path class="route" d="M730 150 H970"/>
+    <path class="route route-fallback" d="M730 175 C850 175 850 215 970 215"/>
+
+    <!-- Emails on their way. -->
+    <use href="#envelope" x="350" y="105"/>
+    <use href="#envelope" x="350" y="150"/>
+    <use href="#envelope" x="350" y="195"/>
+    <use href="#envelope" x="850" y="105"/>
+    <use href="#envelope" x="850" y="150"/>
+
+    <!-- Your services. -->
+    <text class="heading" x="135" y="40" text-anchor="middle">YOUR SERVICES</text>
+    <rect class="card" x="40" y="60" width="190" height="50" rx="10"/>
+    <use href="#service-icon" x="72" y="85"/>
+    <text class="label" x="96" y="91">web app</text>
+    <rect class="card" x="40" y="125" width="190" height="50" rx="10"/>
+    <use href="#service-icon" x="72" y="150"/>
+    <text class="label" x="96" y="156">worker</text>
+    <rect class="card" x="40" y="190" width="190" height="50" rx="10"/>
+    <use href="#service-icon" x="72" y="215"/>
+    <text class="label" x="96" y="221">cron job</text>
+
+    <!-- The gateway. -->
+    <text class="heading" x="600" y="40" text-anchor="middle">SMTP · JSON API</text>
+    <rect class="gateway" x="470" y="60" width="260" height="180" rx="20"/>
+    <path class="shield" d="M600 76 L616 82 V93 C616 104 609 110 600 114 C591 110 584 104 584 93 V82 Z"/>
+    <path class="tick" d="M593 95 L598 100 L607 90"/>
+    <text class="name" x="600" y="160" text-anchor="middle">SMTP Gateway</text>
+    <rect class="chip" x="483" y="184" width="66" height="26" rx="13"/>
+    <text class="chip-text" x="516" y="202" text-anchor="middle">tokens</text>
+    <rect class="chip" x="557" y="184" width="80" height="26" rx="13"/>
+    <text class="chip-text" x="597" y="202" text-anchor="middle">rate limits</text>
+    <rect class="chip" x="645" y="184" width="72" height="26" rx="13"/>
+    <text class="chip-text" x="681" y="202" text-anchor="middle">tracking</text>
+
+    <!-- Your providers. -->
+    <text class="heading" x="1065" y="40" text-anchor="middle">YOUR PROVIDERS</text>
+    <rect class="card" x="970" y="60" width="190" height="50" rx="10"/>
+    <use href="#provider-icon" x="1002" y="85"/>
+    <text class="label" x="1026" y="91">primary</text>
+    <rect class="card" x="970" y="125" width="190" height="50" rx="10"/>
+    <use href="#provider-icon" x="1002" y="150"/>
+    <text class="label" x="1026" y="156">overflow</text>
+    <rect class="card" x="970" y="190" width="190" height="50" rx="10"/>
+    <use href="#provider-icon" x="1002" y="215"/>
+    <text class="label" x="1026" y="221">fallback</text>
+
+    <text class="tagline" x="600" y="276" text-anchor="middle">One place for every service's email: scoped tokens, rate limits, and round robin, overflow or fallback across providers.</text>
+</svg>

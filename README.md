@@ -1,5 +1,7 @@
 # SMTP Gateway
 
+![Your services send email through the SMTP gateway, which sends it through your providers](site/public/images/header.svg)
+
 * [What it does](#what-it-does)
 * [Quick start](#quick-start)
 * [Documentation](#documentation)

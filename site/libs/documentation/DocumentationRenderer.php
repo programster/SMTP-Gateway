@@ -6,7 +6,9 @@
  * can't be used to inject anything. Headings get GitHub's IDs, so links to a section work as they do on GitHub.
  *
  * Links between the docs are made to point at their pages in the web interface. A link to any other file in the
- * repository (e.g. .env.example) becomes plain text, as the web interface doesn't serve those.
+ * repository (e.g. .env.example) becomes plain text, as the web interface doesn't serve those. An image in site/public
+ * (e.g. the README's header) is shown from its address on this site, and any other image in the repository becomes
+ * its alt text.
  */
 
 declare(strict_types = 1);
@@ -127,8 +129,13 @@ final class DocumentationRenderer
             return self::rewriteLink($matches[1], $matches[2], $page);
         };
 
+        $rewriteImage = function (array $matches) use ($page) : string {
+            return self::rewriteImage($matches[1], $matches[2], $page);
+        };
+
         $linked = (string)preg_replace_callback('/(?<!!)\[([^\]]*)\]\(([^)\s]+)\)/', $rewriteLink, $markdown);
-        return $converter->convert($linked)->getContent();
+        $withImages = (string)preg_replace_callback('/!\[([^\]]*)\]\(([^)\s]+)\)/', $rewriteImage, $linked);
+        return $converter->convert($withImages)->getContent();
     }
 
 
@@ -193,6 +200,37 @@ final class DocumentationRenderer
             $isKept => "[{$text}]({$target})",
             $isPage => "[{$text}]({$pagePath}{$anchor})",
             default => $text,
+        };
+    }
+
+
+    /**
+     * Rewrite one Markdown image for the web interface: a file in site/public (which the site serves, e.g. the
+     * README's header image) is shown from its address on this site, so the same Markdown works on GitHub and here.
+     * A web address or a path on this site is kept. Any other file in the repository can't be shown, so it's just its
+     * alt text.
+     *
+     * @param string $altText - the image's alt text.
+     *
+     * @param string $target - where the image is, e.g. "site/public/images/header.svg".
+     *
+     * @param DocumentationPage $page - the page it's on, which a relative $target is relative to.
+     *
+     * @return string - the Markdown for it.
+     */
+    private static function rewriteImage(string $altText, string $target, DocumentationPage $page) : string
+    {
+        $isKept = (preg_match('#^(https?://|/)#', $target) === 1);
+        $folder = dirname($page->getFile());
+        $resolved = self::resolvePath(($folder === '.') ? $target : "{$folder}/{$target}");
+        $publicPrefix = 'site/public/';
+        $isPublic = str_starts_with($resolved, $publicPrefix);
+        $publicPath = '/' . substr($resolved, strlen($publicPrefix));
+
+        return match (true) {
+            $isKept => "![{$altText}]({$target})",
+            $isPublic => "![{$altText}]({$publicPath})",
+            default => $altText,
         };
     }
 
