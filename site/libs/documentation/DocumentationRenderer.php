@@ -7,8 +7,9 @@
  *
  * Links between the docs are made to point at their pages in the web interface. A link to any other file in the
  * repository (e.g. .env.example) becomes plain text, as the web interface doesn't serve those. An image in site/public
- * (e.g. the README's header) is shown from its address on this site, and any other image in the repository becomes
- * its alt text.
+ * (e.g. the README's header) is shown from its address on this site. Any other image becomes its alt text, whether
+ * it's another file in the repository, or on another site (e.g. the README's badges), which the Content Security
+ * Policy wouldn't let the page show, and which would tell that site who's reading the docs.
  */
 
 declare(strict_types = 1);
@@ -207,8 +208,9 @@ final class DocumentationRenderer
     /**
      * Rewrite one Markdown image for the web interface: a file in site/public (which the site serves, e.g. the
      * README's header image) is shown from its address on this site, so the same Markdown works on GitHub and here.
-     * A web address or a path on this site is kept. Any other file in the repository can't be shown, so it's just its
-     * alt text.
+     * A path on this site is kept. Anything else is just its alt text: another file in the repository can't be shown,
+     * and an image on another site (e.g. a badge) is blocked by the Content Security Policy. A linked badge, e.g.
+     * "[![Docker Hub](https://img.shields.io/...)](https://hub.docker.com/...)", so becomes a link with that text.
      *
      * @param string $altText - the image's alt text.
      *
@@ -220,7 +222,8 @@ final class DocumentationRenderer
      */
     private static function rewriteImage(string $altText, string $target, DocumentationPage $page) : string
     {
-        $isKept = (preg_match('#^(https?://|/)#', $target) === 1);
+        // A path on this site, but not one starting "//", which is another site's address.
+        $isKept = (preg_match('#^/(?!/)#', $target) === 1);
         $folder = dirname($page->getFile());
         $resolved = self::resolvePath(($folder === '.') ? $target : "{$folder}/{$target}");
         $publicPrefix = 'site/public/';

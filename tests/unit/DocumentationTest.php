@@ -56,6 +56,15 @@ $html = $render('![A diagram](diagram.svg) and ![a logo](/images/logo.svg)', Doc
 $isText = (!str_contains($html, 'diagram.svg') && str_contains($html, 'A diagram'));
 $suite->check('any other image in the repository is just its alt text', $isText, $html);
 $suite->check('an image at a path on this site is kept', str_contains($html, 'src="/images/logo.svg"'), $html);
+$markdown = '![A chart](https://example.com/chart.svg) and ![a photo](//example.com/photo.jpg)';
+$html = $render($markdown, DocumentationPage::OVERVIEW);
+$isText = (!str_contains($html, '<img') && str_contains($html, 'A chart') && str_contains($html, 'a photo'));
+$suite->check('an image on another site is just its alt text', $isText, $html);
+$markdown = '[![Docker Hub](https://img.shields.io/docker/v/x/y)](https://hub.docker.com/r/x/y)';
+$html = $render($markdown, DocumentationPage::OVERVIEW);
+$link = '<a href="https://hub.docker.com/r/x/y">Docker Hub</a>';
+$isLink = (!str_contains($html, '<img') && str_contains($html, $link));
+$suite->check('so a linked badge is a link with its alt text', $isLink, $html);
 $html = $render("# Rate limits and the queue\n\n## Per-token limits", DocumentationPage::RATE_LIMITS);
 $suite->check('headings get GitHub\'s IDs', str_contains($html, 'id="per-token-limits"'), $html);
 $html = $render('<script>alert(1)</script> <img src=x onerror=alert(1)>', DocumentationPage::OVERVIEW);

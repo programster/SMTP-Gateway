@@ -142,8 +142,16 @@ for tag in "${tags[@]}"; do
     tagArguments+=(-t "${REPOSITORY}:${tag}")
 done
 
+# The labels that describe this build (see the end of the Dockerfile). The version is the release's, from .env.example,
+# as it's always one of the tags published.
+buildArguments=(
+    --build-arg "IMAGE_VERSION=${releaseTag}"
+    --build-arg "IMAGE_REVISION=$(git rev-parse HEAD)"
+    --build-arg "IMAGE_CREATED=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+)
+
 # --pull gets the latest base images, so the published image has their latest security fixes.
-docker build --pull "${tagArguments[@]}" .
+docker build --pull "${buildArguments[@]}" "${tagArguments[@]}" .
 
 for tag in "${tags[@]}"; do
     docker push "${REPOSITORY}:${tag}"

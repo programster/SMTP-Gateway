@@ -1,5 +1,7 @@
 # SMTP Gateway
 
+[![Docker Hub](https://img.shields.io/docker/v/programster/smtp-gateway?sort=semver&label=Docker%20Hub)](https://hub.docker.com/r/programster/smtp-gateway)
+
 ![Your services send email through the SMTP gateway, which sends it through your providers](site/public/images/header.svg)
 
 * [What it does](#what-it-does)

@@ -31,11 +31,10 @@ RUN curl -fsSL https://packages.sury.org/php/apt.gpg \
   && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/sury-php.gpg] https://packages.sury.org/php/ bookworm main" \
   > /etc/apt/sources.list.d/php.list
 
-# Expose port 80 for the web requests, and the SMTP server's ports that services send their email through: 465
-# (implicit TLS) and 587 (STARTTLS). Both are always encrypted.
-EXPOSE 80
-EXPOSE 465
-EXPOSE 587
+# The container listens on port 80 for the web interface and the API, and on the SMTP server's ports that services
+# send their email through: 465 (implicit TLS) and 587 (STARTTLS), both always encrypted. They're deliberately not
+# EXPOSEd, so "docker run -P" can't publish them to random ports on every interface without being asked: publish each
+# one you want explicitly, as docker-compose.yml does.
 
 # Install the relevant packages
 RUN apt-get update && apt-get install vim nginx curl php8.5-fpm git unzip supervisor cron \
@@ -101,6 +100,25 @@ COPY docker/startup.sh /root/startup.sh
 
 # Change the workdir to /var/www/site so that when devs enter the container, they are at the site
 WORKDIR /var/www/site
+
+# The standard OCI labels, which say what the image is and where it's from (see "docker inspect"). The last three
+# describe this build, so publish-image.sh passes them in, and they're left empty when it's built any other way. They're
+# set last, so a new commit or build time doesn't rebuild the layers above.
+LABEL org.opencontainers.image.title="SMTP Gateway" \
+      org.opencontainers.image.description="Self-hosted SMTP gateway: scoped tokens, rate limits, and fallback across providers" \
+      org.opencontainers.image.source="https://github.com/programster/SMTP-Gateway" \
+      org.opencontainers.image.url="https://hub.docker.com/r/programster/smtp-gateway" \
+      org.opencontainers.image.documentation="https://github.com/programster/SMTP-Gateway/tree/main/docs" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.authors="Programster"
+
+ARG IMAGE_VERSION=""
+ARG IMAGE_REVISION=""
+ARG IMAGE_CREATED=""
+
+LABEL org.opencontainers.image.version="${IMAGE_VERSION}" \
+      org.opencontainers.image.revision="${IMAGE_REVISION}" \
+      org.opencontainers.image.created="${IMAGE_CREATED}"
 
 # Execute the containers startup script which will start many processes/services
 CMD ["/bin/bash", "/root/startup.sh"]
