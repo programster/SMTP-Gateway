@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Builds the app's image from this checkout, and pushes it to the repository in DOCKER_IMAGE_NAME (from .env, or
 # .env.example without one), whatever its tag, with the tags you choose. It asks for the tags (suggesting the
-# release's version, its minor version and "latest" when HEAD is at a release's git tag), and asks again before
-# building or pushing anything.
+# version in .env.example's tag, its minor version and "latest"), warns if HEAD isn't at that version's git tag, and
+# asks again before building or pushing anything.
 #
 # It refuses to run when:
 #  - the working tree has changes, or untracked files, as they'd go into the image without being in any release, or
@@ -73,14 +73,20 @@ if [ -z "$releaseTag" ]; then
     exit 1
 fi
 
-# Suggest the release's tags when HEAD is at a git tag that's a version, e.g. 0.5.0 suggests "0.5.0 0.5 latest".
-gitTag="$(git describe --tags --exact-match 2>/dev/null || true)"
-
-if [[ "$gitTag" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    suggestion="${gitTag} ${gitTag%.*} latest"
+# Suggest the release's tags from .env.example's tag, which has to be published anyway, e.g. 0.6.0 suggests
+# "0.6.0 0.6 latest".
+if [[ "$releaseTag" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    suggestion="${releaseTag} ${releaseTag%.*} latest"
 else
     suggestion=""
-    echo "Note: HEAD isn't at a release's git tag (e.g. 0.5.0), so there's no suggestion."
+fi
+
+# The release's git tag should be on this commit, so checking it out runs the image published from it.
+if ! git tag --points-at HEAD | grep -qxF "$releaseTag"; then
+    echo "Warning: HEAD isn't at the git tag ${releaseTag}, so checking out ${releaseTag} wouldn't give the code"
+    echo "this image is built from. Tag this commit as ${releaseTag} (or check out that tag) first, unless that's"
+    echo "intended."
+    echo
 fi
 
 echo "Commit: $(git log -1 --format='%h %s')"
@@ -92,7 +98,7 @@ if [ -n "$suggestion" ]; then
     read -r -p "Tags to publish, separated by spaces [${suggestion}]: " tagsInput
     tagsInput="${tagsInput:-$suggestion}"
 else
-    read -r -p "Tags to publish, separated by spaces (e.g. 0.5.0 0.5 latest): " tagsInput
+    read -r -p "Tags to publish, separated by spaces (including ${releaseTag}): " tagsInput
 fi
 
 read -r -a tags <<< "$tagsInput"
