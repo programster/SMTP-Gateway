@@ -18,7 +18,7 @@ use Psr\Http\Message\ServerRequestInterface;
 
 final class MailtrapProvider extends SmtpRelayProvider implements ProviderWebhookInterface
 {
-    public const string MESSAGE_ID_VARIABLE = 'smtp_api_message_id';
+    public const string MESSAGE_ID_VARIABLE = 'smtp_gateway_message_id';
 
     private readonly string $m_webhookSecret;
 

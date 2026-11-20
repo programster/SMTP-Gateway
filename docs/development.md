@@ -17,6 +17,32 @@ TypeScript compiler in watch mode (`site/ts` to `site/public/js`).
 The database tables are created by the migrations in `site/database/migrations`, which run on every
 start up.
 
+## Publishing the image
+
+`docker-compose.yml` runs the image named by `DOCKER_IMAGE_NAME`, which `.env.example` sets to the
+published image for the release, e.g. `programster/smtp-gateway:0.5.0`, so each release is built and
+pushed to Docker Hub. To publish a release:
+
+1. Change the tag in `.env.example`'s `DOCKER_IMAGE_NAME` to the new release's, so a fresh install of
+   the release runs it, and commit that.
+2. Tag the commit with the release's version (e.g. `0.5.0`).
+3. Log in to Docker Hub (`docker login`), and run:
+
+```bash
+./publish-image.sh
+```
+
+It pushes to the repository in your `.env`'s `DOCKER_IMAGE_NAME` (or `.env.example`'s, without a
+`.env`), whatever its tag, so you can publish to a registry of your own. It asks which tags to publish
+as, suggesting the release's version, its minor version and `latest` (e.g. `0.5.0 0.5 latest`) when
+the commit has a version's git tag, and shows what it will push and asks again before building. It
+refuses to run when the working tree has changes or untracked files, as they'd go into the image without
+being in the release, or when the tag in `.env.example`'s `DOCKER_IMAGE_NAME` isn't one of the tags
+given.
+
+Anyone who'd rather build the image themselves can use `docker-compose.build.yml` instead, as the
+[README](../README.md#quick-start) says.
+
 ## Tests
 
 ```bash

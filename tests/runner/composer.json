@@ -1,6 +1,6 @@
 {
-    "name": "smtp-api-service/test-runner",
-    "description": "Runs the SMTP API service's test suites, each against a fresh stack, several at once, through a queue.",
+    "name": "smtp-gateway/test-runner",
+    "description": "Runs the SMTP gateway's test suites, each against a fresh stack, several at once, through a queue.",
     "type": "project",
     "license": "MIT",
     "require": {

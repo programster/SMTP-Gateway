@@ -17,7 +17,7 @@ use Psr\Http\Message\ServerRequestInterface;
 
 final class SendGridProvider extends SmtpRelayProvider implements ProviderWebhookInterface
 {
-    public const string MESSAGE_ID_ARGUMENT = 'smtp_api_service_message_id';
+    public const string MESSAGE_ID_ARGUMENT = 'smtp_gateway_message_id';
 
     private readonly string $m_webhookPublicKey;
 

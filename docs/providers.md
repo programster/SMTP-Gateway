@@ -168,7 +168,7 @@ curl -s -X POST https://api.sendgrid.com/v3/api_keys \
   -H "Authorization: Bearer $SENDGRID_ADMIN_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "name": "smtp-api-service",
+    "name": "smtp-gateway",
     "scopes": [
       "mail.send",
       "whitelabel.read",
@@ -218,7 +218,7 @@ Until that's set, its webhook address answers 404, so set the webhook up in this
 
 | Option                          | Choose                                                                              |
 |---------------------------------|-------------------------------------------------------------------------------------|
-| Friendly name                   | Anything, e.g. `smtp-api-service`.                                                  |
+| Friendly name                   | Anything, e.g. `smtp-gateway`.                                                  |
 | Post URL                        | The address from step 1.                                                            |
 | Authorization method            | **None**. The signature is what proves an event is from SendGrid.                   |
 | Deliverability data             | **All of them**: Processed, Dropped, Deferred, Bounced and Delivered.               |
@@ -289,7 +289,7 @@ WEBHOOK_ID=$(curl -s -X POST https://api.sendgrid.com/v3/user/webhooks/event/set
   -H "Authorization: Bearer $SENDGRID_ADMIN_KEY" \
   -H "Content-Type: application/json" \
   -d "{
-    \"friendly_name\": \"smtp-api-service\",
+    \"friendly_name\": \"smtp-gateway\",
     \"url\": \"$WEBHOOK_URL\",
     \"enabled\": true,
     \"processed\": true,

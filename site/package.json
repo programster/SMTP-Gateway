@@ -1,5 +1,5 @@
 {
-    "name": "smtp-api-service-frontend",
+    "name": "smtp-gateway-frontend",
     "private": true,
     "description": "Compiles the TypeScript in ts/ to the ES modules in public/js/. Run: npm install && npx tsc",
     "devDependencies": {

@@ -39,7 +39,7 @@ final class SystemMailer
 
         try
         {
-            $mailer->setFrom((string)$from, 'SMTP API Service', false);
+            $mailer->setFrom((string)$from, SERVICE_NAME, false);
             $mailer->addAddress((string)$to);
             $mailer->Subject = $subject;
             $mailer->Body = $text;

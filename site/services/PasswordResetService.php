@@ -100,7 +100,7 @@ final class PasswordResetService
 
         $writeText = function (string $link) use ($hours, $siteUrl) : string {
             return
-                "An account has been made for you on the SMTP API service at {$siteUrl}, which you log in to with this"
+                "An account has been made for you on the SMTP gateway at {$siteUrl}, which you log in to with this"
                 . " email address.\r\n\r\n"
                 . "To choose your password, open this link within {$hours} hours. It only works once:\r\n\r\n"
                 . "{$link}\r\n\r\n"
@@ -198,7 +198,7 @@ final class PasswordResetService
 
         $writeText = function (string $link) use ($minutes, $siteUrl, $clientIp) : string {
             return
-                "Someone (hopefully you) asked to reset the password for your account on the SMTP API service at"
+                "Someone (hopefully you) asked to reset the password for your account on the SMTP gateway at"
                 . " {$siteUrl}.\r\n\r\n"
                 . "To choose a new password, open this link within {$minutes} minutes. It only works once:\r\n\r\n"
                 . "{$link}\r\n\r\n"

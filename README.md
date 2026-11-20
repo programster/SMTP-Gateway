@@ -1,4 +1,4 @@
-# SMTP API Service
+# SMTP Gateway
 
 * [What it does](#what-it-does)
 * [Quick start](#quick-start)
@@ -27,13 +27,22 @@ opened or clicked.
 
 ## Quick start
 
+It runs from the published Docker image, [programster/smtp-gateway](https://hub.docker.com/r/programster/smtp-gateway)
+(`DOCKER_IMAGE_NAME` in `.env`), so all you need from this repository is `docker-compose.yml` and
+`.env.example` (cloning it is the easiest way to get them). Then:
+
 ```bash
 cp .env.example .env
 # Fill in at least DB_USER, DB_PASSWORD, DB_NAME, ADMIN_EMAIL and ADMIN_PASSWORD_HASH (the hash of
 # the password, base64 encoded: .env.example says how to make it).
-docker compose build
 docker compose up -d
 ```
+
+To build the image yourself instead (e.g. to run only code you've read), check out the release's git tag,
+uncomment `COMPOSE_FILE` in `.env` (which adds [docker-compose.build.yml](docker-compose.build.yml)), and
+run `docker compose build` before `docker compose up -d`. The image is named `DOCKER_IMAGE_NAME`, so
+change it to a name of your own if you'd rather it wasn't mistaken for the published one (or if you'll
+push it to your own registry).
 
 Then open the web interface (port 80 by default), log in with `ADMIN_EMAIL` and the password you hashed, and
 set up two-factor authentication (you'll be taken straight there, as it's required by default). A fresh
@@ -57,7 +66,7 @@ The full documentation is in [docs/](docs/README.md), and is also shown in the w
 * [Running on a small server](docs/small-servers.md): the memory and CPU limits, and the values suggested for a server.
 * [How long emails are kept](docs/retention.md): retention, and the disk space emails take.
 * [Adding a type of provider](docs/adding-a-provider.md): writing a provider of your own.
-* [Development](docs/development.md): the development stack, and running the tests.
+* [Development](docs/development.md): the development stack, publishing the image, and running the tests.
 * [Security notes](docs/security.md): how credentials, passwords and sessions are protected.
 
 ## License

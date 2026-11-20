@@ -51,7 +51,7 @@ final class AttachmentStripper
         {
             $note =
                 'This email had ' . count($lines) . ' attachment' . ((count($lines) === 1) ? '' : 's') . ', which'
-                . ' the SMTP API service removed from its copy once it had been sent'
+                . ' the SMTP gateway removed from its copy once it had been sent'
                 . " (as its settings say attachments aren't kept for longer):\r\n\r\n"
                 . implode("\r\n", $lines) . "\r\n";
 

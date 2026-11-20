@@ -20,7 +20,7 @@ use Psr\Http\Message\ServerRequestInterface;
 final class PostmarkProvider extends SmtpRelayProvider implements ProviderWebhookInterface
 {
     // The metadata field holding our ID (Postmark allows names of up to 20 characters).
-    public const string MESSAGE_ID_METADATA = 'smtp_api_message_id';
+    public const string MESSAGE_ID_METADATA = 'smtp_gateway_message_id';
 
     private readonly string $m_messageStream;
     private readonly string $m_webhookSecret;

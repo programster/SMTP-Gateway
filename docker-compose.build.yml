@@ -1,0 +1,12 @@
+# Builds the app's image from this checkout, rather than running the published programster/smtp-gateway image, for
+# anyone who'd rather build it themselves. Use it over docker-compose.yml, most easily by adding this to .env:
+#
+#   COMPOSE_FILE="docker-compose.yml:docker-compose.build.yml"
+#
+# so that "docker compose build" and "docker compose up -d" use both. Check out the release's git tag first, so you
+# build the same code as the release. The image is named DOCKER_IMAGE_NAME, from .env.
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile

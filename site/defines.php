@@ -5,4 +5,4 @@
  */
 
 // The name of the service, as shown in the web interface and the API documentation.
-define('SERVICE_NAME', 'SMTP API Service');
+define('SERVICE_NAME', 'SMTP Gateway');

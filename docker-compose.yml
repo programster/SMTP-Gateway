@@ -1,10 +1,8 @@
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: ${COMPOSE_PROJECT_NAME}-app
+    # The published image by default (set in .env, which says how to upgrade), or one you've built yourself.
     image: ${DOCKER_IMAGE_NAME}
+    container_name: ${COMPOSE_PROJECT_NAME}-app
     restart: always
     ports:
       - "${WEB_HOST_PORT:-80}:80"

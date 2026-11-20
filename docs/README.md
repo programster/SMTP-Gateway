@@ -1,6 +1,6 @@
 # Documentation
 
-The documentation for the SMTP API Service. The [README](../README.md) has what it does, and a quick
+The documentation for the SMTP Gateway. The [README](../README.md) has what it does, and a quick
 start.
 
 * [Configuration](configuration.md): `.env`, the Settings pages, and settings.yaml.
@@ -14,5 +14,5 @@ start.
 * [Running on a small server](small-servers.md): the memory and CPU limits, and the values suggested for a server.
 * [How long emails are kept](retention.md): retention, and the disk space emails take.
 * [Adding a type of provider](adding-a-provider.md): writing a provider of your own.
-* [Development](development.md): the development stack, and running the tests.
+* [Development](development.md): the development stack, publishing the image, and running the tests.
 * [Security notes](security.md): how credentials, passwords and sessions are protected.
