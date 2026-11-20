@@ -138,6 +138,28 @@ readonly class AddressRule
 
 
     /**
+     * Check whether some address could be allowed by both this rule and another, e.g. "*@example.org" and
+     * "someone@example.org" can, but "*@example.org" and "*@example.com" can't.
+     *
+     * @param AddressRule $other - the other rule.
+     *
+     * @return bool
+     */
+    public function overlaps(AddressRule $other) : bool
+    {
+        $isDomain = ($this->m_kind === AddressRuleKind::DOMAIN);
+        $isOtherDomain = ($other->m_kind === AddressRuleKind::DOMAIN);
+
+        return match (true) {
+            $isDomain && $isOtherDomain => $this->m_value === $other->m_value,
+            $isDomain => (new EmailAddress($other->m_value))->getDomain() === $this->m_value,
+            $isOtherDomain => (new EmailAddress($this->m_value))->getDomain() === $other->m_value,
+            default => (new EmailAddress($this->m_value))->isSameAs(new EmailAddress($other->m_value)),
+        };
+    }
+
+
+    /**
      * Get the rule in its written form, which createFromString() turns back into the same rule.
      *
      * @return string

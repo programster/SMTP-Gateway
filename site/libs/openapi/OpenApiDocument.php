@@ -80,10 +80,12 @@ final class OpenApiDocument
             `{"error": {"message": "...", "code": 1}}`, where `code` is an application-specific code that tells apart
             errors with the same status: -1 unknown, 1 invalid JSON, 2 invalid input, 3 not found, 4 message too
             large, 5 changed by someone else in the meantime, 6 version (If-Match) missing, 10 missing credentials,
-            11 invalid credentials, 12 revoked credentials, 13 IP address not allowed, 20 sender not allowed,
-            21 reply-to not allowed, 22 recipient not allowed, 23 more recipients than a rate limit allows,
-            30 rejected by the provider, 40 the account isn't archived (archive it before deleting it), 41 the account
-            is archived, 42 the last account that can log in can't be blocked or archived.
+            11 invalid credentials, 12 revoked credentials, 13 IP address not allowed, 14 two-factor authentication
+            must be set up first, 15 the password must be changed first, 20 sender not allowed, 21 reply-to not
+            allowed, 22 recipient not allowed, 23 more recipients than a rate limit allows, 24 no provider the email
+            token can use takes the sender, 30 rejected by the provider, 31 no providers have been set up yet, 40 the
+            account isn't archived (archive it before deleting it), 41 the account is archived, 42 the last account
+            that can log in can't be blocked or archived.
 
             **SMTP.** Services can also send email through the SMTP server: port 465 (implicit TLS) or 587
             (STARTTLS), logging in with an email token's ID as the username, and the whole token as the password. The
@@ -198,7 +200,8 @@ final class OpenApiDocument
 
         $createDescription =
             'Creates an email token with a new secret. Its `conditions` are optional: only the fields given are'
-            . ' restricted, so leave one out to allow anyone (or, for `clientIp`, anywhere). Fields it doesn\'t have'
+            . ' restricted, so leave one out to allow anyone (or, for `clientIp`, anywhere, and for `provider`, every'
+            . ' provider). Fields it doesn\'t have'
             . ' (e.g. a misspelt `conditons`, which would leave it unrestricted), or that the service sets (such as'
             . ' `id`), are refused.';
 
@@ -614,8 +617,11 @@ final class OpenApiDocument
 
         $sendDescription =
             'Authenticated with an email token, as a bearer token. The email must keep to the token\'s restrictions:'
-            . ' its sender, reply-to and every recipient (to, cc and bcc) must be allowed, and the'
-            . ' request must come from an allowed IP address.';
+            . ' its sender, reply-to and every recipient (to, cc and bcc) must be allowed, and the request must come'
+            . ' from an allowed IP address. If the token is restricted to particular providers, it\'s only sent through'
+            . ' those of them that are enabled, and is queued while none of them is. Only providers that take its'
+            . ' sender (its envelope sender, and the From and Sender headers) are used, and if no provider the token'
+            . ' can use takes it, it\'s refused (403, code 24).';
 
         $send = new Operation(
             method: Method::POST,
@@ -639,7 +645,11 @@ final class OpenApiDocument
         $configDescription =
             'The same structure as settings.yaml\'s providers section: a "mode" (round_robin, overflow or fallback),'
             . ' and a list of'
-            . " \"providers\", each with a \"name\", \"type\" ({$types}), \"enabled\", \"rate_limits\" (each with a"
+            . " \"providers\", each with an \"id\" (a UUID, which email tokens' \"provider\" conditions refer to, made"
+            . ' when it\'s left out, or kept from the provider of the same name), a'
+            . " \"name\", \"type\" ({$types}), \"enabled\", an optional \"allowed_senders\" (\"domains\" and"
+            . ' "addresses" lists: it only takes email from a sender at any of the domains, or with any of the'
+            . ' addresses, and takes any sender when it\'s left out), "rate_limits" (each with a'
             . ' "unit", "max" and "period_seconds"), and the settings for its type (see "Types of provider" in the'
             . ' README, e.g. sendgrid: api_key and webhook_public_key). Secrets (passwords, keys and tokens) are'
             . ' returned as "<unchanged>", and kept as they are if sent back that way. Settings can\'t be read from'
@@ -680,9 +690,15 @@ final class OpenApiDocument
             operationId: 'getProviders',
         );
 
+        $unlinkedDescription =
+            'The email tokens that were restricted to a provider that\'s no longer there (or now has another id),'
+            . ' which have lost their link to it. Each stays restricted to its other providers, or to none, so its'
+            . ' emails wait in the queue until it\'s given one.';
+
         $replaceSchema = self::createObject(
             new Property('version', new SchemaString('The new version.')),
             new Property('config', $config),
+            new Property('unlinkedEmailTokenIds', new SchemaArray(new SchemaString(), $unlinkedDescription)),
         );
 
         $ifMatch = Parameter::createFromSchema(
@@ -697,7 +713,9 @@ final class OpenApiDocument
             'Replaces the providers (settings.yaml\'s providers section, leaving its other settings as they are), from'
             . ' JSON (the "config" structure) or YAML (with a Content-Type of application/yaml). They\'re checked'
             . ' before they\'re saved, and the queue workers use them from their next email, sending any emails that'
-            . ' were queued while there were none. At least one provider must be enabled.';
+            . ' were queued while there were none. At least one provider must be enabled. A provider given without an'
+            . ' "id" keeps the id of the current provider with the same name, so it stays linked to its email tokens.'
+            . ' Removing a provider removes email tokens\' links to it.';
 
         $replace = new Operation(
             method: Method::PUT,
@@ -825,8 +843,8 @@ final class OpenApiDocument
 
 
     /**
-     * Get the schema of one condition: the client IP addresses allowed, or the addresses allowed in one part of the
-     * email.
+     * Get the schema of one condition: the client IP addresses allowed, the addresses allowed in one part of the
+     * email, or the providers its emails may go through.
      *
      * @param ConditionRemoval $removal - whether its "allowed" can be null, to remove it (in a PATCH).
      *
@@ -870,7 +888,27 @@ final class OpenApiDocument
             new Property('allowed', $rules, required: true),
         );
 
-        return new SchemaOneOf(new SchemaCollection($ipCondition, $addressCondition));
+        $providerField = 'The providers the email token\'s emails go through.';
+
+        $providersDescription =
+            'The ids of the providers the email token\'s emails may be sent through (GET /api/v1/providers lists'
+            . ' them). The mode applies to those of them that are enabled, as if they were the only providers, and'
+            . ' while none of them is enabled, its emails wait in the queue. Each must be a provider\'s id, enabled or'
+            . ' not. An empty list is refused, but a token whose providers have all been removed since shows one, as it'
+            . ' stays restricted (to none) rather than being allowed every provider.';
+
+        $providerIds = new SchemaArray(
+            new SchemaString(format: StringFormat::UUID),
+            $providersDescription . $orNull,
+            nullable: $canRemove
+        );
+
+        $providerCondition = self::createObject(
+            new Property('field', self::createEnum($providerField, ConditionField::PROVIDER), required: true),
+            new Property('allowed', $providerIds, required: true),
+        );
+
+        return new SchemaOneOf(new SchemaCollection($ipCondition, $addressCondition, $providerCondition));
     }
 
 

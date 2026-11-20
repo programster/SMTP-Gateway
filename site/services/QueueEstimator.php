@@ -34,15 +34,19 @@ final class QueueEstimator
      *
      * @param int $recipientCount - its number of recipients.
      *
+     * @param EmailAddressCollection $senders - every address it's sent as (see RawEmail::getSenderAddresses()), as
+     * only the providers that take them all can send it.
+     *
      * @return float - seconds from now, or INF if it can't be sent until something changes (e.g. every provider is
-     * unavailable).
+     * unavailable, or none of the providers its token is restricted to is enabled).
      *
      * @throws ConfigurationException - if settings.yaml isn't valid.
      */
     public static function estimateSecondsUntilAttempt(
         AuthenticatedEmailToken $emailToken,
         string $messageId,
-        int $recipientCount
+        int $recipientCount,
+        EmailAddressCollection $senders
     ) : float
     {
         $tokenLimits = $emailToken->getPolicy()->getRateLimits();
@@ -54,11 +58,12 @@ final class QueueEstimator
         $tokenId = $emailToken->getEmailToken()->getId();
         $aheadOverall = QueuedDemand::countAheadThatCanBeSent($messageId, $tokenId, $priority);
         $config = ProviderRegistry::getConfig();
+        $eligibility = new ProviderEligibility($emailToken->getPolicy()->getAllowedProviders(), $senders);
 
         $limitsWait = max(
             RateLimiter::getSecondsUntilRoom($tokenLimits, $tokenScope, $recipientCount, $aheadForKey),
             RateLimiter::getSecondsUntilRoom($globalLimits, $globalScope, $recipientCount, $aheadOverall),
-            ProviderSelector::getSecondsUntilAProviderHasRoom($config, $recipientCount, $aheadOverall)
+            ProviderSelector::getSecondsUntilAProviderHasRoom($config, $eligibility, $recipientCount, $aheadOverall)
         );
 
         // A worker may have claimed the email while this was being worked out, in which case the limits above

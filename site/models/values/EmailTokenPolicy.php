@@ -2,8 +2,9 @@
 
 /*
  * Everything an email token is restricted to: where it may be used from, which addresses it may send as and use as the
- * reply-to, who it may send to, and how fast. Each of the first four can be no restriction at all (AnyIp, AnyAddress),
- * which is what an email token has when it was given no condition for it.
+ * reply-to, who it may send to, which providers its emails go through, and how fast. Each of the first five can be no
+ * restriction at all (AnyIp, AnyAddress, AnyProvider), which is what an email token has when it was given no condition
+ * for it.
  */
 
 declare(strict_types = 1);
@@ -15,6 +16,7 @@ readonly class EmailTokenPolicy
     private AddressRestrictionInterface $m_allowedSenders;
     private AddressRestrictionInterface $m_allowedReplyTos;
     private AddressRestrictionInterface $m_allowedRecipients;
+    private ProviderRestrictionInterface $m_allowedProviders;
     private RateLimitSet $m_rateLimits;
     private Priority $m_priority;
 
@@ -22,13 +24,16 @@ readonly class EmailTokenPolicy
     /**
      * @param IpRestrictionInterface $allowedNetworks - the IP addresses/ranges the token may be used from.
      *
-     * @param AddressRestrictionInterface $allowedSenders - the addresses the token may send as. This is checked against the
-     * envelope sender (MAIL FROM), and the From and Sender headers.
+     * @param AddressRestrictionInterface $allowedSenders - the addresses the token may send as. This is checked against
+     * the envelope sender (MAIL FROM), and the From and Sender headers.
      *
-     * @param AddressRestrictionInterface $allowedReplyTos - the addresses the token may put in the Reply-To header. An email with
-     * no Reply-To header is always fine.
+     * @param AddressRestrictionInterface $allowedReplyTos - the addresses the token may put in the Reply-To header. An
+     * email with no Reply-To header is always fine.
      *
      * @param AddressRestrictionInterface $allowedRecipients - who the token may send to (To, Cc and Bcc alike).
+     *
+     * @param ProviderRestrictionInterface $allowedProviders - the providers the token's emails may be sent through.
+     * The mode applies to those of them that are enabled, as if they were the only providers.
      *
      * @param RateLimitSet $rateLimits - how fast the token may send. These apply on top of the global limits.
      *
@@ -39,6 +44,7 @@ readonly class EmailTokenPolicy
         AddressRestrictionInterface $allowedSenders,
         AddressRestrictionInterface $allowedReplyTos,
         AddressRestrictionInterface $allowedRecipients,
+        ProviderRestrictionInterface $allowedProviders,
         RateLimitSet $rateLimits,
         Priority $priority
     )
@@ -47,6 +53,7 @@ readonly class EmailTokenPolicy
         $this->m_allowedSenders = $allowedSenders;
         $this->m_allowedReplyTos = $allowedReplyTos;
         $this->m_allowedRecipients = $allowedRecipients;
+        $this->m_allowedProviders = $allowedProviders;
         $this->m_rateLimits = $rateLimits;
         $this->m_priority = $priority;
     }
@@ -74,6 +81,7 @@ readonly class EmailTokenPolicy
     public function getAllowedSenders() : AddressRestrictionInterface { return $this->m_allowedSenders; }
     public function getAllowedReplyTos() : AddressRestrictionInterface { return $this->m_allowedReplyTos; }
     public function getAllowedRecipients() : AddressRestrictionInterface { return $this->m_allowedRecipients; }
+    public function getAllowedProviders() : ProviderRestrictionInterface { return $this->m_allowedProviders; }
     public function getRateLimits() : RateLimitSet { return $this->m_rateLimits; }
     public function getPriority() : Priority { return $this->m_priority; }
 }

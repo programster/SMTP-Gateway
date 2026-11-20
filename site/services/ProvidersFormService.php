@@ -3,10 +3,11 @@
 /*
  * Makes the changes the provider forms on the Providers page ask for: adding, editing and removing a provider,
  * putting the enabled providers in order, and setting the mode. Each change is made to the providers' data (as
- * ProvidersConfigParser::toArray() gives it, with the secrets written out in full as "<unchanged>", so they're kept
- * without leaving the server), which is then parsed and saved exactly as the YAML editor's and the API's changes are. So every check they have (valid,
- * unique names, at least one enabled provider, each type's settings, and the version the change was based on) applies
- * to the forms too.
+ * ProvidersConfigParser::toArray() gives it, with the secrets written out as "<unchanged>", so they're kept without
+ * leaving the server), which is then parsed and saved exactly as the YAML editor's and the API's changes are. So every
+ * check they have (valid, unique ids and names, at least one enabled provider, each type's settings, and the version
+ * the change was based on) applies to the forms too. After every save, email tokens' links to providers that no longer
+ * exist are removed (see EmailTokenRepository::removeLinksToOtherProviders()).
  */
 
 declare(strict_types = 1);
@@ -67,7 +68,8 @@ final class ProvidersFormService
 
 
     /**
-     * Put a provider's new entry in place of its old one, which may rename it.
+     * Put a provider's new entry in place of its old one, which may rename it. It keeps its id, so the email tokens
+     * restricted to it stay linked to it.
      *
      * @param string $name - its name now.
      *
@@ -85,30 +87,33 @@ final class ProvidersFormService
     public static function edit(string $name, array $entry, string $version) : void
     {
         $data = self::loadData();
-        $data['providers'][self::findIndex($data, $name)] = $entry;
+        $index = self::findIndex($data, $name);
+        $data['providers'][$index] = ['id' => $data['providers'][$index]['id']] + $entry;
         self::save($data, $version);
     }
 
 
     /**
-     * Remove a provider. The last one that's enabled can't be, as no email could be sent.
+     * Remove a provider. The last one that's enabled can't be, as no email could be sent. The email tokens restricted
+     * to it lose their link to it, and stay restricted to their other providers (or to none, if it was their last, so
+     * their emails wait in the queue until they're given one).
      *
      * @param string $name - its name.
      *
      * @param string $version - the version of the providers the change is based on.
      *
-     * @return void
+     * @return EmailTokenCollection - the email tokens that were restricted to it.
      *
      * @throws NotFoundException - if there's no such provider.
      * @throws InvalidInputException - if it's the last enabled one.
      * @throws ConflictException - if the providers have changed since the version given.
      * @throws ConfigurationException - if the providers can't be read or saved.
      */
-    public static function remove(string $name, string $version) : void
+    public static function remove(string $name, string $version) : EmailTokenCollection
     {
         $data = self::loadData();
         array_splice($data['providers'], self::findIndex($data, $name), 1);
-        self::save($data, $version);
+        return self::save($data, $version);
     }
 
 
@@ -255,12 +260,16 @@ final class ProvidersFormService
     /**
      * Parse and save the providers' data, as the YAML editor does.
      *
+     * @return EmailTokenCollection - the email tokens that lost a link to a provider that no longer exists.
+     *
      * @throws InvalidInputException
      * @throws ConflictException
      * @throws ConfigurationException
      */
-    private static function save(array $data, string $version) : void
+    private static function save(array $data, string $version) : EmailTokenCollection
     {
-        SettingsFile::saveProviders(SettingsFile::parseProvidersData($data), $version);
+        $config = SettingsFile::parseProvidersData($data);
+        SettingsFile::saveProviders($config, $version);
+        return EmailTokenRepository::removeLinksToOtherProviders($config->getIds());
     }
 }

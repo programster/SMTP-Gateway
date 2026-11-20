@@ -3,7 +3,9 @@
 /*
  * What removing a provider would do, for the dialog that asks before it's removed (ViewRemoveProviderDialog): whether
  * it can be removed at all, and what to warn about. The only enabled provider can't be removed, as no email could be
- * sent without one, so the dialog says so before it's asked, rather than the removal failing after.
+ * sent without one, so the dialog says so before it's asked, rather than the removal failing after. The email tokens
+ * restricted to it are named, as they lose their link to it, and so are those that would then have no enabled provider
+ * left, as their emails would wait in the queue.
  */
 
 declare(strict_types = 1);
@@ -34,11 +36,14 @@ final readonly class ProviderRemovalNotice
      *
      * @param ProvidersConfig $config - every provider, including it.
      *
+     * @param ProviderTokenLinkCollection $links - the email tokens restricted to particular providers.
+     *
      * @return ProviderRemovalNotice
      */
     public static function createForProvider(
         ProviderDefinition $provider,
-        ProvidersConfig $config
+        ProvidersConfig $config,
+        ProviderTokenLinkCollection $links
     ) : ProviderRemovalNotice
     {
         $others = [];
@@ -69,15 +74,56 @@ final readonly class ProviderRemovalNotice
         {
             $providers = (count($others) === 1) ? 'provider' : 'providers';
             $instead = "Emails will be sent through the other enabled {$providers} instead: " . implode(', ', $others);
-            $notice = new ProviderRemovalNotice(false, "{$instead}.{$webhook}");
+            $tokens = self::describeLinkedTokens($provider, $config, $links);
+            $notice = new ProviderRemovalNotice(false, "{$instead}.{$tokens}{$webhook}");
         }
         else
         {
             $disabled = 'It\'s disabled, so no emails are sent through it now.';
-            $notice = new ProviderRemovalNotice(false, "{$disabled}{$webhook}");
+            $tokens = self::describeLinkedTokens($provider, $config, $links);
+            $notice = new ProviderRemovalNotice(false, "{$disabled}{$tokens}{$webhook}");
         }
 
         return $notice;
+    }
+
+
+    /**
+     * Describe what removing a provider does to the email tokens restricted to it.
+     *
+     * @param ProviderDefinition $provider - the provider.
+     *
+     * @param ProvidersConfig $config - every provider.
+     *
+     * @param ProviderTokenLinkCollection $links - the email tokens restricted to particular providers.
+     *
+     * @return string - sentences starting with a space, or an empty string if no token is restricted to it.
+     */
+    private static function describeLinkedTokens(
+        ProviderDefinition $provider,
+        ProvidersConfig $config,
+        ProviderTokenLinkCollection $links
+    ) : string
+    {
+        $linked = $links->filterLinkedTo($provider->getId());
+        $stranded = $links->filterStrandedWithout($provider->getId(), $config);
+        $description = '';
+
+        if (count($linked) > 0)
+        {
+            $description =
+                ' These email tokens are restricted to it, and will lose their link to it, so they only use the other'
+                . " providers they're restricted to: {$linked->describeNames()}.";
+        }
+
+        if (count($stranded) > 0)
+        {
+            $description .=
+                ' Of those, these would have no enabled provider left, so their emails would wait in the queue until'
+                . " they're given one: {$stranded->describeNames()}.";
+        }
+
+        return $description;
     }
 
 

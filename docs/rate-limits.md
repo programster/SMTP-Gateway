@@ -23,8 +23,11 @@ others.
 
 Each email token has a **priority**, from 1 (the lowest, and the default) to 9998, set when it's created. When
 there's room under the limits, the highest priority email goes first, and emails of the same priority go
-in the order they came in. An email waiting for room under the global or a provider's limits keeps that
-room for itself, so no lower priority email can take it. Priority never gets an email past a limit. The
+in the order they came in. An email waiting for room under the global limits keeps that room for itself,
+so no lower priority email can take it. One waiting for room under the providers' limits keeps the room
+under the providers it could use (its token's, if it's [restricted to particular
+providers](sending-email.md#restricting-the-providers)), so a lower priority email can still go
+through any others. Priority never gets an email past a limit. The
 service's own emails (password reset links) have priority 9999, so they always go first. The only exception is an email with more recipients than a recipient limit allows, which could
 never be sent: over SMTP, the extra recipients are refused at `RCPT TO` with `452 4.5.3`, which tells
 the client to send them in another email, and through the API, the request is refused.

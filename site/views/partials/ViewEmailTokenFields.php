@@ -2,9 +2,9 @@
 
 /*
  * The fields of an email token, for creating one or changing one: its name, the lists of IP addresses, senders,
- * reply-to addresses and recipients it's restricted to, its priority and its rate limits. Their values are read back
- * by PolicyInput::readPolicyFromForm(). The lists and rate limits are rows added one at a time (see DynamicRows), so
- * the page needs DynamicRows.createForPage().
+ * reply-to addresses and recipients it's restricted to, the providers it may use, its priority and its rate limits.
+ * Their values are read back by PolicyInput::readPolicyFromForm(). The lists and rate limits are rows added one at a
+ * time (see DynamicRows), so the page needs DynamicRows.createForPage().
  */
 
 declare(strict_types = 1);
@@ -14,6 +14,7 @@ class ViewEmailTokenFields extends Programster\AbstractView\AbstractView
 {
     private readonly array $m_values;
     private readonly EmailTokenFormPurpose $m_purpose;
+    private readonly ProviderDefinitionCollection $m_providers;
 
 
     /**
@@ -21,11 +22,19 @@ class ViewEmailTokenFields extends Programster\AbstractView\AbstractView
      * the token's as it is now (see EmailTokenFormValues).
      *
      * @param EmailTokenFormPurpose $purpose - whether it's creating a token, or changing one.
+     *
+     * @param ProviderDefinitionCollection $providers - the providers in settings.yaml (enabled or not), in order, which
+     * it can be restricted to. Empty before any have been set up.
      */
-    public function __construct(array $values, EmailTokenFormPurpose $purpose)
+    public function __construct(
+        array $values,
+        EmailTokenFormPurpose $purpose,
+        ProviderDefinitionCollection $providers
+    )
     {
         $this->m_values = $values;
         $this->m_purpose = $purpose;
+        $this->m_providers = $providers;
     }
 
 
@@ -112,8 +121,60 @@ class ViewEmailTokenFields extends Programster\AbstractView\AbstractView
                 allows. Over SMTP, an email with more recipients than a recipient limit allows is split by the client
                 into several.</p>
         </div>
+        <div class="provider-restriction">
+            <h3>Providers</h3>
+            <?php $this->renderProviderChoices($getField) ?>
+        </div>
     </div>
 <?php
+    }
+
+
+    /**
+     * Render the providers the token may use: a toggle to restrict it, and a box to tick for each provider (shown only
+     * while it's on).
+     *
+     * @param Closure(string): string $getField - gets a field's value, by its name.
+     *
+     * @return void
+     */
+    private function renderProviderChoices(Closure $getField) : void
+    {
+        $isRestricted = ($getField('restrict_providers') === '1');
+        $toggle = new ViewToggle('restrict_providers', 'Only send through particular providers', $isRestricted);
+
+        if (count($this->m_providers) === 0)
+        {
+?>
+            <p class="hint">There are no providers yet, so it can't be restricted to any. Its emails will go through
+                whichever providers are added, and it can be restricted to some of them once they are.</p>
+<?php
+        }
+        else
+        {
+?>
+            <?= $toggle ?>
+            <fieldset class="provider-choices">
+                <legend class="visually-hidden">The providers it may use</legend>
+<?php
+            foreach ($this->m_providers as $provider)
+            {
+                /* @var $provider ProviderDefinition */
+                $field = "allowed_provider_{$provider->getId()}";
+                $checked = ($getField($field) === '1') ? ' checked' : '';
+                $disabled = $provider->isEnabled() ? '' : ' (disabled)';
+?>
+                <label class="checkbox-option"><input type="checkbox" name="<?= Html::e($field) ?>" value="1"<?=
+                    $checked ?>><?= Html::e($provider->getName() . $disabled) ?></label>
+<?php
+            }
+?>
+            </fieldset>
+            <p class="hint">When it's off, its emails go through any of the enabled providers, as the mode decides.
+                When it's on, they only go through the ticked ones that are enabled, with the mode applied to those as
+                if they were the only providers. While none of them is enabled, its emails wait in the queue.</p>
+<?php
+        }
     }
 
 

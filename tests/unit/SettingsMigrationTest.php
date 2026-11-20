@@ -2,8 +2,9 @@
 
 /*
  * scripts/migrate-settings.php, which carries an earlier version's settings over to settings.yaml on the first start
- * after upgrading: providers.yaml (comments and all), and the settings that were environment variables. Each run is a
- * separate process, given the old settings in its environment, and a settings.yaml path in a temporary folder.
+ * after upgrading: providers.yaml (with an id given to each provider), and the settings that were environment
+ * variables. Each run is a separate process, given the old settings in its environment, and a settings.yaml path in a
+ * temporary folder.
  */
 
 declare(strict_types = 1);
@@ -111,8 +112,10 @@ $suite->check('every setting is carried over', $isCarried, (string)file_get_cont
 $suite->check('a wait of more than 60 seconds is cut to 60', $settings->getSyncWaitSeconds() === 60);
 $providers = SettingsFile::loadProviders();
 $suite->check('the providers are carried over', $providers->getMode() === ProviderMode::FALLBACK);
-$isCommentKept = str_contains((string)file_get_contents($settingsPath), '# An earlier version\'s providers');
-$suite->check('as they were written, comments and all', $isCommentKept);
+// Each is given an id, which is saved, so it stays the same (and email tokens can be linked to it).
+$migratedProvider = $providers->getProviders()[0];
+$isIdSaved = str_contains((string)file_get_contents($settingsPath), "id: \"{$migratedProvider->getId()}\"");
+$suite->check('each is given an id, which is saved', $isIdSaved, (string)file_get_contents($settingsPath));
 $isRenamed = (!file_exists($providersPath) && file_exists("{$providersPath}.migrated"));
 $suite->check('providers.yaml is renamed, as it\'s no longer used', $isRenamed);
 

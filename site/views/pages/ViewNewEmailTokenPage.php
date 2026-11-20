@@ -12,6 +12,7 @@ class ViewNewEmailTokenPage extends Programster\AbstractView\AbstractView
 {
     private readonly array $m_values;
     private readonly string $m_error;
+    private readonly ProviderDefinitionCollection $m_providers;
     private readonly string $m_siteUrl;
 
 
@@ -22,11 +23,14 @@ class ViewNewEmailTokenPage extends Programster\AbstractView\AbstractView
      *
      * @param string $siteUrl - the address the site is reached at, for the curl command (e.g.
      * "https://smtp.example.org").
+     *
+     * @param ProviderDefinitionCollection $providers - the providers it can be restricted to.
      */
-    public function __construct(array $values, string $error, string $siteUrl)
+    public function __construct(array $values, string $error, string $siteUrl, ProviderDefinitionCollection $providers)
     {
         $this->m_values = $values;
         $this->m_error = $error;
+        $this->m_providers = $providers;
         $this->m_siteUrl = $siteUrl;
     }
 
@@ -38,7 +42,7 @@ class ViewNewEmailTokenPage extends Programster\AbstractView\AbstractView
 <?= new ViewFormError($this->m_error) ?>
 <form method="post" action="/email-tokens" class="card" id="email-token-form">
     <?= new ViewCsrfField() ?>
-    <?= new ViewEmailTokenFields($this->m_values, EmailTokenFormPurpose::CREATING) ?>
+    <?= new ViewEmailTokenFields($this->m_values, EmailTokenFormPurpose::CREATING, $this->m_providers) ?>
     <div class="form-actions"><button type="submit">Create the email token</button>
         <a href="/email-tokens">Cancel</a></div>
 </form>

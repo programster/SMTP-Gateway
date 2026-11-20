@@ -1,7 +1,7 @@
 """
 Multiple providers: the providers API (version checks, validation and secrets), the three modes, skipping a provider
-that can't be reached, and the wait for an email to be sent while the client is connected. Uses the test stack's two
-Mailpit containers.
+that can't be reached, the wait for an email to be sent while the client is connected, email tokens restricted to
+particular providers, and providers restricted to particular senders. Uses the test stack's two Mailpit containers.
 """
 
 import copy
@@ -10,7 +10,7 @@ import time
 
 from lib import stack
 from lib.harness import Suite
-from lib.service import SmtpReply, create_email_token, create_api_key, send_email
+from lib.service import EmailToken, SmtpReply, connect, create_email_token, create_api_key, send_data, send_email
 from lib.web import Response, WebClient, bearer, call_api
 
 suite = Suite('Providers')
@@ -231,6 +231,244 @@ query = "SELECT extract(epoch FROM dispatched_at) FROM email_message WHERE subje
 times = [float(value) for value in stack.sql(query).split()]
 most = max(len([other for other in times if start <= other < start + 1.0]) for start in times)
 suite.check('all 16 sent, never more than 2 in any second', len(times) == 16 and most <= 2, (len(times), most))
+save_config(original)
+
+# Email tokens restricted to particular providers, which are linked to them by their ids.
+primary_id = original['providers'][0]['id']
+secondary_id = original['providers'][1]['id']
+is_fixed = primary_id.endswith('4e01') and secondary_id.endswith('4e02')
+suite.check('each provider has its id, from settings.yaml', is_fixed, (primary_id, secondary_id))
+
+
+def create_restricted(name: str, provider_ids: list[str], priority: int = 1) -> EmailToken:
+    """Create an email token restricted to some of the providers, on the web form."""
+    fields = {'restrict_providers': '1', 'priority': str(priority)}
+
+    for provider_id in provider_ids:
+        fields[f'allowed_provider_{provider_id}'] = '1'
+
+    return create_email_token(web, name, fields)
+
+
+def send_with(token: EmailToken, subject: str) -> SmtpReply:
+    return send_email(token, subject, 'x@y.test', timeout=120)
+
+
+def find_provider_condition(email_token: dict) -> list | None:
+    """Get the provider ids an email token (as the API shows it) is restricted to, or None if it isn't."""
+    allowed = [condition['allowed'] for condition in email_token['conditions'] if condition['field'] == 'provider']
+    return allowed[0] if allowed else None
+
+
+def load_providers_of(token: EmailToken) -> list | None:
+    """Get the provider ids an email token is restricted to, through the API, or None if it isn't."""
+    return find_provider_condition(call_api('GET', f'/email-tokens/{token.get_id()}', auth).get_json()['emailToken'])
+
+
+only_secondary = create_restricted('only secondary', [secondary_id])
+allowed = load_providers_of(only_secondary)
+suite.check('the API shows a token\'s provider condition, by id', allowed == [secondary_id], allowed)
+
+for mode in ['overflow', 'round_robin', 'fallback']:
+    config = copy.deepcopy(original)
+    config['mode'] = mode
+    save_config(config)
+    outcomes = []
+
+    for number in range(3):
+        send_with(only_secondary, f'only-secondary-{mode}-{number}')
+        outcomes.append(find_outcome(f'only-secondary-{mode}-{number}'))
+
+    is_secondary = outcomes == ['mailpit-secondary/sent'] * 3
+    suite.check(f'{mode}: a token restricted to one provider always uses it', is_secondary, outcomes)
+
+save_config(original)
+
+# A rename keeps the link, as it's by id. A configuration given without ids keeps them too, by name.
+config = copy.deepcopy(original)
+config['providers'][1]['name'] = 'mailpit-renamed'
+save_config(config)
+send_with(only_secondary, 'only-secondary-renamed')
+outcome = find_outcome('only-secondary-renamed')
+suite.check('renaming its provider keeps the token linked to it', outcome == 'mailpit-renamed/sent', outcome)
+save_config(original)
+without_ids = copy.deepcopy(original)
+
+for provider in without_ids['providers']:
+    del provider['id']
+
+response = save_config(without_ids)
+ids = [provider['id'] for provider in response.get_json()['config']['providers']]
+suite.check('providers saved without ids keep theirs', ids == [primary_id, secondary_id], ids)
+allowed = load_providers_of(only_secondary)
+suite.check('so the token stays linked', allowed == [secondary_id], allowed)
+
+# With its only provider disabled, its emails are accepted and queued, then sent once it's enabled again.
+config = copy.deepcopy(original)
+config['providers'][1]['enabled'] = False
+save_config(config)
+reply = send_with(only_secondary, 'only-secondary-disabled')
+suite.check('its only provider disabled: the email is queued', reply.is_queued(), reply)
+page = web.get(f'/email-tokens/{only_secondary.get_id()}')
+suite.check('and the token\'s page warns that its emails wait', 'None of its providers is enabled' in page)
+reply = send('unrestricted-while-disabled')
+suite.check('an unrestricted token still sends, through the other', reply.is_sent(), reply)
+save_config(original)
+
+
+def is_disabled_one_sent() -> bool:
+    return find_outcome('only-secondary-disabled') == 'mailpit-secondary/sent'
+
+
+is_sent = stack.wait_until(is_disabled_one_sent, 20)
+outcome = find_outcome('only-secondary-disabled')
+suite.check('once it\'s enabled again, the queued email is sent through it', is_sent, outcome)
+
+# A higher priority token waiting for room under its own provider doesn't hold up a lower priority one that can use
+# another provider.
+stack.sql("UPDATE email_message SET dispatched_at = dispatched_at - interval '1 hour' WHERE dispatched_at IS NOT NULL")
+stack.sql("UPDATE email_attempt SET dispatched_at = dispatched_at - interval '1 hour'")
+config = copy.deepcopy(original)
+config['providers'][0]['rate_limits'] = [{'unit': 'emails', 'max': 1, 'period_seconds': 60}]
+save_config(config)
+high = create_restricted('high, primary only', [primary_id], 50)
+send_with(high, 'high-first')
+reply = send_with(high, 'high-waiting')
+suite.check('a high priority token at its only provider\'s limit is queued', reply.is_queued(), reply)
+reply = send_with(only_secondary, 'low-other-provider')
+outcome = find_outcome('low-other-provider')
+is_through = reply.is_sent() and outcome == 'mailpit-secondary/sent'
+suite.check('a lower priority token restricted to another provider isn\'t held up', is_through, (reply, outcome))
+reply = send('low-unrestricted')
+outcome = find_outcome('low-unrestricted')
+is_through = reply.is_sent() and outcome == 'mailpit-secondary/sent'
+suite.check('nor is an unrestricted one, which can use the other provider', is_through, (reply, outcome))
+outcome = find_outcome('high-waiting')
+suite.check('and the high priority email still waits for its own', outcome == '/queued', outcome)
+save_config(original)
+stack.sql("UPDATE email_attempt SET dispatched_at = dispatched_at - interval '1 hour'")
+
+# Removing a provider says which tokens were linked to it, and drops their links. One left with none stays
+# restricted, to none, rather than being allowed every provider.
+page = web.get(f'/providers/{original["providers"][1]["name"]}')
+suite.check('a provider\'s page lists the tokens restricted to it', 'only secondary' in page)
+config = copy.deepcopy(original)
+del config['providers'][1]
+response = save_config(config)
+unlinked = response.get_json()['unlinkedEmailTokenIds']
+suite.check('removing it says which tokens lost their link', only_secondary.get_id() in unlinked, unlinked)
+allowed = load_providers_of(only_secondary)
+suite.check('a token left with no provider stays restricted, to none', allowed == [], allowed)
+reply = send_with(only_secondary, 'only-secondary-removed')
+suite.check('so its emails are queued', reply.is_queued(), reply)
+page = web.get(f'/email-tokens/{only_secondary.get_id()}')
+suite.check('and its page says its providers have all been removed', 'has been removed' in page)
+save_config(original)
+allowed = load_providers_of(only_secondary)
+suite.check('adding the provider back doesn\'t link it again', allowed == [], allowed)
+response = call_api('PATCH', f'/email-tokens/{only_secondary.get_id()}', auth,
+                    {'conditions': [{'field': 'provider', 'allowed': ['5c2f0e7a-1d3b-4a6c-9e8f-0a1b2c3d4eff']}]})
+is_refused = response.get_status() == 400 and 'no provider with the id' in response.get_body()
+suite.check('an id that isn\'t a provider\'s is refused', is_refused, response.get_body())
+response = call_api('PATCH', f'/email-tokens/{only_secondary.get_id()}', auth,
+                    {'conditions': [{'field': 'provider', 'allowed': None}]})
+allowed = find_provider_condition(response.get_json()['emailToken'])
+suite.check('removing the condition lets it use any provider', allowed is None, allowed)
+
+
+def is_removed_one_sent() -> bool:
+    return find_outcome('only-secondary-removed').endswith('/sent')
+
+
+stack.sql("UPDATE email_message SET next_attempt_at = now() WHERE subject = 'only-secondary-removed'")
+is_sent = stack.wait_until(is_removed_one_sent, 20)
+suite.check('and its queued email is then sent', is_sent, find_outcome('only-secondary-removed'))
+
+# Providers restricted to particular senders: anyone at the domains, or with the addresses. The primary only takes
+# example.org (which the other sends here are from), and the secondary programster.org, or stuart@stuart.page.
+SECONDARY_SENDERS = {'domains': ['programster.org'], 'addresses': ['stuart@stuart.page']}
+
+
+def send_as(envelope_sender: str, from_header: str, subject: str) -> tuple[int, SmtpReply]:
+    """
+    Send an email with an envelope sender and a From header, and get the reply to MAIL FROM, and the reply to the
+    email (which is the MAIL FROM's, when it was refused there).
+    """
+    connection = connect(key, 120)
+    mail_code, mail_text = connection.mail(envelope_sender)
+    reply = SmtpReply(mail_code, mail_text.decode())
+
+    if mail_code == 250:
+        connection.rcpt('x@y.test')
+        reply = send_data(connection, f'From: {from_header}\r\nSubject: {subject}\r\n\r\nbody\r\n')
+
+    connection.quit()
+    return mail_code, reply
+
+
+def restrict_senders(secondary_enabled: bool = True, secondary_senders: dict | None = None) -> Response:
+    config = copy.deepcopy(original)
+    config['providers'][0]['allowed_senders'] = {'domains': ['example.org']}
+    config['providers'][1]['allowed_senders'] = secondary_senders or SECONDARY_SENDERS
+    config['providers'][1]['enabled'] = secondary_enabled
+    return save_config(config)
+
+
+response = restrict_senders()
+saved = response.get_json()['config']['providers'][1].get('allowed_senders')
+suite.check('a provider\'s allowed senders are saved, as given', saved == SECONDARY_SENDERS, response.get_body()[:300])
+page = web.get('/providers/mailpit-secondary')
+suite.check('and shown on its page', 'stuart@stuart.page' in page and 'programster.org' in page)
+code, reply = send_as('a@programster.org', 'a@programster.org', 'senders-domain')
+outcome = find_outcome('senders-domain')
+suite.check('anyone at a domain it takes goes through it', outcome == 'mailpit-secondary/sent', (reply, outcome))
+code, reply = send_as('stuart@stuart.page', 'stuart@stuart.page', 'senders-address')
+outcome = find_outcome('senders-address')
+suite.check('and so does an address it takes', outcome == 'mailpit-secondary/sent', (reply, outcome))
+send('senders-other')
+outcome = find_outcome('senders-other')
+suite.check('a sender it doesn\'t take goes through the provider that does', outcome == 'mailpit/sent', outcome)
+code, reply = send_as('someone@stuart.page', 'someone@stuart.page', 'senders-none')
+is_refused = code == 550 and 'No provider' in reply.get_text()
+suite.check('a sender no provider takes is refused at MAIL FROM', is_refused, reply)
+code, reply = send_as('a@programster.org', 'someone@stuart.page', 'senders-from-header')
+is_refused = code == 250 and reply.get_code() == 550 and 'someone@stuart.page' in reply.get_text()
+suite.check('as is a From header no provider takes, after DATA', is_refused, (code, reply))
+api_email = {'from': {'email': 'someone@stuart.page'}, 'to': [{'email': 'x@y.test'}], 'subject': 's', 'text': 'x'}
+response = call_api('POST', '/send', bearer(key.get_token()), api_email)
+is_refused = response.get_status() == 403 and response.get_error_code() == 24
+suite.check('and through the API, with error code 24', is_refused, response.get_body())
+rejected = stack.sql("SELECT count(*) FROM rejected_request WHERE reason = 'no_provider_for_sender'")
+suite.check('each refusal is recorded', int(rejected) >= 3, rejected)
+
+# A sender only a disabled provider takes is queued for it, as it may be enabled again. If the providers change so
+# that none takes it any more, it's failed, rather than waiting forever.
+restrict_senders(secondary_enabled=False)
+code, reply = send_as('a@programster.org', 'a@programster.org', 'senders-disabled-changed')
+suite.check('a sender only a disabled provider takes is queued', reply.is_queued(), (code, reply))
+restrict_senders(secondary_enabled=False, secondary_senders={'domains': ['example.net']})
+
+
+def is_changed_one_failed() -> bool:
+    return find_outcome('senders-disabled-changed') == '/failed'
+
+
+is_failed = stack.wait_until(is_changed_one_failed, 20)
+error = stack.sql("SELECT last_error FROM email_message WHERE subject = 'senders-disabled-changed'")
+is_explained = is_failed and 'any more' in error
+suite.check('once no provider takes it any more, it\'s failed, saying why', is_explained, error)
+restrict_senders(secondary_enabled=False)
+code, reply = send_as('a@programster.org', 'a@programster.org', 'senders-disabled')
+suite.check('another is queued for the disabled provider', reply.is_queued(), (code, reply))
+restrict_senders()
+
+
+def is_disabled_sender_sent() -> bool:
+    return find_outcome('senders-disabled') == 'mailpit-secondary/sent'
+
+
+is_sent = stack.wait_until(is_disabled_sender_sent, 20)
+suite.check('and is sent through it once it\'s enabled', is_sent, find_outcome('senders-disabled'))
 save_config(original)
 
 suite.finish()

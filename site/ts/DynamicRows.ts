@@ -203,6 +203,14 @@ export class DynamicRows
         {
             message = ValueChecks.checkAddressRule(text);
         }
+        else if (check === 'domain')
+        {
+            message = ValueChecks.checkDomain(text);
+        }
+        else if (check === 'email-address')
+        {
+            message = ValueChecks.checkEmailAddress(text);
+        }
 
         value.setCustomValidity(message);
         this.showError(row, message);

@@ -16,11 +16,43 @@ The providers are set under **Settings > Providers** in the web interface, which
   for the overflow and fallback modes, then **Save the order**. Each has a pencil to edit it, and a
   dustbin to remove it, which asks first. The last enabled provider can't be removed, as no email could
   be sent. A provider's type can't be changed: add one of the other type.
-* Clicking a provider's name shows its own page: its settings (secrets never shown), rate limits,
-  attempts, status, and where it is in the order.
+* Clicking a provider's name shows its own page: its id, settings (secrets never shown), rate limits,
+  attempts, status, where it is in the order, and the email tokens [restricted to
+  it](sending-email.md#restricting-the-providers).
+* Removing a provider removes its email tokens' links to it, and the dialog that asks first names them,
+  and any that would be left with no enabled provider (whose emails would then wait in the queue).
+  Disabling one is allowed too, and its page says which tokens it would leave with no enabled provider.
 * The **mode** is chosen from a list, each with what it does.
 * Every change is checked as the YAML editor's are, and one based on an out-of-date version (as someone
   else changed the providers meanwhile) is refused, rather than overwriting their change.
+
+## Restricting the senders a provider takes
+
+A provider can be restricted to particular senders, e.g. one account that should only ever send for one
+of your domains. On its form, under **Senders it takes**, there are two lists: **Domains** and
+**Addresses**. It takes an email if its sender is at **any** of the domains, **or** is **any** of the
+addresses. For example, with the domain `programster.org` and the address `stuart@stuart.page`, it takes
+anything from `@programster.org`, and also anything from `stuart@stuart.page`, but nothing else from
+`stuart.page`. A domain doesn't include its subdomains, so `programster.org` doesn't take
+`mail.programster.org`. Leave both lists empty (the default) to take any sender.
+
+* An email's **envelope sender** (MAIL FROM, or the API's `from`), and the addresses in its **From** and
+  **Sender** headers, must all be taken, so a provider can't be used by giving it an envelope sender it
+  takes with a From header it doesn't.
+* Each email only goes through the providers that take it, and the mode applies to those, as if they
+  were the only providers. With an email token [restricted to particular
+  providers](sending-email.md#restricting-the-providers), only those of its providers that take the
+  email are used.
+* An email that no provider it could use would ever take is **refused** when it's sent: at `MAIL FROM`
+  (or after `DATA`, for a From or Sender header) with `550 5.7.1`, or through the API with `403` and
+  error code 24. It's recorded under Rejections. A provider that's disabled still counts as one that
+  would take it, so the email is queued for it, as it may be enabled again.
+* If the providers are changed so that none would take an email that's already queued, it's failed,
+  saying so, rather than waiting forever.
+* The sender checks only check a provider for the senders it takes, and say it doesn't take the others.
+* If no enabled provider takes the address this service sends its own emails from (the system email
+  address on the Settings page), the dashboard and the Providers page warn about it, as password reset
+  emails would wait in the queue.
 
 ## Rate limits
 
@@ -44,7 +76,8 @@ The providers can also be edited as YAML, under **Advanced** on the same page, o
 mode: "overflow"            # round_robin, overflow or fallback
 
 providers:
-  - name: "sendgrid-main"
+  - id: "0b7f1c2e-5a3d-4e8f-9b6a-2c4d6e8f0a1b"   # optional: made for it if it's left out
+    name: "sendgrid-main"
     type: "sendgrid"
     enabled: true
     api_key: "SG.xxxx"
@@ -54,7 +87,8 @@ providers:
         max: 10
         period_seconds: 1
 
-  - name: "mailcow"
+  - id: "6f1d9e3a-2b4c-4d5e-8f7a-1b2c3d4e5f60"
+    name: "mailcow"
     type: "custom"          # an SMTP server of your own
     enabled: true
     host: "mail.example.org"
@@ -63,12 +97,21 @@ providers:
     username: "relay@example.org"
     password: "xxxx"
     dkim_selector: "dkim"   # optional: the selector it DKIM-signs with, for the sender checks
+    allowed_senders:        # optional: it takes any sender without it
+      domains: ["programster.org"]          # anyone at these domains,
+      addresses: ["stuart@stuart.page"]     # or any of these addresses
     rate_limits: []
 ```
 
 A fresh install has none. Until the first is added, the dashboard and the Providers page say so, and
 emails are accepted and queued, and sent once it's added.
 
+* Each provider has an **id**, a UUID that email tokens restricted to it are linked by, so it stays the
+  same when the provider is renamed. It's made for a provider added without one, and saved to
+  `settings.yaml` straight away. When editing the YAML (or replacing the providers through the API), a
+  provider without an `id` keeps the id of the current provider with the same name, so leaving the ids
+  out doesn't unlink anything. To rename a provider there, keep its `id`, or it's taken to be a new
+  provider, and its tokens lose their link to the old one. Each id must be unique.
 * Settings aren't read from environment variables: a value written as a reference to one (`${NAME}`),
   which an earlier version allowed, is refused, so put the value itself in instead. Secrets are shown as
   `<unchanged>` in the YAML editor and the API, and kept as they are if they're saved that way.
@@ -78,6 +121,8 @@ emails are accepted and queued, and sent once it's added.
     rate limits.
   * `fallback`: use the first provider, and the next ones only if it can't be connected to, or rejects
     the email. A provider at its rate limits is waited for, rather than skipped.
+  * An email token [restricted to particular providers](sending-email.md#restricting-the-providers) only
+    uses those of them that are enabled, and the mode applies to them as if they were the only ones.
 * In every mode, a provider that can't be connected to (or fails temporarily) is skipped for 60
   seconds, and the email goes straight to the next one.
 * They can be viewed and edited under **Providers** in the web interface, or through the API

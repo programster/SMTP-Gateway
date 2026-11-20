@@ -1,7 +1,8 @@
 <?php
 
 /*
- * What the dashboard says about the providers: which are sending, and how, or why none can.
+ * What the dashboard says about the providers: which are sending, and how, or why none can, and anything to warn
+ * about (see SystemSenderWarning).
  */
 
 declare(strict_types = 1);
@@ -16,6 +17,7 @@ readonly class ProvidersOverview
 
     private string $m_mode;
     private string $m_problem;
+    private string $m_warning;
 
 
     /**
@@ -23,13 +25,21 @@ readonly class ProvidersOverview
      * @param list<string> $enabledNames
      * @param string $mode
      * @param string $problem
+     * @param string $warning
      */
-    private function __construct(ProvidersState $state, array $enabledNames, string $mode, string $problem)
+    private function __construct(
+        ProvidersState $state,
+        array $enabledNames,
+        string $mode,
+        string $problem,
+        string $warning
+    )
     {
         $this->m_state = $state;
         $this->m_enabledNames = $enabledNames;
         $this->m_mode = $mode;
         $this->m_problem = $problem;
+        $this->m_warning = $warning;
     }
 
 
@@ -49,7 +59,8 @@ readonly class ProvidersOverview
         }
 
         $mode = str_replace('_', ' ', $config->getMode()->value);
-        return new ProvidersOverview(ProvidersState::USABLE, $names, $mode, '');
+        $warning = SystemSenderWarning::describe($config);
+        return new ProvidersOverview(ProvidersState::USABLE, $names, $mode, '', $warning);
     }
 
 
@@ -59,7 +70,7 @@ readonly class ProvidersOverview
      */
     public static function createNotConfigured() : ProvidersOverview
     {
-        return new ProvidersOverview(ProvidersState::NOT_CONFIGURED, [], '', '');
+        return new ProvidersOverview(ProvidersState::NOT_CONFIGURED, [], '', '', '');
     }
 
 
@@ -70,7 +81,7 @@ readonly class ProvidersOverview
      */
     public static function createInvalid(string $problem) : ProvidersOverview
     {
-        return new ProvidersOverview(ProvidersState::INVALID, [], '', $problem);
+        return new ProvidersOverview(ProvidersState::INVALID, [], '', $problem, '');
     }
 
 
@@ -80,4 +91,5 @@ readonly class ProvidersOverview
     public function getEnabledNames() : array { return $this->m_enabledNames; }
     public function getMode() : string { return $this->m_mode; }
     public function getProblem() : string { return $this->m_problem; }
+    public function getWarning() : string { return $this->m_warning; }
 }

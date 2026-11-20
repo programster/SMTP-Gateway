@@ -2,8 +2,9 @@
 
 /*
  * The values to fill the email token form in with (see ViewEmailTokenFields), by field name, as PolicyInput reads
- * them back: "name", "priority", each list's rows ("allowed_ips_0", "allowed_senders_0" and so on), and each rate
- * limit's ("rate_limit_max_0", "rate_limit_unit_0" and "rate_limit_period_0").
+ * them back: "name", "priority", each list's rows ("allowed_ips_0", "allowed_senders_0" and so on), the providers
+ * ("restrict_providers", and "allowed_provider_<id>" for each one ticked), and each rate limit's ("rate_limit_max_0",
+ * "rate_limit_unit_0" and "rate_limit_period_0").
  */
 
 declare(strict_types = 1);
@@ -45,6 +46,22 @@ final class EmailTokenFormValues
                 {
                     $values["{$prefix}_{$index}"] = (string)$rule;
                 }
+            }
+        }
+
+        $providers = $policy->getAllowedProviders();
+
+        if (!($providers instanceof AnyProvider))
+        {
+            $values['restrict_providers'] = '1';
+        }
+
+        if ($providers instanceof ProviderAllowList)
+        {
+            foreach ($providers->getIds() as $providerId)
+            {
+                /* @var $providerId ProviderId */
+                $values["allowed_provider_{$providerId}"] = '1';
             }
         }
 

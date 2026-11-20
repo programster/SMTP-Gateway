@@ -1,8 +1,9 @@
 <?php
 
 /*
- * One provider's page: its type, status, place in the order, webhook, attempts, settings (with secrets never shown)
- * and rate limits, with buttons to edit it (ViewProviderFormPage) and remove it.
+ * One provider's page: its id, type, status, place in the order, webhook, the email tokens restricted to it, attempts,
+ * settings (with secrets never shown) and rate limits, with buttons to edit it (ViewProviderFormPage), disable it and
+ * remove it.
  */
 
 declare(strict_types = 1);
@@ -39,7 +40,10 @@ class ViewProviderPage extends Programster\AbstractView\AbstractView
         $noneSent = ['last_minute' => 0, 'last_hour' => 0, 'last_24_hours' => 0, 'recipients_last_24_hours' => 0];
         $sent = $counts[$name] ?? $noneSent;
         $unavailable = ProviderStatusRepository::loadUnavailableDetails();
-        $removal = ProviderRemovalNotice::createForProvider($provider, $this->m_config);
+        $links = EmailTokenRepository::loadProviderLinks();
+        $removal = ProviderRemovalNotice::createForProvider($provider, $this->m_config, $links);
+        $linked = $links->filterLinkedTo($provider->getId());
+        $strandedIfDisabled = $links->filterStrandedWithout($provider->getId(), $this->m_config);
 
         $attempts = [
             'Last minute' => $sent['last_minute'],
@@ -52,6 +56,8 @@ class ViewProviderPage extends Programster\AbstractView\AbstractView
 <h1><?= Html::e($name) ?></h1>
 <div class="card">
     <dl class="details">
+        <dt>ID</dt><dd><code><?= Html::e($provider->getId()->getValue()) ?></code><br><span class="hint">What an
+            email token's provider condition refers to it by, in the API. It stays the same if it's renamed.</span></dd>
         <dt>Type</dt><dd><?= Html::e($provider->getType()->getLabel()) ?></dd>
         <dt>Status</dt><dd><?= new ViewProviderStatus($provider, $unavailable) ?></dd>
         <dt>Order</dt><dd><?= Html::e($this->describePlace()) ?></dd>
@@ -67,7 +73,38 @@ class ViewProviderPage extends Programster\AbstractView\AbstractView
             data-refused="<?= $removal->isRefused() ? 'true' : 'false' ?>"><?= new ViewIcon(Icon::TRASH) ?> Remove this
             provider</button>
     </div>
+    <?php if ($provider->isEnabled() && count($strandedIfDisabled) > 0): ?>
+        <p class="hint">Disabling it would leave these email tokens with no enabled provider, so their emails would
+            wait in the queue until it's enabled again: <?= Html::e($strandedIfDisabled->describeNames()) ?>.</p>
+    <?php endif; ?>
 </div>
+<h2>Senders it takes</h2>
+<?php if ($provider->getAllowedSenders() instanceof AddressRuleSet): ?>
+    <?php $senderRows = ProviderSenderRows::createUsingRestriction($provider->getAllowedSenders()); ?>
+    <p>It only takes email whose sender is at any of these domains, or is any of these addresses (the envelope
+        sender, and the From and Sender headers, must all be):</p>
+    <div class="grid-2">
+        <div><h3>Domains</h3><pre><?= Html::e(implode("\n", $senderRows->getDomains()) ?: 'None') ?></pre></div>
+        <div><h3>Addresses</h3><pre><?= Html::e(implode("\n", $senderRows->getAddresses()) ?: 'None') ?></pre></div>
+    </div>
+<?php else: ?>
+    <p class="muted">Anyone: it isn't restricted to particular senders.</p>
+<?php endif; ?>
+<h2>Email tokens restricted to it</h2>
+<?php if (count($linked) === 0): ?>
+    <p class="muted">None. Email tokens that aren't restricted to particular providers can use it too, while it's
+        enabled.</p>
+<?php else: ?>
+    <ul>
+    <?php foreach ($linked as $link): ?>
+        <?php /* @var $link ProviderTokenLink */ ?>
+        <?php $tokenPath = '/email-tokens/' . rawurlencode((string)$link->getEmailToken()->getId()); ?>
+        <li><a href="<?= Html::e($tokenPath) ?>"><?= Html::e($link->getEmailToken()->getName()) ?></a></li>
+    <?php endforeach; ?>
+    </ul>
+    <p class="hint">Email tokens that aren't restricted to particular providers can use it too, while it's
+        enabled.</p>
+<?php endif; ?>
 <h2>Attempts</h2>
 <div class="tiles">
     <?php foreach ($attempts as $label => $value): ?>

@@ -44,6 +44,8 @@ class ViewProvidersPage extends Programster\AbstractView\AbstractView
     {
         $counts = ProviderStats::loadRecentCounts();
         $unavailable = ProviderStatusRepository::loadUnavailableDetails();
+        $links = EmailTokenRepository::loadProviderLinks();
+        $systemSenderWarning = SystemSenderWarning::describe($this->m_config);
         $mode = $this->m_config->getMode();
         $enabled = [];
         $disabled = [];
@@ -62,6 +64,9 @@ class ViewProvidersPage extends Programster\AbstractView\AbstractView
         }
 ?>
 <h1>Providers</h1>
+<?php if ($systemSenderWarning !== ''): ?>
+    <p class="flash flash-warning" role="status"><?= Html::e($systemSenderWarning) ?></p>
+<?php endif; ?>
 <p>Every email is sent through one of these, by the queue workers. They're saved in the providers section of
     <code><?= Html::e(SettingsFile::getPath()) ?></code>, and can also be changed through the API.</p>
 <p><a class="button" href="/providers/new">Add a provider</a></p>
@@ -83,7 +88,7 @@ class ViewProvidersPage extends Programster\AbstractView\AbstractView
         <th><span class="visually-hidden">Actions</span></th></tr></thead>
     <tbody id="enabled-providers">
     <?php foreach ($enabled as $provider): ?>
-        <?php $this->renderRow($provider, $counts, $unavailable, true); ?>
+        <?php $this->renderRow($provider, $counts, $unavailable, $links, true); ?>
     <?php endforeach; ?>
     </tbody>
 </table>
@@ -106,7 +111,7 @@ class ViewProvidersPage extends Programster\AbstractView\AbstractView
         class="visually-hidden">Actions</span></th></tr></thead>
     <tbody>
     <?php foreach ($disabled as $provider): ?>
-        <?php $this->renderRow($provider, $counts, $unavailable, false); ?>
+        <?php $this->renderRow($provider, $counts, $unavailable, $links, false); ?>
     <?php endforeach; ?>
     </tbody>
 </table>
@@ -135,17 +140,26 @@ class ViewProvidersPage extends Programster\AbstractView\AbstractView
      * @param array<string, array{unavailable_until: string, last_error: string}> $unavailable - the providers being
      * skipped (see ProviderStatusRepository).
      *
+     * @param ProviderTokenLinkCollection $links - the email tokens restricted to particular providers, for the warning
+     * before it's removed.
+     *
      * @param bool $isSortable - whether it has a handle to drag it by.
      *
      * @return void
      */
-    private function renderRow(ProviderDefinition $provider, array $counts, array $unavailable, bool $isSortable) : void
+    private function renderRow(
+        ProviderDefinition $provider,
+        array $counts,
+        array $unavailable,
+        ProviderTokenLinkCollection $links,
+        bool $isSortable
+    ) : void
     {
         $name = $provider->getName();
         $path = '/providers/' . rawurlencode($name);
         $noneSent = ['last_minute' => 0, 'last_hour' => 0, 'last_24_hours' => 0, 'recipients_last_24_hours' => 0];
         $sent = $counts[$name] ?? $noneSent;
-        $removal = ProviderRemovalNotice::createForProvider($provider, $this->m_config);
+        $removal = ProviderRemovalNotice::createForProvider($provider, $this->m_config, $links);
 ?>
 <tr data-role="sortable-row" data-name="<?= Html::e($name) ?>">
     <?php if ($isSortable): ?>

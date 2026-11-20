@@ -33,7 +33,7 @@ class EmailTokenTable extends AbstractTable
 
     public function getFieldsThatHaveDefaults() : array
     {
-        return ['created_at', 'priority'];
+        return ['created_at', 'priority', 'restricts_providers'];
     }
 
 

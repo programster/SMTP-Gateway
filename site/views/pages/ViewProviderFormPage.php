@@ -22,6 +22,7 @@ class ViewProviderFormPage extends Programster\AbstractView\AbstractView
     private readonly array $m_secretsSet;
 
     private readonly RateLimitCollection $m_rateLimits;
+    private readonly ProviderSenderRows $m_senders;
     private readonly string $m_version;
     private readonly string $m_error;
 
@@ -37,6 +38,7 @@ class ViewProviderFormPage extends Programster\AbstractView\AbstractView
         array $values,
         array $secretsSet,
         RateLimitCollection $rateLimits,
+        ProviderSenderRows $senders,
         string $version,
         string $error
     )
@@ -46,6 +48,7 @@ class ViewProviderFormPage extends Programster\AbstractView\AbstractView
         $this->m_values = $values;
         $this->m_secretsSet = $secretsSet;
         $this->m_rateLimits = clone $rateLimits;
+        $this->m_senders = $senders;
         $this->m_version = $version;
         $this->m_error = $error;
     }
@@ -58,6 +61,8 @@ class ViewProviderFormPage extends Programster\AbstractView\AbstractView
      *
      * @param RateLimitCollection $rateLimits - the rate limits to fill in.
      *
+     * @param ProviderSenderRows $senders - the senders it takes, to fill in.
+     *
      * @param string $version - the version of the providers it's based on.
      *
      * @param string $error - why it failed to save, or an empty string.
@@ -67,11 +72,12 @@ class ViewProviderFormPage extends Programster\AbstractView\AbstractView
     public static function createForAdding(
         array $values,
         RateLimitCollection $rateLimits,
+        ProviderSenderRows $senders,
         string $version,
         string $error
     ) : ViewProviderFormPage
     {
-        return new ViewProviderFormPage(false, '', $values, [], $rateLimits, $version, $error);
+        return new ViewProviderFormPage(false, '', $values, [], $rateLimits, $senders, $version, $error);
     }
 
 
@@ -84,6 +90,8 @@ class ViewProviderFormPage extends Programster\AbstractView\AbstractView
      *
      * @param RateLimitCollection $rateLimits - the rate limits to fill in.
      *
+     * @param ProviderSenderRows $senders - the senders it takes, to fill in.
+     *
      * @param string $version - the version of the providers it's based on.
      *
      * @param string $error - why it failed to save, or an empty string.
@@ -94,19 +102,33 @@ class ViewProviderFormPage extends Programster\AbstractView\AbstractView
         ProviderDefinition $provider,
         array $values,
         RateLimitCollection $rateLimits,
+        ProviderSenderRows $senders,
         string $version,
         string $error
     ) : ViewProviderFormPage
     {
         $secretsSet = ProviderFormValues::findSecretsSet($provider);
         $name = $provider->getName();
-        return new ViewProviderFormPage(true, $name, $values, $secretsSet, $rateLimits, $version, $error);
+        return new ViewProviderFormPage(true, $name, $values, $secretsSet, $rateLimits, $senders, $version, $error);
     }
 
 
     protected function renderContent() : void
     {
         $chosenType = ProviderType::tryFrom($this->m_values['type'] ?? '');
+        $domains = $this->m_senders->getDomains();
+        $addresses = $this->m_senders->getAddresses();
+        $domainPrefix = ProviderSenderRows::DOMAINS_PREFIX;
+        $addressPrefix = ProviderSenderRows::ADDRESSES_PREFIX;
+        $domainRows = new ViewValueRows($domainPrefix, 'Domain', ValueRowCheck::DOMAIN, 'example.org', ...$domains);
+
+        $addressRows = new ViewValueRows(
+            $addressPrefix,
+            'Address',
+            ValueRowCheck::EMAIL_ADDRESS,
+            'someone@example.com',
+            ...$addresses
+        );
         $editingPath = '/providers/' . rawurlencode($this->m_editingName) . '/edit';
         $action = $this->m_isEditing ? $editingPath : '/providers/new';
         $title = $this->m_isEditing ? "Edit the provider \"{$this->m_editingName}\"" : 'Add a provider';
@@ -156,6 +178,24 @@ class ViewProviderFormPage extends Programster\AbstractView\AbstractView
     <p class="hint">This provider's own limits, e.g. to stay within its plan. They apply on top of the global ones and
         each email token's.</p>
     <?= new ViewRateLimitFields($this->m_rateLimits) ?>
+
+    <h3>Senders it takes</h3>
+    <p class="hint">Optional: leave both lists empty to take email from any sender. Otherwise it takes an email if its
+        sender is at <strong>any</strong> of the domains, <strong>or</strong> is <strong>any</strong> of the addresses,
+        e.g. the domain <code>example.org</code> and the address <code>someone@example.com</code> take everyone at
+        example.org (but not its subdomains), and someone@example.com too. The envelope sender (MAIL FROM) and the
+        From and Sender headers must all be taken. Other emails go through other providers, and one that no provider
+        it could use takes is refused when it's sent.</p>
+    <div class="grid-2">
+        <div>
+            <h4>Domains</h4>
+            <?= $domainRows ?>
+        </div>
+        <div>
+            <h4>Addresses</h4>
+            <?= $addressRows ?>
+        </div>
+    </div>
 
     <div class="form-actions"><button type="submit">Save</button> <a href="/providers">Cancel</a></div>
 </form>

@@ -97,6 +97,37 @@ readonly class RawEmail
 
 
     /**
+     * Get every address the email is sent as: its envelope sender, and the addresses in its From and Sender headers,
+     * each once (ignoring case), e.g. to check a provider takes them all.
+     *
+     * @param EmailAddress $envelopeSender - the envelope sender (MAIL FROM), which isn't in the message itself.
+     *
+     * @return EmailAddressCollection
+     *
+     * @throws InvalidInputException - if the From or Sender header can't be parsed.
+     */
+    public function getSenderAddresses(EmailAddress $envelopeSender) : EmailAddressCollection
+    {
+        $unique = [];
+        $all = [$envelopeSender, ...$this->getAddressesInHeader('From'), ...$this->getAddressesInHeader('Sender')];
+
+        foreach ($all as $address)
+        {
+            /* @var $address EmailAddress */
+            $key = mb_strtolower((string)$address);
+
+            // The first of each is kept, so the envelope sender is as it was given.
+            if (!isset($unique[$key]))
+            {
+                $unique[$key] = $address;
+            }
+        }
+
+        return new EmailAddressCollection(...array_values($unique));
+    }
+
+
+    /**
      * Get the subject, decoded from its MIME encoded-word form (e.g. "=?UTF-8?B?...?=") into UTF-8.
      *
      * @return string - the subject, or an empty string if there isn't one.

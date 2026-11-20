@@ -85,4 +85,52 @@ final class PolicyEnforcer
             self::checkAddress($emailToken, AddressRuleField::REPLY_TO, $address);
         }
     }
+
+
+    /**
+     * Check that some provider would take an email sent as these addresses: one the token may use (enabled or not)
+     * that takes every one of them (see ProviderEligibility). If none would, it could never be sent, so it's refused
+     * now, rather than queued forever. Nothing is refused while there are no providers yet, or while the token has
+     * none left that it may use, as those are put right by setting the providers up, so the email waits for them.
+     *
+     * @param AuthenticatedEmailToken $emailToken - the email token.
+     *
+     * @param EmailAddressCollection $senders - the addresses: the envelope sender alone (at MAIL FROM), or with the
+     * From and Sender addresses (see RawEmail::getSenderAddresses()).
+     *
+     * @return void
+     *
+     * @throws RequestRejectedException - if no provider would take it. It's recorded.
+     */
+    public static function checkSomeProviderTakes(
+        AuthenticatedEmailToken $emailToken,
+        EmailAddressCollection $senders
+    ) : void
+    {
+        $eligibility = new ProviderEligibility($emailToken->getPolicy()->getAllowedProviders(), $senders);
+        $message = '';
+
+        try
+        {
+            $config = ProviderRegistry::getConfig();
+
+            if ($eligibility->isRefusedByEveryProvider($config))
+            {
+                $notTaken = $eligibility->describeSendersNotTaken($config);
+
+                $message =
+                    "No provider this email token can send through takes email from {$notTaken}, so it could never be"
+                    . ' sent. Each provider can be restricted to the senders it takes, on the Providers page.';
+            }
+        }
+        catch (ConfigurationException)
+        {
+            // There are no providers yet (or they can't be read), so it's queued until there are.
+        }
+
+        if ($message !== '')
+        {
+            $emailToken->reject(RejectionReason::NO_PROVIDER_FOR_SENDER, $message);
+        }
+    }
 }

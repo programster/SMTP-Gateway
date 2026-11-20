@@ -107,6 +107,7 @@ $policy = new EmailTokenPolicy(
     new AnyAddress(),
     new AnyAddress(),
     new AnyAddress(),
+    new AnyProvider(),
     new RateLimitSet(),
     Priority::forEmailToken(1)
 );

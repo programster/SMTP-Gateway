@@ -427,6 +427,9 @@ final class SmtpSession
 
             if ($field === AddressRuleField::SENDER)
             {
+                // Refused straight away if no provider would take it. The From and Sender headers are checked too,
+                // once they're sent (see MessageDispatcher::submit()).
+                PolicyEnforcer::checkSomeProviderTakes($this->m_emailToken, new EmailAddressCollection($address));
                 $this->m_envelopeSender = $address;
                 $this->reply(250, '2.1.0 Ok');
             }

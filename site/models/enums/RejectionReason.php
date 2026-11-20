@@ -22,6 +22,10 @@ enum RejectionReason : string
     // More recipients than a rate limit allows, so it could never be sent, however long it waited.
     case TOO_MANY_RECIPIENTS = 'too_many_recipients';
 
+    // No provider the email token may use takes the email's sender (see ProviderDefinition::takesAll()), so it could
+    // never be sent.
+    case NO_PROVIDER_FOR_SENDER = 'no_provider_for_sender';
+
 
     /**
      * Get the rejection reason for an address that a token's rules don't allow in the given field.

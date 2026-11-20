@@ -89,6 +89,34 @@ readonly class AddressRuleSet implements AddressRestrictionInterface
     }
 
 
+    public function allowsAll(EmailAddressCollection $addresses) : bool
+    {
+        $allowed = true;
+
+        foreach ($addresses as $address)
+        {
+            /* @var $address EmailAddress */
+            $allowed = ($allowed && $this->allows($address));
+        }
+
+        return $allowed;
+    }
+
+
+    public function allowsSomeOf(AddressRule $rule) : bool
+    {
+        $allowed = false;
+
+        foreach ($this->m_rules as $own)
+        {
+            /* @var $own AddressRule */
+            $allowed = ($allowed || $own->overlaps($rule));
+        }
+
+        return $allowed;
+    }
+
+
     public function describe() : string
     {
         return $this->toText();

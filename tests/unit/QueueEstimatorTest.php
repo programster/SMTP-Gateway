@@ -17,6 +17,7 @@ $policy = new EmailTokenPolicy(
     new AnyAddress(),
     new AnyAddress(),
     new AnyAddress(),
+    new AnyProvider(),
     new RateLimitSet(new RateLimit(RateLimitUnit::RECIPIENTS, 3, 60)),
     Priority::forEmailToken(1)
 );
@@ -24,6 +25,7 @@ $policy = new EmailTokenPolicy(
 $created = EmailTokenRepository::create('estimator test', $policy);
 $key = new AuthenticatedEmailToken($created->getEmailToken(), $policy, new IpAddress('127.0.0.1'), MessageSource::SMTP);
 $emailTokenId = DB::escape($created->getEmailToken()->getId());
+$senders = new EmailAddressCollection(new EmailAddress('a@b.test'));
 
 /**
  * Add an email to 3 recipients, sent with the key, and get its ID.
@@ -41,12 +43,12 @@ $insertEmail = function (string $status, bool $isDispatched) use ($emailTokenId)
 
 // It's being sent: it counts towards the limit of 3 recipients a minute, but mustn't hold itself up.
 $claimedId = $insertEmail('sending', true);
-$estimate = QueueEstimator::estimateSecondsUntilAttempt($key, $claimedId, 3);
+$estimate = QueueEstimator::estimateSecondsUntilAttempt($key, $claimedId, 3, $senders);
 $suite->check('an email a worker has claimed is being sent now', $estimate === 0.0, (string)$estimate);
 
 // Another email to 3, queued behind it, has to wait for the minute to pass.
 $queuedId = $insertEmail('queued', false);
-$estimate = QueueEstimator::estimateSecondsUntilAttempt($key, $queuedId, 3);
+$estimate = QueueEstimator::estimateSecondsUntilAttempt($key, $queuedId, 3, $senders);
 $isWaiting = ($estimate > 50 && $estimate <= 60);
 $suite->check('one still queued behind a full limit waits for it', $isWaiting, (string)$estimate);
 

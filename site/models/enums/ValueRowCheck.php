@@ -13,6 +13,13 @@ enum ValueRowCheck : string
     // A single IPv4 or IPv6 address, or a CIDR range of them, e.g. "10.0.0.0/8".
     case IP_NETWORK = 'ip-network';
 
-    // An address rule: "*" (anyone), "*@example.org" (anyone at a domain), or a single address.
+    // An address rule: "*@example.org" (anyone at a domain), or a single address. A "*" on its own isn't one, as
+    // anyone is allowed by leaving the list empty.
     case ADDRESS_RULE = 'address-rule';
+
+    // A domain, e.g. "example.org".
+    case DOMAIN = 'domain';
+
+    // A single email address, e.g. "someone@example.org".
+    case EMAIL_ADDRESS = 'email-address';
 }

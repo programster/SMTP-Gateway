@@ -20,6 +20,25 @@ interface AddressRestrictionInterface
 
 
     /**
+     * Check whether every address is allowed, e.g. an email's envelope sender and its From and Sender addresses.
+     * @param EmailAddressCollection $addresses - the addresses.
+     * @return bool - true if they all are (or there are none).
+     */
+    public function allowsAll(EmailAddressCollection $addresses) : bool;
+
+
+    /**
+     * Check whether some address a rule allows would be allowed too, e.g. whether a provider could take any of the
+     * senders an email token's rule allows.
+     *
+     * @param AddressRule $rule - the rule.
+     *
+     * @return bool
+     */
+    public function allowsSomeOf(AddressRule $rule) : bool;
+
+
+    /**
      * Describe what's allowed, for the web interface: the rules in their written form, one per line, or "Anyone".
      * @return string
      */

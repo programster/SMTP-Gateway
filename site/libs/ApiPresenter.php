@@ -145,6 +145,20 @@ final class ApiPresenter
             }
         }
 
+        // A token whose providers have all been removed stays restricted, to none, so it's an empty list.
+        $providers = $policy->getAllowedProviders();
+
+        $providerIds = match (true) {
+            $providers instanceof ProviderAllowList => $providers->getIds()->toStrings(),
+            $providers instanceof NoRemainingProviders => [],
+            default => null,
+        };
+
+        if ($providerIds !== null)
+        {
+            $conditions[] = ['field' => ConditionField::PROVIDER->value, 'allowed' => $providerIds];
+        }
+
         return $conditions;
     }
 

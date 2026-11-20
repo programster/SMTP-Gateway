@@ -17,13 +17,15 @@ credentials for your email providers. Each service gets its own **email token**,
 * the IP addresses or ranges it may connect from,
 * the addresses it may send as (the envelope sender, and the From and Sender headers),
 * the addresses it may use as the Reply-To,
-* who it may send to (anyone, anyone at a domain, or a list of addresses), and
+* who it may send to (anyone, anyone at a domain, or a list of addresses),
+* which providers its emails go through (any, or particular ones), and
 * how fast it may send: any mix of limits on emails and on recipients, e.g. 10 emails per second and
   50,000 recipients per month.
 
 Services send through it with **SMTP** (so an existing service only needs its SMTP host, username and
 password changed) or a **JSON API**. It sends through any number of **providers** (SendGrid, or any
-SMTP server), each with its own rate limits, in round robin, overflow or fallback mode.
+SMTP server), each with its own rate limits, in round robin, overflow or fallback mode. A provider can be
+restricted to particular senders (any of a list of domains, or of addresses), so it's only used for them.
 
 Everything is recorded, so the dashboard shows how much is coming through, from which email tokens, through
 which providers, what was rejected, and (with SendGrid's event webhook) what was delivered, bounced,

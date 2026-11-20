@@ -45,7 +45,7 @@ class EmailTokensController extends AbstractController
         // empty, which allows anyone.
         $defaults = ['allowed_ips_0' => (string)ClientIpResolver::resolve($request)];
 
-        $page = new ViewNewEmailTokenPage($defaults, '', self::getSiteUrl($request));
+        $page = new ViewNewEmailTokenPage($defaults, '', self::getSiteUrl($request), self::loadProviders());
         return self::renderPage($response, 'New email token', $page);
     }
 
@@ -75,7 +75,8 @@ class EmailTokensController extends AbstractController
         {
             $body = $request->getParsedBody();
             $values = is_array($body) ? array_filter($body, 'is_string') : [];
-            $page = new ViewNewEmailTokenPage($values, $e->getMessage(), self::getSiteUrl($request));
+            $siteUrl = self::getSiteUrl($request);
+            $page = new ViewNewEmailTokenPage($values, $e->getMessage(), $siteUrl, self::loadProviders());
             $result = self::renderPage($response, 'New email token', $page, 400);
         }
 
@@ -86,10 +87,12 @@ class EmailTokensController extends AbstractController
     public function show(Request $request, Response $response, array $args) : Response
     {
         $emailToken = EmailTokenRepository::load($args['id']);
+        $policy = EmailTokenRepository::loadPolicy($emailToken);
 
         $page = new ViewEmailTokenPage(
             $emailToken,
-            EmailTokenRepository::loadPolicy($emailToken),
+            $policy,
+            new ProviderRestrictionSummary($policy->getAllowedProviders(), self::loadProviders()),
             Stats::getActivity($emailToken->getId()),
             Stats::getHourlyVolume($emailToken->getId()),
             Stats::loadMessages(MessageFilter::createForEverything()->withEmailToken($emailToken->getId()), 25)
@@ -117,7 +120,7 @@ class EmailTokensController extends AbstractController
         else
         {
             $values = EmailTokenFormValues::createFromToken($emailToken, EmailTokenRepository::loadPolicy($emailToken));
-            $page = new ViewEditEmailTokenPage($emailToken, $values, '');
+            $page = new ViewEditEmailTokenPage($emailToken, $values, '', self::loadProviders());
             $result = self::renderPage($response, "Edit {$emailToken->getName()}", $page);
         }
 
@@ -159,7 +162,7 @@ class EmailTokensController extends AbstractController
         {
             $body = $request->getParsedBody();
             $values = is_array($body) ? array_filter($body, 'is_string') : [];
-            $page = new ViewEditEmailTokenPage($emailToken, $values, $e->getMessage());
+            $page = new ViewEditEmailTokenPage($emailToken, $values, $e->getMessage(), self::loadProviders());
             $result = self::renderPage($response, "Edit {$emailToken->getName()}", $page, 400);
         }
         catch (ConflictException $e)
@@ -173,15 +176,17 @@ class EmailTokensController extends AbstractController
 
 
     /**
-     * Check whether the token's allowed senders can be sent as through each enabled provider, and the providers'
-     * accounts (as JSON, for the sender checks on the token's page). This asks DNS and the providers' APIs, so it
-     * takes a few seconds.
+     * Check whether the token's allowed senders can be sent as through each enabled provider it may use, and those
+     * providers' accounts (as JSON, for the sender checks on the token's page). This asks DNS and the providers' APIs,
+     * so it takes a few seconds.
      */
     public function checkSenders(Request $request, Response $response, array $args) : Response
     {
         $emailToken = EmailTokenRepository::load($args['id']);
-        $checks = SenderChecks::fetchForEnabledProviders();
-        $groups = $checks->checkAllowedSenders(EmailTokenRepository::loadPolicy($emailToken)->getAllowedSenders());
+        $policy = EmailTokenRepository::loadPolicy($emailToken);
+        // Only the providers its emails can go through.
+        $checks = SenderChecks::fetchForEnabledProviders($policy->getAllowedProviders());
+        $groups = $checks->checkAllowedSenders($policy->getAllowedSenders());
 
         $groups = $groups->merge($checks->checkAccounts());
         return self::json($response, $groups->toResponseArray());
@@ -216,5 +221,25 @@ class EmailTokensController extends AbstractController
         $message = "The token \"{$emailToken->getName()}\" was revoked, and {$cancelled} queued emails were cancelled.";
         WebSession::flash($message);
         return self::redirect($response, "/email-tokens/{$emailToken->getId()}");
+    }
+
+
+    /**
+     * Get the providers a token can be restricted to on its form: every one in settings.yaml, enabled or not, or none
+     * before any have been set up (or while settings.yaml can't be read, which the Providers page explains).
+     * @return ProviderDefinitionCollection
+     */
+    private static function loadProviders() : ProviderDefinitionCollection
+    {
+        try
+        {
+            $providers = ProviderRegistry::getConfig()->getProviders();
+        }
+        catch (ConfigurationException)
+        {
+            $providers = new ProviderDefinitionCollection();
+        }
+
+        return $providers;
     }
 }

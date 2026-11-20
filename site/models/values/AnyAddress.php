@@ -16,6 +16,18 @@ readonly class AnyAddress implements AddressRestrictionInterface
     }
 
 
+    public function allowsAll(EmailAddressCollection $addresses) : bool
+    {
+        return true;
+    }
+
+
+    public function allowsSomeOf(AddressRule $rule) : bool
+    {
+        return true;
+    }
+
+
     public function describe() : string
     {
         return 'Anyone';

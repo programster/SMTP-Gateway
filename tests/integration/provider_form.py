@@ -50,8 +50,8 @@ def read_settings() -> str:
 
 
 def provider_names() -> list:
-    """Get the providers' names, in their order in settings.yaml."""
-    return re.findall(r'- name: "([^"]+)"', read_settings())
+    """Get the providers' names, in their order in settings.yaml (each provider's id comes before its name)."""
+    return re.findall(r'^ +name: "([^"]+)"', read_settings(), re.MULTILINE)
 
 
 # The add form offers every type.
@@ -280,5 +280,20 @@ page = web.get('/providers')
 suite.check('the YAML editor is still there', 'Advanced: edit the providers as YAML' in page and 'name="yaml"' in page)
 is_missing = web.request('GET', '/providers/nonsense/edit').get_status() == 404
 suite.check('an unknown provider\'s edit page is a 404', is_missing)
+
+# The senders a provider takes: a list of domains, and a list of addresses.
+senders = {'allowed_sender_domains_0': '*@programster.org', 'allowed_sender_addresses_0': 'stuart@stuart.page'}
+response = add('custom', 'test-senders', REQUIRED['custom'] | senders)
+settings = read_settings()
+is_saved = 'domains: ["programster.org"]' in settings and 'addresses: ["stuart@stuart.page"]' in settings
+suite.check('the senders it takes are saved from the form', response.get_status() == 303 and is_saved, settings[-800:])
+page = web.get('/providers/test-senders/edit')
+is_filled = 'value="programster.org"' in page and 'value="stuart@stuart.page"' in page
+suite.check('and filled in when it\'s edited', is_filled)
+bad = {'allowed_sender_domains_0': 'not a domain'}
+response = add('custom', 'test-senders-bad', REQUIRED['custom'] | bad)
+is_refused = response.get_status() == 400 and 'Domains it takes, row 1' in response.get_body()
+suite.check('a domain that isn\'t one is refused, saying which row', is_refused, response.get_status())
+suite.check('and what was typed is kept', 'value="not a domain"' in response.get_body())
 
 suite.finish()

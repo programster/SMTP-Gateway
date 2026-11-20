@@ -44,6 +44,7 @@ class EmailMessageTable extends AbstractUuidTable
         return [
             'subject',
             'was_queued',
+            'sender_addresses',
             'attempts',
             'next_attempt_at',
             'created_at',

@@ -33,7 +33,8 @@ providers:
   mode: "overflow"
 
   providers:
-    - name: "mailpit"
+    - id: "5c2f0e7a-1d3b-4a6c-9e8f-0a1b2c3d4e01"
+      name: "mailpit"
       type: "custom"
       enabled: true
       host: "mailpit"
@@ -43,7 +44,8 @@ providers:
       password: ""
       rate_limits: []
 
-    - name: "mailpit-secondary"
+    - id: "5c2f0e7a-1d3b-4a6c-9e8f-0a1b2c3d4e02"
+      name: "mailpit-secondary"
       type: "custom"
       enabled: true
       host: "mailpit-secondary"

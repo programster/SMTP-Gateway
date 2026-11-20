@@ -58,8 +58,8 @@ final class MessageDispatcher
      *
      * @return SubmissionResult - whether it was sent (while the client waited) or queued, and its ID.
      *
-     * @throws RequestRejectedException - if it's too large, has more recipients than a rate limit could ever allow,
-     * or every provider refused it while the client waited. It's recorded.
+     * @throws RequestRejectedException - if it's too large, has more recipients than a rate limit could ever allow, no
+     * provider the token may use takes its sender, or every provider refused it while the client waited. It's recorded.
      */
     public static function submit(
         AuthenticatedEmailToken $emailToken,
@@ -77,33 +77,35 @@ final class MessageDispatcher
         }
 
         self::rejectIfLimitsCanNeverAllow($emailToken, count($recipients));
-        $recipientStrings = [];
+        $senders = self::readSenderAddresses($emailToken, $envelopeSender, $email);
+        PolicyEnforcer::checkSomeProviderTakes($emailToken, $senders);
+        $senderStrings = self::toStrings($senders);
+        $recipientStrings = self::toStrings($recipients);
+        $recipientCount = count($recipientStrings);
 
-        foreach ($recipients as $recipient)
-        {
-            $recipientStrings[] = (string)$recipient;
-        }
+        $row = [
+            'email_token_id' => $emailToken->getEmailToken()->getId(),
+            'source' => $emailToken->getSource()->value,
+            'client_ip' => (string)$emailToken->getClientIp(),
+            'envelope_sender' => (string)$envelopeSender,
+            'sender_addresses' => json_encode($senderStrings),
+            'recipients' => json_encode($recipientStrings),
+            'recipient_count' => count($recipientStrings),
+            'subject' => mb_substr($email->getSubject(), 0, 1000),
+            'size_bytes' => $email->getSizeInBytes(),
+            'raw_message_base64' => base64_encode($email->toString()),
+            'status' => MessageStatus::QUEUED->value,
+            'was_queued' => false,
+            'attempts' => 0,
+            'next_attempt_at' => Time::now(),
+            'dispatched_at' => null,
+            'created_at' => Time::now(),
+            'priority' => $emailToken->getPolicy()->getPriority()->getValue(),
+        ];
 
-        $insert = function () use ($emailToken, $envelopeSender, $recipientStrings, $email) : EmailMessage {
+        $insert = function () use ($row) : EmailMessage {
             /* @var $message EmailMessage */
-            $message = EmailMessageTable::getInstance()->insert([
-                'email_token_id' => $emailToken->getEmailToken()->getId(),
-                'source' => $emailToken->getSource()->value,
-                'client_ip' => (string)$emailToken->getClientIp(),
-                'envelope_sender' => (string)$envelopeSender,
-                'recipients' => json_encode($recipientStrings),
-                'recipient_count' => count($recipientStrings),
-                'subject' => mb_substr($email->getSubject(), 0, 1000),
-                'size_bytes' => $email->getSizeInBytes(),
-                'raw_message_base64' => base64_encode($email->toString()),
-                'status' => MessageStatus::QUEUED->value,
-                'was_queued' => false,
-                'attempts' => 0,
-                'next_attempt_at' => Time::now(),
-                'dispatched_at' => null,
-                'created_at' => Time::now(),
-                'priority' => $emailToken->getPolicy()->getPriority()->getValue(),
-            ]);
+            $message = EmailMessageTable::getInstance()->insert($row);
 
             self::wakeWorkers();
             return $message;
@@ -112,6 +114,7 @@ final class MessageDispatcher
         $message = DB::transaction($insert);
         $outcome = SubmissionOutcome::QUEUED;
         $waitSeconds = Settings::get()->getSyncWaitSeconds();
+        $messageId = $message->getId();
 
         // The email is queued by now, so if the providers can't be used (e.g. none have been set up yet), the client
         // is told it's queued, rather than that it failed, and it's sent once they can be.
@@ -119,7 +122,7 @@ final class MessageDispatcher
         {
             $isWaiting = (
                    $waitSeconds > 0
-                && QueueEstimator::estimateSecondsUntilAttempt($emailToken, $message->getId(), count($recipientStrings))
+                && QueueEstimator::estimateSecondsUntilAttempt($emailToken, $messageId, $recipientCount, $senders)
                     <= $waitSeconds
             );
         }
@@ -171,33 +174,36 @@ final class MessageDispatcher
         string $clientIp
     ) : string
     {
-        $recipientStrings = [];
+        $recipientStrings = self::toStrings($recipients);
 
-        foreach ($recipients as $recipient)
-        {
-            $recipientStrings[] = (string)$recipient;
-        }
+        // The service's own email is built here, so its From header can always be read.
+        $senders = $email->getSenderAddresses($envelopeSender);
+        $senderStrings = self::toStrings($senders);
+        self::warnIfNoProviderTakesSystemEmail($senders);
 
-        $insert = function () use ($envelopeSender, $recipientStrings, $email, $clientIp) : EmailMessage {
+        $row = [
+            'email_token_id' => null,
+            'source' => MessageSource::SYSTEM->value,
+            'client_ip' => $clientIp,
+            'envelope_sender' => (string)$envelopeSender,
+            'sender_addresses' => json_encode($senderStrings),
+            'recipients' => json_encode($recipientStrings),
+            'recipient_count' => count($recipientStrings),
+            'subject' => mb_substr($email->getSubject(), 0, 1000),
+            'size_bytes' => $email->getSizeInBytes(),
+            'raw_message_base64' => base64_encode($email->toString()),
+            'status' => MessageStatus::QUEUED->value,
+            'was_queued' => false,
+            'attempts' => 0,
+            'next_attempt_at' => Time::now(),
+            'dispatched_at' => null,
+            'created_at' => Time::now(),
+            'priority' => Priority::system()->getValue(),
+        ];
+
+        $insert = function () use ($row) : EmailMessage {
             /* @var $message EmailMessage */
-            $message = EmailMessageTable::getInstance()->insert([
-                'email_token_id' => null,
-                'source' => MessageSource::SYSTEM->value,
-                'client_ip' => $clientIp,
-                'envelope_sender' => (string)$envelopeSender,
-                'recipients' => json_encode($recipientStrings),
-                'recipient_count' => count($recipientStrings),
-                'subject' => mb_substr($email->getSubject(), 0, 1000),
-                'size_bytes' => $email->getSizeInBytes(),
-                'raw_message_base64' => base64_encode($email->toString()),
-                'status' => MessageStatus::QUEUED->value,
-                'was_queued' => false,
-                'attempts' => 0,
-                'next_attempt_at' => Time::now(),
-                'dispatched_at' => null,
-                'created_at' => Time::now(),
-                'priority' => Priority::system()->getValue(),
-            ]);
+            $message = EmailMessageTable::getInstance()->insert($row);
 
             self::wakeWorkers();
             return $message;
@@ -210,8 +216,7 @@ final class MessageDispatcher
     /**
      * Send the queued email that should go next, if the rate limits and providers allow one: the highest priority
      * first, and oldest first within a priority. Emails are taken oldest first from each token, so a token that has hit
-     * its own limit doesn't hold up the others. Run by the queue
-     * workers, any number of which can run at once.
+     * its own limit doesn't hold up the others. Run by the queue workers, any number of which can run at once.
      *
      * @return bool - true if an email was sent (or attempted), so the caller knows to check again straight away.
      *
@@ -229,25 +234,37 @@ final class MessageDispatcher
             // priority first.
             $candidates = DB::fetchRows(
                 'SELECT * FROM (SELECT DISTINCT ON ("email_token_id") "id", "email_token_id", "recipient_count",'
-                . ' "tried_providers", "priority", "created_at" FROM "email_message" WHERE "status" = \'queued\''
+                . ' "tried_providers", "sender_addresses", "priority", "created_at" FROM "email_message"'
+                . ' WHERE "status" = \'queued\''
                 . ' AND "next_attempt_at" <= now() ORDER BY "email_token_id", "created_at") AS "oldest_per_key"'
                 . ' ORDER BY "priority" DESC, "created_at"'
             );
 
-            // Once an email is held back by the limits that every email shares (the global and per-provider ones),
-            // no lower priority email may use the room it's waiting for. One held back by its own token's limits
-            // doesn't hold anything else up.
-            $waitingPriority = 0;
+            // Once an email is held back by the global limits, which every email shares, no lower priority email may
+            // use the room it's waiting for. Once one is held back by the providers' limits, no lower priority email
+            // may use the room under those providers (the ones it could use), but may still use any others, as an
+            // email whose token is restricted to particular providers only waits for those. One held back by its own
+            // token's limits doesn't hold anything else up.
+            $globalWaitingPriority = 0;
+            $reservations = [];
 
             foreach ($candidates as $candidate)
             {
-                if ($claimed['id'] === '' && (int)$candidate['priority'] >= $waitingPriority)
-                {
-                    $attempt = self::tryToClaim($candidate, $config, $globalLimits);
+                $priority = (int)$candidate['priority'];
 
-                    if ($attempt['waiting_for_shared_limits'])
+                if ($claimed['id'] === '' && $priority >= $globalWaitingPriority)
+                {
+                    $reserved = self::getProvidersReservedAbove($reservations, $priority);
+                    $attempt = self::tryToClaim($candidate, $config, $globalLimits, $reserved);
+
+                    if ($attempt['waiting_for_global_limits'])
                     {
-                        $waitingPriority = max($waitingPriority, (int)$candidate['priority']);
+                        $globalWaitingPriority = max($globalWaitingPriority, $priority);
+                    }
+
+                    if (count($attempt['reserving_providers']) > 0)
+                    {
+                        $reservations[] = ['priority' => $priority, 'providers' => $attempt['reserving_providers']];
                     }
 
                     $claimed = [
@@ -330,22 +347,38 @@ final class MessageDispatcher
 
     /**
      * Try to claim a queued email for sending now: check its token's and the global limits have room, and choose a
-     * provider that can take it. Must be called while holding the dispatch lock.
+     * provider that can take it, from those its token may use. Must be called while holding the dispatch lock.
      *
      * @param array $candidate - the email's row: id, email_token_id (null for the service's own emails),
-     * recipient_count and tried_providers.
+     * recipient_count, tried_providers and sender_addresses.
      *
      * @param ProvidersConfig $config - the providers.
      *
      * @param RateLimitSet $globalLimits - the global limits.
      *
+     * @param string[] $reserved - the names of the providers higher priority emails are waiting for room under,
+     * which this one mustn't take.
+     *
      * @return array - "id" and "provider" of the claimed email and the "attempt" recorded for it, or empty strings
-     * if it can't be sent yet, and "waiting_for_shared_limits": whether it's waiting for room under the global
-     * limits, or a provider's.
+     * if it can't be sent yet. Then "waiting_for_global_limits": whether it's waiting for room under the global limits,
+     * and "reserving_providers": the names of the providers it's waiting for room under (none if it's waiting for
+     * something else, or none of its providers is enabled).
      */
-    private static function tryToClaim(array $candidate, ProvidersConfig $config, RateLimitSet $globalLimits) : array
+    private static function tryToClaim(
+        array $candidate,
+        ProvidersConfig $config,
+        RateLimitSet $globalLimits,
+        array $reserved
+    ) : array
     {
-        $claimed = ['id' => '', 'provider' => '', 'attempt' => '', 'waiting_for_shared_limits' => false];
+        $claimed = [
+            'id' => '',
+            'provider' => '',
+            'attempt' => '',
+            'waiting_for_global_limits' => false,
+            'reserving_providers' => [],
+        ];
+
         $isFromService = ($candidate['email_token_id'] === null);
 
         // The service's own emails have no token, so only the global and per-provider limits apply to them.
@@ -354,6 +387,7 @@ final class MessageDispatcher
         $tokenScope = $isFromService ? RateLimitScope::global() : RateLimitScope::forEmailToken($tokenId);
         $recipientCount = (int)$candidate['recipient_count'];
         $blockingLimits = self::describeLimitsThatCanNeverAllow($recipientCount, $tokenLimits, $globalLimits);
+        $eligibility = self::loadEligibility($candidate['email_token_id'], $candidate['sender_addresses']);
 
         if ($blockingLimits !== '')
         {
@@ -362,18 +396,25 @@ final class MessageDispatcher
             $msg = "It has {$recipientCount} recipients, more than the rate limits now allow: {$blockingLimits}.";
             self::markFailed($candidate['id'], $msg);
         }
+        elseif ($eligibility->isRefusedByEveryProvider($config))
+        {
+            // The providers were restricted to other senders after this email was queued, so none would ever take it.
+            // Fail it, as for the limits above.
+            $senders = $eligibility->describeSendersNotTaken($config);
+            self::markFailed($candidate['id'], "No provider it could use takes its sender ({$senders}) any more.");
+        }
         elseif (RateLimiter::allows($tokenLimits, $tokenScope, $recipientCount) === false)
         {
             // Waiting for its own token's limits, which don't hold anything else up.
         }
         elseif (RateLimiter::allows($globalLimits, RateLimitScope::global(), $recipientCount) === false)
         {
-            $claimed['waiting_for_shared_limits'] = true;
+            $claimed['waiting_for_global_limits'] = true;
         }
         else
         {
             $triedNames = self::getTriedNames($candidate['tried_providers']);
-            $provider = ProviderSelector::choose($config, $recipientCount, $triedNames);
+            $provider = ProviderSelector::choose($config, $eligibility, $recipientCount, $triedNames, $reserved);
 
             if ($provider !== '')
             {
@@ -391,20 +432,156 @@ final class MessageDispatcher
                     . " VALUES (uuidv7(), {$id}, {$escapedProvider}, {$recipientCount}, 'sending') RETURNING \"id\""
                 );
 
-                $claimed = [
-                    'id' => $candidate['id'],
-                    'provider' => $provider,
-                    'attempt' => $attemptId,
-                    'waiting_for_shared_limits' => false,
-                ];
+                $claimed['id'] = $candidate['id'];
+                $claimed['provider'] = $provider;
+                $claimed['attempt'] = $attemptId;
             }
             else
             {
-                $claimed['waiting_for_shared_limits'] = true;
+                // It keeps the providers it's waiting for, so no lower priority email takes their room. With none of
+                // its providers enabled (or none left untried in this round), there are none, so it holds nothing up.
+                foreach (ProviderSelector::getUsableNow($config, $eligibility, $triedNames) as $usable)
+                {
+                    /* @var $usable ProviderDefinition */
+                    $claimed['reserving_providers'][] = $usable->getName();
+                }
             }
         }
 
         return $claimed;
+    }
+
+
+    /**
+     * Get every address an email is sent as (see RawEmail::getSenderAddresses()).
+     *
+     * @param AuthenticatedEmailToken $emailToken - the token it's being sent with.
+     *
+     * @param EmailAddress $envelopeSender - its envelope sender.
+     *
+     * @param RawEmail $email - the email.
+     *
+     * @return EmailAddressCollection
+     *
+     * @throws RequestRejectedException - if its From or Sender header can't be read (which PolicyEnforcer's checks
+     * would normally have refused already). It's recorded.
+     */
+    private static function readSenderAddresses(
+        AuthenticatedEmailToken $emailToken,
+        EmailAddress $envelopeSender,
+        RawEmail $email
+    ) : EmailAddressCollection
+    {
+        try
+        {
+            $senders = $email->getSenderAddresses($envelopeSender);
+        }
+        catch (InvalidInputException $e)
+        {
+            $msg = "The From or Sender header is invalid: {$e->getMessage()}";
+            $emailToken->reject(RejectionReason::INVALID_MESSAGE, $msg);
+        }
+
+        return $senders;
+    }
+
+
+    /**
+     * Log an error if no enabled provider takes the service's own email (e.g. a password reset link) from its sender,
+     * as it then waits in the queue until one does. The Providers page warns about it too.
+     * @param EmailAddressCollection $senders - every address the email is sent as.
+     * @return void
+     */
+    private static function warnIfNoProviderTakesSystemEmail(EmailAddressCollection $senders) : void
+    {
+        try
+        {
+            $enabled = ProviderRegistry::getConfig()->getEnabledProviders();
+            $eligible = (new ProviderEligibility(new AnyProvider(), $senders))->filter($enabled);
+
+            if (count($eligible) === 0)
+            {
+                $msg =
+                    'No enabled provider takes email from the address the service sends its own emails from (set on'
+                    . ' the Settings page), so they wait in the queue until one does.';
+
+                ServiceFactory::getLogger(LogCategory::EMAIL)->error($msg, ['senders' => self::toStrings($senders)]);
+            }
+        }
+        catch (ConfigurationException)
+        {
+            // There are no providers yet, so it waits for them, as every email does.
+        }
+    }
+
+
+    /**
+     * Get email addresses as strings, e.g. to store as JSON.
+     * @param EmailAddressCollection $addresses - the addresses.
+     * @return string[]
+     */
+    private static function toStrings(EmailAddressCollection $addresses) : array
+    {
+        $strings = [];
+
+        foreach ($addresses as $address)
+        {
+            /* @var $address EmailAddress */
+            $strings[] = (string)$address;
+        }
+
+        return $strings;
+    }
+
+
+    /**
+     * Load which providers a queued email can be sent through: those its token may use now, that take its senders.
+     *
+     * @param string|null $emailTokenId - its token's ID, or null for one of the service's own emails.
+     *
+     * @param string $senderAddressesJson - its sender_addresses, as stored (a JSON list of addresses).
+     *
+     * @return ProviderEligibility
+     */
+    private static function loadEligibility(?string $emailTokenId, string $senderAddressesJson) : ProviderEligibility
+    {
+        $senders = [];
+
+        foreach (json_decode($senderAddressesJson, true) as $address)
+        {
+            $senders[] = new EmailAddress($address);
+        }
+
+        $allowed = ($emailTokenId === null)
+            ? new AnyProvider()
+            : EmailTokenRepository::loadProviderRestriction($emailTokenId);
+
+        return new ProviderEligibility($allowed, new EmailAddressCollection(...$senders));
+    }
+
+
+    /**
+     * Get the providers reserved by emails with a higher priority than one, which it mustn't take the room under.
+     *
+     * @param array $reservations - each waiting email's "priority", and the names of the "providers" it's waiting for.
+     *
+     * @param int $priority - the email's priority.
+     *
+     * @return string[] - the providers' names.
+     */
+    private static function getProvidersReservedAbove(array $reservations, int $priority) : array
+    {
+        $reserved = [];
+
+        foreach ($reservations as $reservation)
+        {
+            if ($reservation['priority'] > $priority)
+            {
+                $reserved = array_merge($reserved, $reservation['providers']);
+            }
+        }
+
+        return array_values(array_unique($reserved));
     }
 
 
@@ -495,7 +672,12 @@ final class MessageDispatcher
     ) : void
     {
         $id = DB::escape($messageId);
-        $query = "SELECT \"tried_providers\", \"retry_round\" FROM \"email_message\" WHERE \"id\" = {$id}";
+
+        $query =
+            "SELECT \"tried_providers\", \"retry_round\", \"email_token_id\", \"sender_addresses\""
+            . " FROM \"email_message\""
+            . " WHERE \"id\" = {$id}";
+
         $row = DB::fetchRows($query)[0];
         $tried = json_decode($row['tried_providers'], true);
         $tried[] = ['provider' => $providerName, 'permanent' => $isPermanent, 'error' => mb_substr($error, 0, 500)];
@@ -503,7 +685,10 @@ final class MessageDispatcher
         $unavailable = ProviderStatusRepository::loadUnavailableNames();
         $remaining = 0;
 
-        foreach (ProviderRegistry::getConfig()->getEnabledProviders() as $provider)
+        // Only the providers its token may use, that take its senders, are left to try.
+        $eligibility = self::loadEligibility($row['email_token_id'], $row['sender_addresses']);
+
+        foreach ($eligibility->filter(ProviderRegistry::getConfig()->getEnabledProviders()) as $provider)
         {
             /* @var $provider ProviderDefinition */
             $name = $provider->getName();

@@ -156,7 +156,8 @@ function readOldSettings(string $oldProvidersPath) : array
             throw new ConfigurationException("{$oldProvidersPath} can't be read.");
         }
 
-        // Kept as it's written, comments and all.
+        // Kept as it's written, except that saving it (SettingsFile::saveWholeFile()) writes the section out afresh,
+        // with an id for each provider, which drops its comments.
         $sections[] = SettingsFile::formatSection(SettingsSection::PROVIDERS, $providers);
     }
 

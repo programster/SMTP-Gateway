@@ -13,6 +13,7 @@ class ViewEditEmailTokenPage extends Programster\AbstractView\AbstractView
     private readonly EmailToken $m_emailToken;
     private readonly array $m_values;
     private readonly string $m_error;
+    private readonly ProviderDefinitionCollection $m_providers;
 
 
     /**
@@ -22,12 +23,20 @@ class ViewEditEmailTokenPage extends Programster\AbstractView\AbstractView
      * EmailTokenFormValues), or what was sent when it was invalid.
      *
      * @param string $error - why it was invalid, or an empty string.
+     *
+     * @param ProviderDefinitionCollection $providers - the providers it can be restricted to.
      */
-    public function __construct(EmailToken $emailToken, array $values, string $error)
+    public function __construct(
+        EmailToken $emailToken,
+        array $values,
+        string $error,
+        ProviderDefinitionCollection $providers
+    )
     {
         $this->m_emailToken = $emailToken;
         $this->m_values = $values;
         $this->m_error = $error;
+        $this->m_providers = $providers;
     }
 
 
@@ -43,9 +52,9 @@ class ViewEditEmailTokenPage extends Programster\AbstractView\AbstractView
     <?= new ViewCsrfField() ?>
     <p class="hint">Its ID (<code><?= Html::e($id) ?></code>) and secret stay the same, so whatever uses it carries
         on working, within these restrictions from its next request to the JSON API, or its next SMTP login (a
-        connection that's already logged in keeps the ones it logged in with). Changed rate limits apply to its emails
-        already in the queue too, but a changed priority only applies to emails queued from now on.</p>
-    <?= new ViewEmailTokenFields($this->m_values, EmailTokenFormPurpose::EDITING) ?>
+        connection that's already logged in keeps the ones it logged in with). Changed rate limits and providers apply
+        to its emails already in the queue too, but a changed priority only applies to emails queued from now on.</p>
+    <?= new ViewEmailTokenFields($this->m_values, EmailTokenFormPurpose::EDITING, $this->m_providers) ?>
     <div class="form-actions"><button type="submit">Save</button>
         <a href="<?= Html::e($tokenPath) ?>">Cancel</a></div>
 </form>

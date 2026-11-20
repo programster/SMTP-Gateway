@@ -29,28 +29,35 @@ final readonly class SenderChecks
 
 
     /**
-     * Create the checks for every enabled provider in settings.yaml, asking each how it's set up. A provider that
+     * Create the checks for the enabled providers in settings.yaml, asking each how it's set up. A provider that
      * couldn't be asked is still included, with an error saying why.
+     *
+     * @param ProviderRestrictionInterface $allowed - which of them to check: AnyProvider for all of them, or an email
+     * token's own, as its emails only go through those.
      *
      * @return SenderChecks
      *
      * @throws ConfigurationException - if settings.yaml isn't valid.
      */
-    public static function fetchForEnabledProviders() : SenderChecks
+    public static function fetchForEnabledProviders(ProviderRestrictionInterface $allowed) : SenderChecks
     {
         $checkers = [];
 
-        foreach (ProviderRegistry::getConfig()->getEnabledProviders() as $provider)
+        foreach ($allowed->filter(ProviderRegistry::getConfig()->getEnabledProviders()) as $provider)
         {
             /* @var $provider ProviderDefinition */
             try
             {
-                $checkers[] = $provider->getSettings()->fetchSenderChecker($provider->getName());
+                $checker = $provider->getSettings()->fetchSenderChecker($provider->getName());
             }
             catch (ConfigurationException | ProviderLookupException $e)
             {
-                $checkers[] = new FailedSenderChecker($provider->getName(), $e->getMessage());
+                $checker = new FailedSenderChecker($provider->getName(), $e->getMessage());
             }
+
+            // A provider that only takes particular senders is only checked for those.
+            $takes = $provider->getAllowedSenders();
+            $checkers[] = ($takes instanceof AddressRuleSet) ? new SenderRestrictedChecker($checker, $takes) : $checker;
         }
 
         return new SenderChecks(new SystemDnsResolver(), ...$checkers);

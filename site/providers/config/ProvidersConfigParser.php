@@ -4,18 +4,27 @@
  * Turns settings.yaml's providers section (or the same structure as JSON, from the API) into a ProvidersConfig, and
  * back again. Unknown keys are errors, so a typo (e.g. "ratelimits") is reported, rather than silently ignored.
  *
+ * A provider's "id" (a UUID, which links email tokens to it) is optional. Without one, it keeps the id of the current
+ * provider with the same name, or gets a new one if there isn't one, so a configuration written without ids (e.g. by
+ * hand) doesn't unlink the providers it already had from their email tokens.
+ *
  * The structure is:
  *
  *     mode: overflow                # round_robin, overflow or fallback
  *     providers:
- *       - name: sendgrid-main
+ *       - id: 0b7f1c2e-5a3d-4e8f-9b6a-2c4d6e8f0a1b
+ *         name: sendgrid-main
  *         type: sendgrid
  *         enabled: true
  *         api_key: SG.xxxx
  *         webhook_public_key: MFkwEwYHKoZI...
  *         rate_limits:
  *           - { unit: emails, max: 10, period_seconds: 1 }
- *       - name: mailcow
+ *         allowed_senders:          # optional: it takes any sender without it
+ *           domains: [example.org]   # anyone at these domains,
+ *           addresses: [someone@example.com]   # or any of these addresses
+ *       - id: 6f1d9e3a-2b4c-4d5e-8f7a-1b2c3d4e5f60
+ *         name: mailcow
  *         type: custom
  *         enabled: true
  *         host: mail.example.org
@@ -35,7 +44,11 @@ final class ProvidersConfigParser
     // A secret's value when it's being kept as it is, when the configuration is edited (see SecretOutput::MASKED).
     public const string UNCHANGED = '<unchanged>';
 
-    private const array COMMON_KEYS = ['name', 'type', 'enabled', 'rate_limits'];
+    private const array COMMON_KEYS = ['id', 'name', 'type', 'enabled', 'rate_limits', 'allowed_senders'];
+
+    // The two lists in a provider's "allowed_senders": a sender is taken if it's at any of the domains, or is any of
+    // the addresses.
+    private const array SENDER_KEYS = ['domains', 'addresses'];
 
 
     /**
@@ -44,7 +57,8 @@ final class ProvidersConfigParser
      * @param mixed $data - the decoded YAML or JSON.
      *
      * @param ProviderDefinitionCollection $current - the providers being replaced, to take the secrets marked
-     * "<unchanged>" from. Empty if there aren't any (or they couldn't be read).
+     * "<unchanged>" from, and the id of a provider given without one. Empty if there aren't any (or they couldn't be
+     * read).
      *
      * @return ProvidersConfig
      *
@@ -103,6 +117,7 @@ final class ProvidersConfigParser
         {
             /* @var $provider ProviderDefinition */
             $output = [
+                'id' => $provider->getId()->getValue(),
                 'name' => $provider->getName(),
                 'type' => $provider->getType()->value,
                 'enabled' => $provider->isEnabled(),
@@ -112,6 +127,13 @@ final class ProvidersConfigParser
             {
                 /* @var $setting ConfigSetting */
                 $output[$setting->getName()] = self::presentSetting($setting, $secretOutput);
+            }
+
+            $senders = $provider->getAllowedSenders();
+
+            if ($senders instanceof AddressRuleSet)
+            {
+                $output['allowed_senders'] = self::presentAllowedSenders($senders);
             }
 
             $output['rate_limits'] = [];
@@ -171,7 +193,23 @@ final class ProvidersConfigParser
 
             foreach ($provider as $key => $value)
             {
-                if ($key === 'rate_limits')
+                if ($key === 'allowed_senders')
+                {
+                    $lines[] = '    allowed_senders:';
+
+                    foreach ($value as $listKey => $listValues)
+                    {
+                        $quoted = [];
+
+                        foreach ($listValues as $listValue)
+                        {
+                            $quoted[] = self::quote($listValue);
+                        }
+
+                        $lines[] = "      {$listKey}: [" . implode(', ', $quoted) . ']';
+                    }
+                }
+                elseif ($key === 'rate_limits')
                 {
                     $lines[] = '    rate_limits:' . ((count($value) === 0) ? ' []' : '');
 
@@ -214,6 +252,7 @@ final class ProvidersConfigParser
         }
 
         $name = $data['name'] ?? null;
+        $idValue = $data['id'] ?? null;
         $typeName = $data['type'] ?? null;
         $type = is_string($typeName) ? ProviderType::tryFrom($typeName) : null;
         $enabled = $data['enabled'] ?? true;
@@ -224,6 +263,11 @@ final class ProvidersConfigParser
         }
 
         $where = "Provider \"{$name}\"";
+
+        if ($idValue !== null && !is_string($idValue))
+        {
+            throw new InvalidInputException("{$where}: \"id\" must be a UUID, or left out to have one made for it.");
+        }
 
         if ($type === null)
         {
@@ -251,8 +295,11 @@ final class ProvidersConfigParser
                 ProviderType::CUSTOM => self::parseSmtpSettings($data, $where, $previous),
             };
 
+            $id = ($idValue === null) ? self::findCurrentId($current, $name) : new ProviderId($idValue);
             $rateLimits = self::parseRateLimits($data['rate_limits'] ?? []);
-            $definition = new ProviderDefinition($name, $enabled, $settings, $rateLimits);
+            $hasSenders = array_key_exists('allowed_senders', $data);
+            $senders = $hasSenders ? self::parseAllowedSenders($data['allowed_senders']) : new AnyAddress();
+            $definition = new ProviderDefinition($id, $name, $enabled, $settings, $rateLimits, $senders);
         }
         catch (InvalidInputException $e)
         {
@@ -501,6 +548,92 @@ final class ProvidersConfigParser
 
 
     /**
+     * Read a provider's "allowed_senders": its "domains" and "addresses" lists, either of which may be left out or
+     * empty, but not both (to take any sender, "allowed_senders" is left out).
+     *
+     * @param mixed $data - the decoded "allowed_senders".
+     *
+     * @return AddressRuleSet
+     *
+     * @throws InvalidInputException - if it isn't valid, saying where.
+     */
+    private static function parseAllowedSenders(mixed $data) : AddressRuleSet
+    {
+        if (!is_array($data) || ($data !== [] && array_is_list($data)))
+        {
+            $msg =
+                '"allowed_senders" must have a list of "domains", a list of "addresses", or both (it takes a sender'
+                . ' at any of the domains, or with any of the addresses). Leave it out to take any sender.';
+
+            throw new InvalidInputException($msg);
+        }
+
+        self::assertKnownKeys($data, self::SENDER_KEYS, '"allowed_senders"');
+        $rules = [];
+
+        foreach (self::SENDER_KEYS as $key)
+        {
+            $values = $data[$key] ?? [];
+
+            if (!is_array($values) || !array_is_list($values))
+            {
+                throw new InvalidInputException("\"allowed_senders.{$key}\" must be a list.");
+            }
+
+            foreach ($values as $index => $value)
+            {
+                if (!is_string($value))
+                {
+                    throw new InvalidInputException("allowed_senders.{$key}[{$index}] must be a string.");
+                }
+
+                try
+                {
+                    $rules[] = ($key === 'domains')
+                        ? AddressRule::domain($value)
+                        : AddressRule::address(new EmailAddress($value));
+                }
+                catch (InvalidInputException $e)
+                {
+                    throw new InvalidInputException("allowed_senders.{$key}[{$index}]: {$e->getMessage()}");
+                }
+            }
+        }
+
+        if (count($rules) === 0)
+        {
+            $msg =
+                '"allowed_senders" has no domains or addresses, so it would take no sender at all. To take any sender,'
+                . ' leave "allowed_senders" out.';
+
+            throw new InvalidInputException($msg);
+        }
+
+        return new AddressRuleSet(...$rules);
+    }
+
+
+    /**
+     * Get a provider's sender restriction as its "allowed_senders": the domains and the addresses, each a list.
+     * @param AddressRuleSet $senders - the restriction.
+     * @return array{domains: string[], addresses: string[]}
+     */
+    private static function presentAllowedSenders(AddressRuleSet $senders) : array
+    {
+        $output = ['domains' => [], 'addresses' => []];
+
+        foreach ($senders->getRules() as $rule)
+        {
+            /* @var $rule AddressRule */
+            $key = ($rule->getKind() === AddressRuleKind::DOMAIN) ? 'domains' : 'addresses';
+            $output[$key][] = $rule->getValue();
+        }
+
+        return $output;
+    }
+
+
+    /**
      * Read a setting's value.
      *
      * @param array $data - the provider's data.
@@ -598,6 +731,34 @@ final class ProvidersConfigParser
         }
 
         return $previous;
+    }
+
+
+    /**
+     * Get the id for a provider given without one: the id of the current provider with the same name, so it stays
+     * linked to its email tokens, or a new one if there isn't one.
+     *
+     * @param ProviderDefinitionCollection $current - the providers being replaced.
+     *
+     * @param string $name - the provider's name.
+     *
+     * @return ProviderId
+     */
+    private static function findCurrentId(ProviderDefinitionCollection $current, string $name) : ProviderId
+    {
+        $currentIds = [];
+
+        foreach ($current as $candidate)
+        {
+            /* @var $candidate ProviderDefinition */
+            if ($candidate->getName() === $name)
+            {
+                $currentIds[] = $candidate->getId();
+            }
+        }
+
+        // Names are unique, so there's at most one.
+        return (count($currentIds) > 0) ? $currentIds[0] : ProviderId::createNew();
     }
 
 

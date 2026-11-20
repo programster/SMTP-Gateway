@@ -2,7 +2,8 @@
 
 /*
  * Creates, loads, changes and revokes email tokens, along with their policies (stored across the email_token_network,
- * email_token_address_rule and email_token_rate_limit tables).
+ * email_token_address_rule, email_token_provider and email_token_rate_limit tables, and email_token's own
+ * restricts_providers and priority columns).
  */
 
 declare(strict_types = 1);
@@ -38,6 +39,7 @@ final class EmailTokenRepository
             'last_used_ip' => null,
             'revoked_at' => null,
             'priority' => $policy->getPriority()->getValue(),
+            'restricts_providers' => self::isProviderRestricted($policy),
         ]);
 
         // The token and its policy's rows are saved together, in one query, or not at all.
@@ -53,10 +55,10 @@ final class EmailTokenRepository
     /**
      * Change a token's name and policy. Its ID and secret stay the same, so whatever uses it carries on working,
      * within its new restrictions from its next request to the JSON API, or its next SMTP login (a connection that's
-     * already logged in keeps the policy it logged in with). Changed rate limits apply to its emails already in the
-     * queue too, as they're checked when each is sent, but a changed priority only applies to emails queued from now
-     * on. Only the name and priority of the token's own row are changed, so it can't undo a revocation, or the record
-     * of its last use, made at the same moment.
+     * already logged in keeps the policy it logged in with). Changed rate limits and providers apply to its emails
+     * already in the queue too, as they're checked when each is sent, but a changed priority only applies to emails
+     * queued from now on. Only the name, priority and restricts_providers of the token's own row are changed, so it
+     * can't undo a revocation, or the record of its last use, made at the same moment.
      *
      * @param EmailToken $emailToken - the token.
      *
@@ -79,17 +81,26 @@ final class EmailTokenRepository
         $update = function () use ($id, $name, $policy) : void {
             $db = ServiceFactory::getDb();
 
-            $result = $db->query(
-                'UPDATE "email_token" SET "name" = $1, "priority" = $2 WHERE "id" = $3 AND "revoked_at" IS NULL',
-                [$name, $policy->getPriority()->getValue(), $id]
-            );
+            $query =
+                'UPDATE "email_token" SET "name" = $1, "priority" = $2, "restricts_providers" = $3'
+                . ' WHERE "id" = $4 AND "revoked_at" IS NULL';
+
+            $restrictsProviders = self::isProviderRestricted($policy) ? 't' : 'f';
+            $result = $db->query($query, [$name, $policy->getPriority()->getValue(), $restrictsProviders, $id]);
 
             if (pg_affected_rows($result) !== 1)
             {
                 throw new ConflictException('This email token has been revoked, so it can\'t be changed.');
             }
 
-            foreach (['email_token_network', 'email_token_address_rule', 'email_token_rate_limit'] as $table)
+            $tables = [
+                'email_token_network',
+                'email_token_address_rule',
+                'email_token_provider',
+                'email_token_rate_limit',
+            ];
+
+            foreach ($tables as $table)
             {
                 $db->query("DELETE FROM \"{$table}\" WHERE \"email_token_id\" = $1", [$id]);
             }
@@ -204,6 +215,7 @@ final class EmailTokenRepository
             allowedSenders: $createRestriction(AddressRuleField::SENDER),
             allowedReplyTos: $createRestriction(AddressRuleField::REPLY_TO),
             allowedRecipients: $createRestriction(AddressRuleField::RECIPIENT),
+            allowedProviders: self::loadProviderRestriction((string)$emailToken->getId()),
             rateLimits: new RateLimitSet(...$rateLimits),
             priority: Priority::forEmailToken($emailToken->getPriority()),
         );
@@ -229,6 +241,96 @@ final class EmailTokenRepository
         }
 
         return new RateLimitSet(...$limits);
+    }
+
+
+    /**
+     * Load just which providers a token's emails may go through, e.g. for the queue worker, as each email is sent.
+     *
+     * @param string $emailTokenId - the token's ID.
+     *
+     * @return ProviderRestrictionInterface - AnyProvider if it isn't restricted, NoRemainingProviders if every
+     * provider it was restricted to has since been removed, or otherwise a ProviderAllowList.
+     */
+    public static function loadProviderRestriction(string $emailTokenId) : ProviderRestrictionInterface
+    {
+        $id = DB::escape($emailTokenId);
+        $restricts = DB::fetchRows("SELECT \"restricts_providers\" FROM \"email_token\" WHERE \"id\" = {$id}");
+        $isRestricted = (count($restricts) === 1 && $restricts[0]['restricts_providers'] === 't');
+        $links = DB::fetchRows("SELECT \"provider_id\" FROM \"email_token_provider\" WHERE \"email_token_id\" = {$id}");
+        $providerIds = [];
+
+        foreach ($links as $row)
+        {
+            $providerIds[] = new ProviderId($row['provider_id']);
+        }
+
+        return match (true) {
+            !$isRestricted => new AnyProvider(),
+            count($providerIds) === 0 => new NoRemainingProviders(),
+            default => new ProviderAllowList(...$providerIds),
+        };
+    }
+
+
+    /**
+     * Load every email token (not revoked) that's restricted to particular providers, with the providers each is linked
+     * to, e.g. for a provider's page to say which tokens use it, and warn before it's removed or disabled.
+     * @return ProviderTokenLinkCollection
+     */
+    public static function loadProviderLinks() : ProviderTokenLinkCollection
+    {
+        $query =
+            'SELECT "email_token"."id", "email_token_provider"."provider_id" FROM "email_token"'
+            . ' JOIN "email_token_provider" ON "email_token_provider"."email_token_id" = "email_token"."id"'
+            . ' WHERE "email_token"."revoked_at" IS NULL ORDER BY "email_token"."name", "email_token"."id"';
+
+        $providerIdsByToken = [];
+
+        foreach (DB::fetchRows($query) as $row)
+        {
+            $providerIdsByToken[$row['id']][] = new ProviderId($row['provider_id']);
+        }
+
+        $links = [];
+
+        foreach ($providerIdsByToken as $emailTokenId => $providerIds)
+        {
+            $ids = new ProviderIdCollection(...$providerIds);
+            $links[] = new ProviderTokenLink(self::load((string)$emailTokenId), $ids);
+        }
+
+        return new ProviderTokenLinkCollection(...$links);
+    }
+
+
+    /**
+     * Remove the links from email tokens to providers that no longer exist, after the providers have been saved, so a
+     * removed provider's links are dropped. The tokens stay restricted to their other providers (or to none, if it was
+     * their last).
+     *
+     * @param ProviderIdCollection $remaining - the ids of the providers that still exist.
+     *
+     * @return EmailTokenCollection - the tokens (not revoked) that lost a link, to say so.
+     */
+    public static function removeLinksToOtherProviders(ProviderIdCollection $remaining) : EmailTokenCollection
+    {
+        $ids = array_map([DB::class, 'escape'], $remaining->toStrings());
+        $notIn = (count($ids) === 0) ? '' : ' WHERE "provider_id" NOT IN (' . implode(', ', $ids) . ')';
+        $rows = DB::fetchRows("DELETE FROM \"email_token_provider\"{$notIn} RETURNING \"email_token_id\"");
+        $emailTokens = [];
+
+        foreach (array_unique(array_column($rows, 'email_token_id')) as $emailTokenId)
+        {
+            $emailToken = self::load($emailTokenId);
+
+            if (!$emailToken->isRevoked())
+            {
+                $emailTokens[] = $emailToken;
+            }
+        }
+
+        return new EmailTokenCollection(...$emailTokens);
     }
 
 
@@ -352,8 +454,10 @@ final class EmailTokenRepository
         EmailTokenPolicy $policy
     ) : void
     {
-        // No restriction (AnyIp, AnyAddress) is stored as no rows.
+        // No restriction (AnyIp, AnyAddress, AnyProvider) is stored as no rows. For the providers, so is
+        // NoRemainingProviders, which email_token's restricts_providers tells apart.
         $networks = $policy->getAllowedNetworks();
+        $providers = $policy->getAllowedProviders();
 
         if ($networks instanceof IpAllowList)
         {
@@ -383,6 +487,16 @@ final class EmailTokenRepository
             }
         }
 
+        if ($providers instanceof ProviderAllowList)
+        {
+            foreach ($providers->getIds() as $providerId)
+            {
+                /* @var $providerId ProviderId */
+                $row = ['email_token_id' => $emailTokenId, 'provider_id' => $providerId->getValue()];
+                $transaction->save(EmailTokenProvider::createFromArray($row));
+            }
+        }
+
         foreach ($policy->getRateLimits()->getLimits() as $limit)
         {
             /* @var $limit RateLimit */
@@ -395,5 +509,15 @@ final class EmailTokenRepository
 
             $transaction->save($record);
         }
+    }
+
+
+    /**
+     * Check whether a policy restricts which providers the token's emails go through, as stored in email_token's
+     * restricts_providers.
+     */
+    private static function isProviderRestricted(EmailTokenPolicy $policy) : bool
+    {
+        return !($policy->getAllowedProviders() instanceof AnyProvider);
     }
 }

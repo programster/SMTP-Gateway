@@ -35,6 +35,10 @@ final class SettingsFile
     /**
      * Get the providers. They're read from the file once, and again only when it changes.
      *
+     * Any provider without an id (e.g. one written in by hand) is given one, and the ids are saved to the file straight
+     * away, so they stay the same from then on, and the email tokens linked to it stay linked. A provider that was
+     * already loaded keeps its id, by its name.
+     *
      * @return ProvidersConfig
      *
      * @throws ProvidersNotConfiguredException - if there are none yet: there's no file, or it has no providers section.
@@ -50,7 +54,8 @@ final class SettingsFile
 
         if ($config === null || $signature !== $loadedSignature)
         {
-            $data = self::readSections(self::readFile())[SettingsSection::PROVIDERS->value] ?? null;
+            $sections = self::readSections(self::readFile());
+            $data = $sections[SettingsSection::PROVIDERS->value] ?? null;
 
             if ($data === null)
             {
@@ -58,9 +63,11 @@ final class SettingsFile
                 throw new ProvidersNotConfiguredException($msg);
             }
 
+            $previous = ($config === null) ? new ProviderDefinitionCollection() : $config->getProviders();
+
             try
             {
-                $config = ProvidersConfigParser::parse($data, new ProviderDefinitionCollection());
+                $config = ProvidersConfigParser::parse($data, $previous);
             }
             catch (InvalidInputException $e)
             {
@@ -69,6 +76,11 @@ final class SettingsFile
             }
 
             $loadedSignature = $signature;
+
+            if (self::hasProviderWithoutId($data))
+            {
+                self::saveMissingProviderIds($config, self::getVersionOfSection($sections, SettingsSection::PROVIDERS));
+            }
         }
 
         return $config;
@@ -327,7 +339,13 @@ final class SettingsFile
         }
 
         self::assertSectionsValid($sections);
-        $contents = rtrim($yaml) . "\n";
+        $providersData = $sections[SettingsSection::PROVIDERS->value] ?? null;
+
+        // A provider written without an id gets one now (its current one, by its name), rather than a new one each
+        // time the file is loaded, so the email tokens linked to it stay linked.
+        $contents = self::hasProviderWithoutId($providersData)
+            ? self::addProviderIds($yaml, $sections)
+            : rtrim($yaml) . "\n";
 
         $write = function () use ($contents, $basedOnVersion) : string {
             if (hash_equals(self::getFileVersion(), $basedOnVersion) === false)
@@ -496,6 +514,91 @@ final class SettingsFile
             $googleSso,
             ...$problems
         );
+    }
+
+
+    /**
+     * Check whether any provider in the providers section's data was written without an id.
+     * @param mixed $data - the providers section, as decoded, or null if there isn't one.
+     * @return bool
+     */
+    private static function hasProviderWithoutId(mixed $data) : bool
+    {
+        $providers = (is_array($data) && is_array($data['providers'] ?? null)) ? $data['providers'] : [];
+        $isMissing = false;
+
+        foreach ($providers as $provider)
+        {
+            $isMissing = ($isMissing || (is_array($provider) && !isset($provider['id'])));
+        }
+
+        return $isMissing;
+    }
+
+
+    /**
+     * Save the ids given to the providers that were loaded without one, so they stay the same from then on. If the
+     * providers have been changed since they were read, it's left to the next load (which reads the change). If they
+     * can't be saved (e.g. the file is read only), it's logged, as each load would then give them new ids.
+     *
+     * @param ProvidersConfig $config - the providers, as loaded, with their ids.
+     *
+     * @param string $basedOnVersion - the version of the providers section they were loaded from.
+     *
+     * @return void
+     */
+    private static function saveMissingProviderIds(ProvidersConfig $config, string $basedOnVersion) : void
+    {
+        try
+        {
+            self::saveProviders($config, $basedOnVersion);
+        }
+        catch (ConflictException)
+        {
+            // Another process saved them first (or changed them), so the next load reads what it saved.
+        }
+        catch (ConfigurationException $e)
+        {
+            $msg =
+                "WARNING: Some providers in " . self::getPath() . " have no id, and the ids given to them couldn't be"
+                . " saved, so email tokens can't stay linked to them: {$e->getMessage()}";
+
+            error_log($msg);
+        }
+    }
+
+
+    /**
+     * Rewrite a whole file's providers section with an id for every provider, keeping the other sections as they're
+     * written.
+     *
+     * @param string $yaml - the whole file.
+     *
+     * @param array<string, mixed> $sections - its sections, as decoded (and already checked to be valid).
+     *
+     * @return string - the file, with the providers section rewritten.
+     *
+     * @throws InvalidInputException - if the providers section isn't valid.
+     */
+    private static function addProviderIds(string $yaml, array $sections) : string
+    {
+        $config = self::parseProvidersData($sections[SettingsSection::PROVIDERS->value]);
+        $providersYaml = ProvidersConfigParser::toYaml($config, SecretOutput::AS_IS);
+        $texts = [];
+
+        foreach (SettingsSection::cases() as $case)
+        {
+            if ($case === SettingsSection::PROVIDERS)
+            {
+                $texts[] = self::formatSection($case, $providersYaml);
+            }
+            elseif (isset($sections[$case->value]))
+            {
+                $texts[] = self::getSectionText($yaml, $case, $sections[$case->value]);
+            }
+        }
+
+        return self::formatFile(...$texts);
     }
 
 

@@ -108,6 +108,21 @@ final class PolicyInput
         $senders = self::patchRules($conditions, ConditionField::SENDER, $current->getAllowedSenders());
         $replyTos = self::patchRules($conditions, ConditionField::REPLY_TO, $current->getAllowedReplyTos());
         $recipients = self::patchRules($conditions, ConditionField::RECIPIENT, $current->getAllowedRecipients());
+        $providerCondition = $conditions[ConditionField::PROVIDER->value] ?? null;
+
+        if ($providerCondition === null)
+        {
+            $providers = $current->getAllowedProviders();
+        }
+        elseif ($providerCondition['allowed'] === null)
+        {
+            $providers = new AnyProvider();
+        }
+        else
+        {
+            $providers = self::readProvidersFromJson($providerCondition['allowed'], $providerCondition['path']);
+        }
+
         $hasRateLimits = array_key_exists('rateLimits', $body);
         $rateLimits = $hasRateLimits ? self::readRateLimitsFromJson($body, 'rateLimits') : $current->getRateLimits();
         $priority = array_key_exists('priority', $body) ? self::readPriorityFromJson($body) : $current->getPriority();
@@ -117,6 +132,7 @@ final class PolicyInput
             allowedSenders: $senders,
             allowedReplyTos: $replyTos,
             allowedRecipients: $recipients,
+            allowedProviders: $providers,
             rateLimits: $rateLimits,
             priority: $priority,
         );
@@ -160,7 +176,9 @@ final class PolicyInput
 
 
     /**
-     * Read a token's policy from the web interface's form. A list left with no rows has no restriction.
+     * Read a token's policy from the web interface's form. A list left with no rows has no restriction. The providers
+     * are restricted only when "restrict_providers" is ticked, to those whose "allowed_provider_<id>" box is ticked
+     * (see ViewEmailTokenFields), at least one.
      *
      * @param Closure $getField - gets a form field's value by name, as a string.
      *
@@ -192,6 +210,7 @@ final class PolicyInput
             allowedSenders: $readRules('allowed_senders', AddressRuleField::SENDER->getLabel()),
             allowedReplyTos: $readRules('allowed_reply_tos', AddressRuleField::REPLY_TO->getLabel()),
             allowedRecipients: $readRules('allowed_recipients', AddressRuleField::RECIPIENT->getLabel()),
+            allowedProviders: self::prefixError('Providers', self::createProviderFormReader($getField)),
             rateLimits: self::readRateLimitsFromForm($getField),
             priority: self::prefixError('Priority', self::createPriorityReader((string)$getField('priority'))),
         );
@@ -316,6 +335,122 @@ final class PolicyInput
         };
 
         return self::prefixError('priority', $create);
+    }
+
+
+    /**
+     * Create a reader for the providers on a token's form, for prefixError(): any provider if "restrict_providers"
+     * isn't ticked, or otherwise the ones ticked, of those in settings.yaml (so only real ones can be).
+     *
+     * @param Closure $getField - gets a form field's value by name, as a string.
+     *
+     * @return Closure - returns the ProviderRestrictionInterface, or throws an InvalidInputException.
+     */
+    private static function createProviderFormReader(Closure $getField) : Closure
+    {
+        $read = function () use ($getField) : ProviderRestrictionInterface {
+            $ids = [];
+
+            if ($getField('restrict_providers') === '1')
+            {
+                foreach (self::loadConfiguredProviders() as $provider)
+                {
+                    /* @var $provider ProviderDefinition */
+                    if ($getField("allowed_provider_{$provider->getId()}") === '1')
+                    {
+                        $ids[] = $provider->getId();
+                    }
+                }
+
+                if (count($ids) === 0)
+                {
+                    $msg = 'Tick at least one provider, or untick "Only send through particular providers".';
+                    throw new InvalidInputException($msg);
+                }
+            }
+
+            return (count($ids) === 0) ? new AnyProvider() : new ProviderAllowList(...$ids);
+        };
+
+        return $read;
+    }
+
+
+    /**
+     * Read the "allowed" list of a provider condition: the ids of providers in settings.yaml (enabled or not), e.g.
+     * ["0b7f1c2e-5a3d-4e8f-9b6a-2c4d6e8f0a1b"]. Each is checked to be a real provider, so a mistyped id is refused
+     * here, rather than leaving the token unable to send.
+     *
+     * @param array $items - the list, which readConditionsFromJson() has checked is a list, and isn't empty.
+     *
+     * @param string $path - where it is in the request, for errors, e.g. "conditions[0].allowed".
+     *
+     * @return ProviderAllowList
+     *
+     * @throws InvalidInputException - if an item isn't the id of a provider.
+     */
+    private static function readProvidersFromJson(array $items, string $path) : ProviderAllowList
+    {
+        $config = self::loadConfiguredProviders();
+        $ids = [];
+
+        foreach ($items as $index => $value)
+        {
+            if (!is_string($value))
+            {
+                throw new InvalidInputException("{$path}[{$index}] must be a provider's id, as a string.");
+            }
+
+            $createId = function () use ($value) : ProviderId {
+                return new ProviderId($value);
+            };
+
+            $id = self::prefixError("{$path}[{$index}]", $createId);
+            $isKnown = false;
+
+            foreach ($config as $provider)
+            {
+                /* @var $provider ProviderDefinition */
+                $isKnown = ($isKnown || $provider->getId()->equals($id));
+            }
+
+            if (!$isKnown)
+            {
+                $msg = "{$path}[{$index}]: there's no provider with the id {$id}. GET /api/v1/providers lists them.";
+                throw new InvalidInputException($msg);
+            }
+
+            $ids[] = $id;
+        }
+
+        return new ProviderAllowList(...$ids);
+    }
+
+
+    /**
+     * Get the providers in settings.yaml (enabled or not), which a token can be restricted to.
+     *
+     * @return ProviderDefinitionCollection
+     *
+     * @throws InvalidInputException - if there are none yet, or they can't be read, as then no provider can be chosen.
+     */
+    private static function loadConfiguredProviders() : ProviderDefinitionCollection
+    {
+        try
+        {
+            $providers = ProviderRegistry::getConfig()->getProviders();
+        }
+        catch (ProvidersNotConfiguredException)
+        {
+            $msg = "There are no providers yet, so it can't be restricted to any. Add one on the Providers page first.";
+            throw new InvalidInputException($msg);
+        }
+        catch (ConfigurationException $e)
+        {
+            throw new InvalidInputException("The providers can't be read, so none can be chosen: {$e->getMessage()}");
+        }
+
+        return $providers;
     }
 
 
@@ -485,12 +620,18 @@ final class PolicyInput
         };
 
         $ip = $conditions[ConditionField::CLIENT_IP->value] ?? null;
+        $provider = $conditions[ConditionField::PROVIDER->value] ?? null;
+
+        $providers = ($provider === null)
+            ? new AnyProvider()
+            : self::readProvidersFromJson($provider['allowed'], $provider['path']);
 
         return new EmailTokenPolicy(
             allowedNetworks: ($ip === null) ? new AnyIp() : self::readNetworksFromJson($ip['allowed'], $ip['path']),
             allowedSenders: $readRules(ConditionField::SENDER),
             allowedReplyTos: $readRules(ConditionField::REPLY_TO),
             allowedRecipients: $readRules(ConditionField::RECIPIENT),
+            allowedProviders: $providers,
             rateLimits: self::readRateLimitsFromJson($body, 'rateLimits'),
             priority: self::readPriorityFromJson($body),
         );

@@ -58,6 +58,45 @@ export class ValueChecks
     }
 
 
+    /**
+     * Check a domain, e.g. "example.org": letters, digits and hyphens, in at least two parts separated by dots.
+     */
+    public static checkDomain(value: string): string
+    {
+        const label = '[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?';
+        const isDomain = new RegExp(`^(${label}\\.)+${label}$`).test(value);
+        let message = '';
+
+        if (value.includes('@'))
+        {
+            message = 'Enter just the domain, e.g. example.org, without the "@". Addresses go in the list beside it.';
+        }
+        else if (value !== '' && !isDomain)
+        {
+            message = 'Enter a domain, such as example.org.';
+        }
+
+        return message;
+    }
+
+
+    /**
+     * Check a single email address, e.g. "someone@example.org".
+     */
+    public static checkEmailAddress(value: string): string
+    {
+        const isAddress = /^[^@\s*]+@[^@\s*]+\.[^@\s*]+$/.test(value);
+        let message = '';
+
+        if (value !== '' && !isAddress)
+        {
+            message = 'Enter a single address, such as someone@example.org. Whole domains go in the list beside it.';
+        }
+
+        return message;
+    }
+
+
     private static isIpv4(address: string): boolean
     {
         const parts = address.split('.');

@@ -18,6 +18,7 @@ class EmailToken extends \Programster\PgsqlObjects\AbstractRecord
     private ?string $m_lastUsedIp;
     private ?string $m_revokedAt;
     private int $m_priority;
+    private bool $m_restrictsProviders;
 
 
     public function getTableHandler() : TableInterface
@@ -36,6 +37,7 @@ class EmailToken extends \Programster\PgsqlObjects\AbstractRecord
             'last_used_ip' => function () : ?string { return $this->m_lastUsedIp; },
             'revoked_at' => function () : ?string { return $this->m_revokedAt; },
             'priority' => function () : int { return $this->m_priority; },
+            'restricts_providers' => function () : bool { return $this->m_restrictsProviders; },
         ];
     }
 
@@ -50,6 +52,7 @@ class EmailToken extends \Programster\PgsqlObjects\AbstractRecord
             'last_used_ip' => function (?string $value) : void { $this->m_lastUsedIp = $value; },
             'revoked_at' => function (?string $value) : void { $this->m_revokedAt = $value; },
             'priority' => function (int $value) : void { $this->m_priority = $value; },
+            'restricts_providers' => function (bool $value) : void { $this->m_restrictsProviders = $value; },
         ];
     }
 
@@ -68,4 +71,5 @@ class EmailToken extends \Programster\PgsqlObjects\AbstractRecord
     public function getLastUsedIp() : ?string { return $this->m_lastUsedIp; }
     public function getPriority() : int { return $this->m_priority; }
     public function getRevokedAt() : ?string { return $this->m_revokedAt; }
+    public function restrictsProviders() : bool { return $this->m_restrictsProviders; }
 }

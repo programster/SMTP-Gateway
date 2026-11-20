@@ -34,6 +34,9 @@ enum ErrorCodeEnum : int
     case RECIPIENT_NOT_ALLOWED = 22;
     case TOO_MANY_RECIPIENTS = 23;
 
+    // No provider the email token may use takes the email's sender, so it could never be sent.
+    case NO_PROVIDER_FOR_SENDER = 24;
+
     // 502 when the provider refused the email outright.
     case PROVIDER_REJECTED = 30;
 
@@ -66,6 +69,7 @@ enum ErrorCodeEnum : int
             RejectionReason::INVALID_MESSAGE => ErrorCodeEnum::INVALID_INPUT,
             RejectionReason::PROVIDER_REJECTED => ErrorCodeEnum::PROVIDER_REJECTED,
             RejectionReason::TOO_MANY_RECIPIENTS => ErrorCodeEnum::TOO_MANY_RECIPIENTS,
+            RejectionReason::NO_PROVIDER_FOR_SENDER => ErrorCodeEnum::NO_PROVIDER_FOR_SENDER,
         };
     }
 }

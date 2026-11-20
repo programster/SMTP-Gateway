@@ -15,6 +15,7 @@ class EmailMessage extends \Programster\PgsqlObjects\AbstractRecord
     private string $m_source;
     private string $m_clientIp;
     private string $m_envelopeSender;
+    private string $m_senderAddresses;
     private string $m_recipients;
     private int $m_recipientCount;
     private string $m_subject;
@@ -50,6 +51,7 @@ class EmailMessage extends \Programster\PgsqlObjects\AbstractRecord
             'source' => function () : string { return $this->m_source; },
             'client_ip' => function () : string { return $this->m_clientIp; },
             'envelope_sender' => function () : string { return $this->m_envelopeSender; },
+            'sender_addresses' => function () : string { return $this->m_senderAddresses; },
             'recipients' => function () : string { return $this->m_recipients; },
             'recipient_count' => function () : int { return $this->m_recipientCount; },
             'subject' => function () : string { return $this->m_subject; },
@@ -81,6 +83,7 @@ class EmailMessage extends \Programster\PgsqlObjects\AbstractRecord
             'source' => function (string $value) : void { $this->m_source = $value; },
             'client_ip' => function (string $value) : void { $this->m_clientIp = $value; },
             'envelope_sender' => function (string $value) : void { $this->m_envelopeSender = $value; },
+            'sender_addresses' => function (string $value) : void { $this->m_senderAddresses = $value; },
             'recipients' => function (string $value) : void { $this->m_recipients = $value; },
             'recipient_count' => function (int $value) : void { $this->m_recipientCount = $value; },
             'subject' => function (string $value) : void { $this->m_subject = $value; },
@@ -119,6 +122,7 @@ class EmailMessage extends \Programster\PgsqlObjects\AbstractRecord
     public function getSource() : string { return $this->m_source; }
     public function getClientIp() : string { return $this->m_clientIp; }
     public function getEnvelopeSender() : string { return $this->m_envelopeSender; }
+    public function getSenderAddresses() : string { return $this->m_senderAddresses; }
     public function getRecipients() : string { return $this->m_recipients; }
     public function getRecipientCount() : int { return $this->m_recipientCount; }
     public function getSubject() : string { return $this->m_subject; }

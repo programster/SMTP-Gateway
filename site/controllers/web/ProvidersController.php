@@ -52,7 +52,8 @@ class ProvidersController extends AbstractController
     {
         $values = ProviderFormValues::createDefaults();
         $version = self::getProvidersVersionOrEmpty();
-        $page = ViewProviderFormPage::createForAdding($values, new RateLimitCollection(), $version, '');
+        $senders = ProviderSenderRows::createEmpty();
+        $page = ViewProviderFormPage::createForAdding($values, new RateLimitCollection(), $senders, $version, '');
         return self::renderPage($response, 'Add a provider', $page);
     }
 
@@ -77,7 +78,8 @@ class ProvidersController extends AbstractController
             $renderForm = function () use ($getField, $version, $e, $response) : Response {
                 $values = ProviderFormValues::createFromForm($getField);
                 $limits = self::readRateLimitsOrNone($getField);
-                $page = ViewProviderFormPage::createForAdding($values, $limits, $version, $e->getMessage());
+                $senders = ProviderSenderRows::createUsingForm($getField);
+                $page = ViewProviderFormPage::createForAdding($values, $limits, $senders, $version, $e->getMessage());
                 return self::renderPage($response, 'Add a provider', $page, 400);
             };
 
@@ -96,8 +98,9 @@ class ProvidersController extends AbstractController
         $provider = ProvidersFormService::loadProvider((string)$args['name']);
         $values = ProviderFormValues::createFromProvider($provider);
         $limits = $provider->getRateLimits()->getLimits();
+        $senders = ProviderSenderRows::createUsingRestriction($provider->getAllowedSenders());
         $version = self::getProvidersVersionOrEmpty();
-        $page = ViewProviderFormPage::createForEditing($provider, $values, $limits, $version, '');
+        $page = ViewProviderFormPage::createForEditing($provider, $values, $limits, $senders, $version, '');
         return self::renderPage($response, "Edit {$provider->getName()}", $page);
     }
 
@@ -129,8 +132,9 @@ class ProvidersController extends AbstractController
                 $values = ProviderFormValues::createFromForm($getField);
                 $values['type'] = $provider->getType()->value;
                 $limits = self::readRateLimitsOrNone($getField);
+                $senders = ProviderSenderRows::createUsingForm($getField);
                 $error = $e->getMessage();
-                $page = ViewProviderFormPage::createForEditing($provider, $values, $limits, $version, $error);
+                $page = ViewProviderFormPage::createForEditing($provider, $values, $limits, $senders, $version, $error);
                 return self::renderPage($response, "Edit {$provider->getName()}", $page, 400);
             };
 
@@ -149,9 +153,9 @@ class ProvidersController extends AbstractController
         $name = (string)$args['name'];
 
         $remove = function () use ($name, $request) : string {
-            ProvidersFormService::remove($name, self::getFormField($request, 'version'));
+            $unlinked = ProvidersFormService::remove($name, self::getFormField($request, 'version'));
             self::logChange('A provider was removed', $name);
-            return "The provider \"{$name}\" was removed.";
+            return "The provider \"{$name}\" was removed." . self::describeUnlinkedTokens($unlinked);
         };
 
         return self::changeFromList($response, $remove);
@@ -240,6 +244,7 @@ class ProvidersController extends AbstractController
             if ($scope === ProvidersEditScope::WHOLE_FILE)
             {
                 SettingsFile::saveWholeFile($yaml, $version);
+                $config = ProviderRegistry::getConfig();
                 $context = ['by_user_id' => WebSession::getUser()->getId()];
                 $logger = ServiceFactory::getLogger(LogCategory::ADMIN);
                 $logger->notice('settings.yaml was fixed, on the providers page', $context);
@@ -255,7 +260,14 @@ class ProvidersController extends AbstractController
                 ]);
             }
 
-            WebSession::flash('The providers were saved. The queue workers will use them from their next email.');
+            // Email tokens restricted to a provider that's been removed (or given a different id) lose that link.
+            $unlinked = EmailTokenRepository::removeLinksToOtherProviders($config->getIds());
+
+            $message =
+                'The providers were saved. The queue workers will use them from their next email.'
+                . self::describeUnlinkedTokens($unlinked);
+
+            WebSession::flash($message);
             $result = self::redirect($response, '/providers');
         }
         catch (InvalidInputException | ConflictException | ConfigurationException $e)
@@ -274,7 +286,7 @@ class ProvidersController extends AbstractController
      */
     public function checkSenders(Request $request, Response $response) : Response
     {
-        $checks = SenderChecks::fetchForEnabledProviders();
+        $checks = SenderChecks::fetchForEnabledProviders(new AnyProvider());
         $groups = $checks->checkAccounts();
         $rules = [];
         $usedBy = [];
@@ -657,5 +669,36 @@ class ProvidersController extends AbstractController
         }
 
         return $version;
+    }
+
+
+    /**
+     * Describe the email tokens that lost their link to a provider when it was removed, to add to the message saying
+     * it was saved.
+     *
+     * @param EmailTokenCollection $unlinked - the tokens.
+     *
+     * @return string - a sentence starting with a space, or an empty string if there are none.
+     */
+    private static function describeUnlinkedTokens(EmailTokenCollection $unlinked) : string
+    {
+        $names = [];
+
+        foreach ($unlinked as $emailToken)
+        {
+            /* @var $emailToken EmailToken */
+            $names[] = "\"{$emailToken->getName()}\"";
+        }
+
+        $description = '';
+
+        if (count($names) > 0)
+        {
+            $description =
+                ' These email tokens are no longer restricted to it, and only use the other providers they\'re'
+                . ' restricted to (or none, so their emails wait in the queue): ' . implode(', ', $names) . '.';
+        }
+
+        return $description;
     }
 }

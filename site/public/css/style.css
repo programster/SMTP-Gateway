@@ -265,6 +265,13 @@ label.inline { display: inline; font-weight: normal; margin: 0; }
 /* Browsers indent checkboxes and radios a few pixels, which puts them out of line with the text above and below. */
 input[type=checkbox], input[type=radio] { margin-left: 0; }
 
+/* A checkbox with its label beside it, e.g. one of the providers an email token may use. */
+label.checkbox-option { display: flex; gap: 0.5rem; align-items: center; font-weight: normal; margin: 0.4rem 0; }
+
+/* An email token's providers are only chosen while it's restricted to particular ones. */
+.provider-restriction:has(input[name=restrict_providers]:not(:checked)) .provider-choices { display: none; }
+.provider-choices { margin-top: 0.5rem; }
+
 /* A group of fields, in the site's own border rather than the browser's grooved one. */
 fieldset { margin: 0; padding: 0.5rem 1rem 0.9rem; border: 1px solid var(--border); border-radius: 8px; }
 legend { padding: 0 0.4rem; font-weight: 600; }
@@ -440,6 +447,8 @@ dialog [data-role=confirm]:disabled { cursor: not-allowed; }
 .inline-form button:disabled[title] { cursor: not-allowed; }
 
 .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 0 1.5rem; }
+/* Grid items can shrink below their content (e.g. a row of selects), rather than spilling into the next column. */
+.grid-2 > *, .rate-limit-row > * { min-width: 0; }
 /* An API key's age (see ViewKeyAge): yellow as it nears a year, red from a year. */
 .key-age { white-space: nowrap; }
 .key-age.age-warning, .key-age.age-danger { padding: 0.05rem 0.45rem; border-radius: 999px; font-weight: 600; }
@@ -461,7 +470,7 @@ dialog [data-role=confirm]:disabled { cursor: not-allowed; }
  * look, rather than its outermost pixel. Only the boxes (fields, rows of them, fieldsets and buttons) sit at the edge
  * itself. A hint inside a label (e.g. a radio's) is already indented with it.
  */
-:is(form, .card:has(input:not([type=hidden]), select, textarea)) :is(label, h2, h3, p, .hint):not(label *, .flash) {
+:is(form, .card:has(input:not([type=hidden]), select, textarea)) :is(label, h2, h3, h4, p, .hint):not(label *, .flash) {
     padding-left: 2px;
 }
 

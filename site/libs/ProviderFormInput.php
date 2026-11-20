@@ -83,7 +83,57 @@ final class ProviderFormInput
             ];
         }
 
+        $senders = self::readAllowedSenders($getField);
+
+        if (count($senders['domains']) + count($senders['addresses']) > 0)
+        {
+            $entry['allowed_senders'] = $senders;
+        }
+
         return $entry;
+    }
+
+
+    /**
+     * Read the senders a provider takes, from the form's two lists (see ProviderSenderRows), checking each row so a
+     * mistake says which row it's in. Both empty means it takes any sender. A domain may be given as "example.org",
+     * "@example.org" or "*@example.org".
+     *
+     * @param Closure(string): string $getField - gets a form field's value by name.
+     *
+     * @return array{domains: string[], addresses: string[]} - as settings.yaml's "allowed_senders" has them.
+     *
+     * @throws InvalidInputException - if a row isn't a domain or an address, saying which.
+     */
+    private static function readAllowedSenders(Closure $getField) : array
+    {
+        $senders = ['domains' => [], 'addresses' => []];
+
+        foreach (PolicyInput::readValueRowsFromForm($getField, ProviderSenderRows::DOMAINS_PREFIX) as $row => $value)
+        {
+            try
+            {
+                $senders['domains'][] = AddressRule::domain(preg_replace('/^\*?@/', '', $value))->getValue();
+            }
+            catch (InvalidInputException $e)
+            {
+                throw new InvalidInputException("Domains it takes, row {$row}: {$e->getMessage()}");
+            }
+        }
+
+        foreach (PolicyInput::readValueRowsFromForm($getField, ProviderSenderRows::ADDRESSES_PREFIX) as $row => $value)
+        {
+            try
+            {
+                $senders['addresses'][] = (string)new EmailAddress($value);
+            }
+            catch (InvalidInputException $e)
+            {
+                throw new InvalidInputException("Addresses it takes, row {$row}: {$e->getMessage()}");
+            }
+        }
+
+        return $senders;
     }
 
 

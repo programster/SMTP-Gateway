@@ -69,14 +69,17 @@ curl \
 ```
 
 It responds `201` if the email was sent while the request waited, `202` if it was queued, or `502` if
-it was refused. Cc, Bcc, Reply-To and attachments are supported too. It takes the email token as a bearer
+it was refused. It's refused with `403` and error code 24 if no provider the token can use takes its
+sender (see [Restricting the senders a provider
+takes](providers.md#restricting-the-senders-a-provider-takes)). Cc, Bcc, Reply-To and attachments are supported too. It takes the email token as a bearer
 token, the same string as the SMTP password. The API doesn't take HTTP Basic auth. See the API
 documentation.
 
 ## Restricting an email token
 
-An email token can be restricted by any of four conditions, each optional. A condition that's left out
-doesn't restrict anything, so a token with none can send as anyone, to anyone, from anywhere:
+An email token can be restricted by any of five conditions, each optional. A condition that's left out
+doesn't restrict anything, so a token with none can send as anyone, to anyone, from anywhere, through any
+provider:
 
 | Condition (`field`) | Restricts |
 |---|---|
@@ -84,8 +87,9 @@ doesn't restrict anything, so a token with none can send as anyone, to anyone, f
 | `sender` | who emails may be from: the envelope sender, and the From and Sender headers |
 | `replyTo` | what the Reply-To header may contain (an email without one is always fine) |
 | `recipient` | who emails may be sent to: To, Cc and Bcc alike |
+| `provider` | the providers its emails may be sent through (see [Restricting the providers](#restricting-the-providers)) |
 
-On the web form, each is a list, and leaving a list empty leaves the condition out. The IP address list
+On the web form, each address condition is a list, and leaving a list empty leaves the condition out. The IP address list
 starts with the address you're using. Leaving it empty isn't recommended, as a leaked token would then
 work from anywhere. Through the API, they're the `conditions` list, each condition given at most once:
 
@@ -117,14 +121,45 @@ The checks happen as early as SMTP allows: the IP address and secret at login, t
 Headers that can't be parsed are rejected, rather than skipped. A client-supplied `X-SMTPAPI` header
 (which SendGrid would otherwise use to add recipients) is always removed.
 
+### Restricting the providers
+
+By default, a token's emails go through any of the enabled providers, as the [mode](providers.md)
+decides. A token can instead be restricted to particular providers, e.g. so a service's email always
+goes out through its own account. Its emails then only go through those of them that are enabled, and
+the mode applies to them as if they were the only providers, in their order on the Providers page:
+
+* With one provider, that one is always used.
+* With several, they take turns (round robin), or the first is used until it's at its limits
+  (overflow) or fails (fallback), exactly as the mode works for all the providers.
+* While none of them is enabled, its emails are accepted, and wait in the queue until one of them is
+  enabled again. The token's page warns when this is the case.
+
+On the web form, switch on **Only send through particular providers**, and tick them. Through the API,
+it's a `provider` condition, with the providers' ids, which `GET /api/v1/providers` lists (each
+provider's page shows its id too):
+
+```json
+{"field": "provider", "allowed": ["5c2f0e7a-1d3b-4a6c-9e8f-0a1b2c3d4e01"]}
+```
+
+Each must be the id of a provider that exists (enabled or not), so a mistyped one is refused. A token is
+linked to its providers by their ids, so renaming a provider keeps its tokens linked to it. Removing a
+provider drops its tokens' links to it: the provider's page, and the dialog that asks before it's
+removed, say which tokens are restricted to it. A token whose last provider is removed stays restricted,
+to none, rather than being allowed every provider, so its emails wait in the queue until it's given
+one (or its provider condition is removed). Through the API, such a token shows `"allowed": []`.
+
+While a token waits for room under its providers' rate limits, it only keeps those providers' room for
+itself (see [Rate limits and the queue](rate-limits.md)), so it never holds up emails that can use the others.
+
 ### Changing an email token
 
 A token's name, conditions, priority and rate limits can be changed on its page in the web interface
 (**Edit**), or through the management API, with `PUT` or `PATCH /api/v1/email-tokens/<id>`. Its ID and
 secret never change, so whatever uses it carries on working, with its new restrictions from its next
 request to the JSON API, or its next SMTP login. An SMTP connection that's already logged in keeps the
-restrictions it logged in with until it ends. The new rate limits apply to its emails already in the
-queue too, as they're checked when each is sent, but a new priority only applies to emails queued from
+restrictions it logged in with until it ends. The new rate limits and providers apply to its emails
+already in the queue too, as they're checked when each is sent, but a new priority only applies to emails queued from
 then on, as each email keeps the priority it was queued with. A revoked token can't be changed (the API
 answers 409).
 

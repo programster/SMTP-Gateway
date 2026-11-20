@@ -54,6 +54,8 @@ class ViewDashboardPage extends Programster\AbstractView\AbstractView
 <?php elseif ($this->m_providers->getState() === ProvidersState::INVALID): ?>
     <p class="flash flash-error">Nothing can be sent, as the providers aren't valid (emails are queued until they're
         fixed): <?= Html::e($this->m_providers->getProblem()) ?> <a href="/providers">Fix them</a>.</p>
+<?php elseif ($this->m_providers->getWarning() !== ''): ?>
+    <p class="flash flash-warning"><?= Html::e($this->m_providers->getWarning()) ?></p>
 <?php endif; ?>
 <p class="muted">
 <?php if ($this->m_providers->getState() === ProvidersState::USABLE): ?>

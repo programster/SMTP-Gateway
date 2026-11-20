@@ -67,6 +67,7 @@ class ApiProvidersController extends AbstractController
                 : SettingsFile::parseProvidersData(self::getJsonBody($request));
 
             $newVersion = SettingsFile::saveProviders($config, $version);
+            $unlinked = EmailTokenRepository::removeLinksToOtherProviders($config->getIds());
         }
         catch (InvalidInputException $e)
         {
@@ -84,7 +85,21 @@ class ApiProvidersController extends AbstractController
             'by_api_key' => ($token instanceof ApiKey) ? $token->getId() : '',
         ]);
 
-        $output = ['version' => $newVersion, 'config' => ProvidersConfigParser::toArray($config, SecretOutput::MASKED)];
+        $unlinkedIds = [];
+
+        foreach ($unlinked as $emailToken)
+        {
+            /* @var $emailToken EmailToken */
+            $unlinkedIds[] = (string)$emailToken->getId();
+        }
+
+        // The email tokens that were restricted to a provider that's no longer there, so lost their link to it.
+        $output = [
+            'version' => $newVersion,
+            'config' => ProvidersConfigParser::toArray($config, SecretOutput::MASKED),
+            'unlinkedEmailTokenIds' => $unlinkedIds,
+        ];
+
         return self::json($response, $output)->withHeader('ETag', '"' . $newVersion . '"');
     }
 

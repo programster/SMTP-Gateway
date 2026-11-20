@@ -66,6 +66,23 @@ export class ApiCommandPreview
             }
         }
 
+        // The providers it's restricted to, by their ids, from the ticked boxes' names ("allowed_provider_<id>").
+        if (fields.get('restrict_providers') === '1')
+        {
+            const prefix = 'allowed_provider_';
+            const providerIds: string[] = [];
+
+            const collectProviderId = function (value: FormDataEntryValue, name: string): void {
+                if (name.startsWith(prefix) && value === '1')
+                {
+                    providerIds.push(name.substring(prefix.length));
+                }
+            };
+
+            fields.forEach(collectProviderId);
+            conditions.push({ field: 'provider', allowed: providerIds });
+        }
+
         if (conditions.length > 0)
         {
             body.conditions = conditions;

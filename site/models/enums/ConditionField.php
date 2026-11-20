@@ -2,7 +2,8 @@
 
 /*
  * What a condition on an email token restricts, as named in the API's "conditions" list: where the token is used
- * from, or one part of the email. Each can be given at most once, and leaving one out means no restriction on it.
+ * from, one part of the email, or the providers its emails go through. Each can be given at most once, and leaving one
+ * out means no restriction on it.
  */
 
 declare(strict_types = 1);
@@ -21,6 +22,9 @@ enum ConditionField : string
 
     // Every recipient: To, Cc and Bcc alike.
     case RECIPIENT = 'recipient';
+
+    // The providers the token's emails go through, by their ids.
+    case PROVIDER = 'provider';
 
 
     /**

@@ -1,7 +1,8 @@
 <?php
 
 /*
- * One provider in settings.yaml: its name, whether it's enabled, its settings, and its own rate limits.
+ * One provider in settings.yaml: its id, its name, whether it's enabled, its settings, its own rate limits, and the
+ * senders it takes.
  */
 
 declare(strict_types = 1);
@@ -14,13 +15,18 @@ readonly class ProviderDefinition
     // The names the web interface uses for its own pages under /providers, where each provider has a page too.
     private const array RESERVED_NAMES = ['new', 'export', 'sender-checks', 'mode', 'order'];
 
+    private ProviderId $m_id;
     private string $m_name;
     private bool $m_isEnabled;
     private ProviderSettingsInterface $m_settings;
     private RateLimitSet $m_rateLimits;
+    private AddressRestrictionInterface $m_allowedSenders;
 
 
     /**
+     * @param ProviderId $id - its unique id, which stays the same when it's renamed, so the email tokens restricted to
+     * it stay linked to it.
+     *
      * @param string $name - a unique name for it, from 1 to 50 lowercase letters, digits, "-" and "_", e.g.
      * "sendgrid-main". Its event webhook (if it has one) is at /webhooks/<name>, and its emails are recorded
      * against it, so renaming it starts its statistics and rate limits afresh. It can't be one of the names the web
@@ -33,13 +39,19 @@ readonly class ProviderDefinition
      * @param RateLimitSet $rateLimits - its own rate limits, which apply on top of the global and per-key ones.
      * Empty for no limit.
      *
+     * @param AddressRestrictionInterface $allowedSenders - the senders it takes: anyone (AnyAddress), or anyone at
+     * the domains, or with the addresses, in an AddressRuleSet. An email's envelope sender, and the addresses in its
+     * From and Sender headers, must all be taken for it to be sent through it.
+     *
      * @throws InvalidInputException - if the name isn't valid, or is one of the web interface's.
      */
     public function __construct(
+        ProviderId $id,
         string $name,
         bool $isEnabled,
         ProviderSettingsInterface $settings,
-        RateLimitSet $rateLimits
+        RateLimitSet $rateLimits,
+        AddressRestrictionInterface $allowedSenders
     )
     {
         if (preg_match(self::NAME_PATTERN, $name) !== 1)
@@ -57,10 +69,12 @@ readonly class ProviderDefinition
             throw new InvalidInputException($msg);
         }
 
+        $this->m_id = $id;
         $this->m_name = $name;
         $this->m_isEnabled = $isEnabled;
         $this->m_settings = $settings;
         $this->m_rateLimits = $rateLimits;
+        $this->m_allowedSenders = $allowedSenders;
     }
 
 
@@ -76,6 +90,20 @@ readonly class ProviderDefinition
     }
 
 
+    /**
+     * Check whether it takes an email sent as these addresses: its envelope sender, and the addresses in its From and
+     * Sender headers (see RawEmail::getSenderAddresses()). Every one must be taken.
+     *
+     * @param EmailAddressCollection $senders - the addresses.
+     *
+     * @return bool
+     */
+    public function takesAll(EmailAddressCollection $senders) : bool
+    {
+        return $this->m_allowedSenders->allowsAll($senders);
+    }
+
+
     public function getType() : ProviderType
     {
         return $this->m_settings->getType();
@@ -83,8 +111,10 @@ readonly class ProviderDefinition
 
 
     # Accessors
+    public function getId() : ProviderId { return $this->m_id; }
     public function getName() : string { return $this->m_name; }
     public function isEnabled() : bool { return $this->m_isEnabled; }
     public function getSettings() : ProviderSettingsInterface { return $this->m_settings; }
     public function getRateLimits() : RateLimitSet { return $this->m_rateLimits; }
+    public function getAllowedSenders() : AddressRestrictionInterface { return $this->m_allowedSenders; }
 }

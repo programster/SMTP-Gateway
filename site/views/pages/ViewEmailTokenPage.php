@@ -11,19 +11,21 @@ class ViewEmailTokenPage extends Programster\AbstractView\AbstractView
 {
     public const string SENDER_CHECKS_INTRO =
         'Whether email from each of the token\'s allowed senders will be accepted and trusted: the domain\'s own DNS'
-        . ' (DMARC, SPF), and whether each enabled provider has it verified. Fix any problems before the token is'
-        . ' used, or its email may be refused or go to spam.';
+        . ' (DMARC, SPF), and whether each enabled provider it may use has it verified. Fix any problems before the'
+        . ' token is used, or its email may be refused or go to spam.';
 
     private readonly EmailToken $m_emailToken;
     private readonly EmailTokenPolicy $m_policy;
     private readonly ActivityCounts $m_counts;
     private readonly HourlyVolumeCollection $m_hourly;
     private readonly EmailMessageCollection $m_messages;
+    private readonly ProviderRestrictionSummary $m_providers;
 
 
     public function __construct(
         EmailToken $emailToken,
         EmailTokenPolicy $policy,
+        ProviderRestrictionSummary $providers,
         ActivityCounts $counts,
         HourlyVolumeCollection $hourly,
         EmailMessageCollection $messages
@@ -31,6 +33,7 @@ class ViewEmailTokenPage extends Programster\AbstractView\AbstractView
     {
         $this->m_emailToken = $emailToken;
         $this->m_policy = $policy;
+        $this->m_providers = $providers;
         $this->m_counts = $counts;
         $this->m_hourly = clone $hourly;
         $this->m_messages = clone $messages;
@@ -47,6 +50,7 @@ class ViewEmailTokenPage extends Programster\AbstractView\AbstractView
             AddressRuleField::SENDER->getLabel() => $policy->getAllowedSenders()->describe(),
             AddressRuleField::REPLY_TO->getLabel() => $policy->getAllowedReplyTos()->describe(),
             AddressRuleField::RECIPIENT->getLabel() => $policy->getAllowedRecipients()->describe(),
+            'Providers' => $this->m_providers->getDescription(),
         ];
 
         $emailTokens = new EmailTokenCollection($emailToken);
@@ -54,6 +58,9 @@ class ViewEmailTokenPage extends Programster\AbstractView\AbstractView
 ?>
 <h1><?= Html::e($emailToken->getName()) ?>
     <?= $emailToken->isRevoked() ? '<span class="badge badge-revoked">revoked</span>' : '' ?></h1>
+<?php if ($emailToken->isRevoked() === false && $this->m_providers->getWarning() !== ''): ?>
+    <p class="flash flash-warning" role="status"><?= Html::e($this->m_providers->getWarning()) ?></p>
+<?php endif; ?>
 <div class="card">
     <p>ID (the SMTP username): <code><?= Html::e($emailToken->getId()) ?></code></p>
     <p class="muted">
