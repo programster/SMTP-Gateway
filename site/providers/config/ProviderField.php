@@ -18,7 +18,7 @@ final readonly class ProviderField
     private bool $m_isRequired;
     private string $m_hint;
     private string $m_default;
-    private string $m_permissions;
+    private bool $m_isGeneratable;
 
     /** @var array<string, string> - for a CHOICE, each value, and what it's shown as. */
     private array $m_options;
@@ -27,7 +27,7 @@ final readonly class ProviderField
     /**
      * @param array<string, string> $options - for a CHOICE, each value and its label. Empty for any other kind.
      *
-     * @param string $permissions - for a SECRET, the permissions it needs, or an empty string.
+     * @param bool $isGeneratable - for a SECRET, whether the form has a button to generate it.
      */
     private function __construct(
         string $key,
@@ -37,10 +37,10 @@ final readonly class ProviderField
         string $hint,
         string $default,
         array $options,
-        string $permissions = ''
+        bool $isGeneratable = false
     )
     {
-        $this->m_permissions = $permissions;
+        $this->m_isGeneratable = $isGeneratable;
         $this->m_key = $key;
         $this->m_label = $label;
         $this->m_kind = $kind;
@@ -90,19 +90,28 @@ final readonly class ProviderField
      *
      * @param string $hint - what it is, and where to find it, or an empty string.
      *
-     * @param string $permissions - the permissions it needs, shown under a bold "Permissions:", or an empty string.
+     * @return ProviderField
+     */
+    public static function createSecret(string $key, string $label, bool $isRequired, string $hint) : ProviderField
+    {
+        return new ProviderField($key, $label, ProviderFieldKind::SECRET, $isRequired, $hint, '', []);
+    }
+
+
+    /**
+     * Create an optional field for a secret that this service can make up, with a button on the form to generate it.
+     *
+     * @param string $key - the setting it's written to in settings.yaml, e.g. "webhook_secret".
+     *
+     * @param string $label - what it's called on the form.
+     *
+     * @param string $hint - what it is, and what to do with it.
      *
      * @return ProviderField
      */
-    public static function createSecret(
-        string $key,
-        string $label,
-        bool $isRequired,
-        string $hint,
-        string $permissions = ''
-    ) : ProviderField
+    public static function createGeneratableSecret(string $key, string $label, string $hint) : ProviderField
     {
-        return new ProviderField($key, $label, ProviderFieldKind::SECRET, $isRequired, $hint, '', [], $permissions);
+        return new ProviderField($key, $label, ProviderFieldKind::SECRET, false, $hint, '', [], true);
     }
 
 
@@ -185,7 +194,7 @@ final readonly class ProviderField
     public function isRequired() : bool { return $this->m_isRequired; }
     public function getHint() : string { return $this->m_hint; }
     public function getDefault() : string { return $this->m_default; }
-    public function getPermissions() : string { return $this->m_permissions; }
+    public function isGeneratable() : bool { return $this->m_isGeneratable; }
 
     /** @return array<string, string> */
     public function getOptions() : array { return $this->m_options; }

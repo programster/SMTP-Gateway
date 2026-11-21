@@ -445,8 +445,16 @@ check signatures, not make them), so it can be written into `settings.yaml` as i
 
 ## SMTP2GO
 
-It needs an SMTP login, an API key, or both. Both is best: it then sends over SMTP, and the key is used
-for the sender checks.
+Its form starts by asking how to connect:
+
+* **API key (recommended, and the default):** one key does the sending and sender checks, and can set up
+  the webhook for you. Give it `/email/mime`, `/domain/view`, `/single_sender_emails/view`,
+  `/webhook/view`, `/webhook/add` and `/webhook/edit`.
+* **SMTP username and password:** can send any email, and you add the webhook in SMTP2GO by hand, with a
+  secret generated on the form. An API key is optional here, for the sender checks, and only needs
+  `/domain/view` and `/single_sender_emails/view`.
+
+In `settings.yaml`, it needs an SMTP login, an API key, or both. With both, it sends over SMTP.
 
 * **`smtp_username`** and **`smtp_password`**: one of the account's SMTP users (Sending > SMTP Users).
   With these, it sends through `mail.smtp2go.com` on port 587, with STARTTLS.
@@ -454,8 +462,8 @@ for the sender checks.
   `/single_sender_emails/view` for the sender checks, and `/email/mime` if there's no SMTP login, as it
   then does the sending. Give it `/webhook/view`, `/webhook/add` and `/webhook/edit` too, for the
   webhook to be set up for you.
-* **`webhook_secret`** (optional): what its webhook authenticates with. It's made for you if the API key
-  sets up the webhook.
+* **`webhook_secret`** (optional): the bearer token its webhook authenticates with. Leave it blank, as
+  the provider's page generates it for you.
 * **Headers**: every `X-Smtp2go-*` header the client sent is removed.
 
 SMTP2GO keeps an email's bounces to itself, so its webhook is the only way to know one bounced. Until
@@ -463,11 +471,41 @@ it's set up, the provider's page says so, and its emails show as sent. There are
 and both need `PUBLIC_URL` to be this service's public https address:
 
 * **For you:** press **Set up the webhook** on the provider's page. It makes a `webhook_secret` if there
-  isn't one, and creates the webhook in SMTP2GO, or updates the one already posting here.
-* **By hand:** enter a long random `webhook_secret` on the provider's form. In SMTP2GO, under
-  **Settings > Webhooks**, add a webhook posting to
-  `https://webhook:<webhook_secret>@<host>/webhooks/<provider name>`, with the JSON output format, and
-  the events `processed`, `delivered`, `bounce`, `reject`, `spam`, `unsubscribe`, `open` and `click`.
+  isn't one, and creates the webhook in SMTP2GO, or updates the one already posting here. SMTP2GO's free
+  plan only allows 1 webhook, and paid plans 10. If SMTP2GO refuses a new one, the page says so, and the
+  provider keeps warning that its deliveries and bounces aren't being recorded.
+* **By hand:** follow the steps below, which are also on the provider's page, with its address filled in.
+
+#### Setting up SMTP2GO's webhook by hand
+
+1. On the provider's page, under **Set it up by hand**, press **Generate a token**, and copy the bearer
+   token it shows, which is only shown once. Do this first: until the provider has a token, its webhook
+   answers 404, and SMTP2GO's test fails. (The **Generate** button by **Webhook secret** on its form does
+   the same, once the form is saved.)
+2. Open SMTP2GO's webhooks page, which the provider's page links to for each region, e.g.
+   <https://app-eu.smtp2go.com/settings/webhooks/>, and press **Add Webhook**. SMTP2GO has no way to link
+   to a filled-in form, so the provider's page has a copy button for each value.
+3. Set its **URL** to:
+
+   ```
+   https://<host>/webhooks/<provider name>
+   ```
+
+4. Set its **Authorization header** to **Bearer**, and paste the token as its value, on its own.
+5. Leave **Users** empty, so it covers all of them, and set **Output type** to **JSON**. Under **Email
+   events to include**, tick `processed`, `delivered`, `bounce`, `reject`, `spam`, `unsubscribe`, `open`
+   and `click`, and press **Save changes**.
+6. Check it's switched on:
+
+   ```bash
+   curl -i -X POST https://<host>/webhooks/<provider name>
+   ```
+
+   **401** is right: it's on, and refused this request for having no secret. **404** means the secret isn't
+   saved. Anything else, such as 403 or a login page, means something in front of the service is blocking
+   it.
+7. Press **Test this webhook** in SMTP2GO, then send an email through the provider. Its page under **Activity >
+   Emails** should show it as delivered within a minute or so.
 
 With only an API key, SMTP2GO takes an email's recipients from its headers, as its API has no separate
 list of them:

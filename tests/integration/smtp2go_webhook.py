@@ -63,7 +63,8 @@ suite.check('and the prompt goes', 'aren&apos;t being recorded' not in page and 
 
 token = create_email_token(web, 'smtp2go-webhook')
 message_id = send_email(token, 'smtp2go-webhook').get_message_id()
-stack.sql(f"UPDATE email_message SET provider = '{PROVIDER}', provider_message_id = 'smtp2go-1' WHERE id = '{message_id}'")
+set_sent_through = f"provider = '{PROVIDER}', provider_message_id = 'smtp2go-1'"
+stack.sql(f"UPDATE email_message SET {set_sent_through} WHERE id = '{message_id}'")
 other_id = send_email(token, 'smtp2go-webhook-other').get_message_id()
 stack.sql(f"UPDATE email_message SET provider_message_id = 'smtp2go-other' WHERE id = '{other_id}'")
 
@@ -109,5 +110,30 @@ response = web.post_form(f'/providers/{PROVIDER}', f'/providers/{PROVIDER}/webho
 page = web.get(f'/providers/{PROVIDER}')
 suite.check('the set up button refuses a site that isn\'t https, saying so', response.get_status() == 303
             and 'must be public and https' in page, json.dumps(response.get_status()))
+
+token_path = f'/providers/{PROVIDER}/webhook/token'
+page_path = f'/providers/{PROVIDER}'
+
+
+def get_version() -> str:
+    """Get the version of the providers from the provider's page."""
+    return re.search(r'name="version" value="([0-9a-f]+)"', web.get(page_path)).group(1)
+
+
+response = web.post_form(page_path, token_path, {'version': get_version()})
+suite.check('replacing a token has to be confirmed', response.get_status() == 303, response.get_status())
+response = post_event({'event': 'delivered', 'email_id': 'none'})
+suite.check('so the old token still works', response.get_status() == 200, response.get_status())
+response = web.post_form(page_path, token_path, {'version': get_version(), 'confirm_replace': '1'})
+match = re.search(r'id="smtp2go-webhook-token" value="([0-9a-f]{48})"', response.get_body())
+suite.check('a generated token is shown', response.get_status() == 200 and match is not None, response.get_status())
+new_token = match.group(1) if match else ''
+cache_control = response.get_header('Cache-Control')
+suite.check('and isn\'t cached', cache_control == 'no-store', cache_control)
+suite.check('and isn\'t shown again', new_token != '' and new_token not in web.get(page_path))
+response = post_event({'event': 'delivered', 'email_id': 'none'}, bearer(new_token))
+suite.check('the new token is accepted', response.get_status() == 200, response.get_status())
+response = post_event({'event': 'delivered', 'email_id': 'none'})
+suite.check('and the old one no longer is', response.get_status() == 401, response.get_status())
 
 suite.finish()

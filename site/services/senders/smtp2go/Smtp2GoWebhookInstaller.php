@@ -3,8 +3,8 @@
 /*
  * Creates the webhook in an SMTP2GO account, or updates the one that already posts to this service, when asked to from
  * a provider's page. Unlike the sender checks, this changes the account, so it's separate from JsonApiClient, and only
- * ever runs when someone presses the button. The secret is the password in the webhook's address, which is how
- * SMTP2GO's documentation says to secure one.
+ * ever runs when someone presses the button. The secret is sent as a bearer token, which keeps it out of the webhook's
+ * address, and so out of anything that logs addresses.
  */
 
 declare(strict_types = 1);
@@ -18,6 +18,12 @@ final readonly class Smtp2GoWebhookInstaller
 {
     private const string API_URL = 'https://api.smtp2go.com/v3';
     private const int TIMEOUT_SECONDS = 15;
+
+    // SMTP2GO doesn't document the error it gives at this limit, so this is said whenever adding a webhook is refused.
+    private const string WEBHOOK_LIMIT_ADVICE =
+        ' SMTP2GO\'s free plan only allows 1 webhook (paid plans allow 10), so if the account is at its limit, remove'
+        . ' one under Settings > Webhooks > Manage Webhooks and try again. Until then, this provider\'s deliveries and'
+        . ' bounces won\'t be recorded.';
 
     private string $m_apiKey;
     private ClientInterface $m_http;
@@ -88,9 +94,11 @@ final readonly class Smtp2GoWebhookInstaller
         }
 
         $fields = [
-            'url' => WebhookBasicAuth::createUrl($webhookUrl, $secret),
+            'url' => $webhookUrl,
             'events' => Smtp2GoWebhook::RECORDED_EVENTS,
             'output_format' => 'json',
+            'auth_header_type' => 'bearer',
+            'auth_header_value' => $secret,
         ];
 
         if ($existingId > 0)
@@ -152,7 +160,8 @@ final readonly class Smtp2GoWebhookInstaller
         elseif ($status < 200 || $status > 299 || !is_array($decoded))
         {
             $reason = ($error === '') ? "HTTP {$status}" : "{$error} (HTTP {$status})";
-            throw new InvalidInputException("SMTP2GO refused {$path}: {$reason}.");
+            $advice = ($path === '/webhook/add') ? self::WEBHOOK_LIMIT_ADVICE : '';
+            throw new InvalidInputException("SMTP2GO refused {$path}: {$reason}.{$advice}");
         }
 
         return $decoded;

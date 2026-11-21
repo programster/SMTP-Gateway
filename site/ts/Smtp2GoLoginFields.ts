@@ -40,14 +40,15 @@ export class Smtp2GoLoginFields
         const hasUsername = (this.m_username.value.trim() !== '');
         const hasEnteredPassword = (this.m_password.value !== '');
         const hasSavedPassword = (this.m_password.dataset.isSaved === '1');
+        const isInUse = (!this.m_fieldset.disabled && !this.m_username.disabled);
         let isValid = true;
 
-        if (!this.m_fieldset.disabled && hasUsername && !hasEnteredPassword && !hasSavedPassword)
+        if (isInUse && hasUsername && !hasEnteredPassword && !hasSavedPassword)
         {
             this.showError(this.m_password, this.m_passwordError, 'Enter the password for this SMTP username.');
             isValid = false;
         }
-        else if (!this.m_fieldset.disabled && !hasUsername && hasEnteredPassword)
+        else if (isInUse && !hasUsername && hasEnteredPassword)
         {
             this.showError(this.m_username, this.m_usernameError, 'Enter the username for this SMTP password.');
             isValid = false;

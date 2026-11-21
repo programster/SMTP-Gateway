@@ -33,6 +33,8 @@ class ProvidersController extends AbstractController
         $group->post('/providers/{name}/enable', [self::class, 'enable'])->setName('providers.enable');
         $group->post('/providers/{name}/disable', [self::class, 'disable'])->setName('providers.disable');
         $group->post('/providers/{name}/webhook', [self::class, 'setUpWebhook'])->setName('providers.webhook');
+        $group->post('/providers/{name}/webhook/token', [self::class, 'generateWebhookToken'])
+            ->setName('providers.webhookToken');
     }
 
 
@@ -206,6 +208,36 @@ class ProvidersController extends AbstractController
         }
 
         return self::redirect($response, '/providers/' . rawurlencode($name));
+    }
+
+
+    /**
+     * Generate an SMTP2GO provider's webhook token, and show its page with the token, this once, and what to enter in
+     * SMTP2GO. It's the response to the POST rather than a redirect, so the token is never kept in the session.
+     *
+     * @throws NotFoundException - if there's no such provider.
+     */
+    public function generateWebhookToken(Request $request, Response $response, array $args) : Response
+    {
+        $name = (string)$args['name'];
+        $isConfirmed = (self::getFormField($request, 'confirm_replace') === '1');
+
+        try
+        {
+            $token = Smtp2GoWebhookSetup::generateToken($name, self::getFormField($request, 'version'), $isConfirmed);
+            self::logChange('A provider\'s webhook token was generated', $name);
+            $provider = ProvidersFormService::loadProvider($name);
+            $version = self::getProvidersVersionOrEmpty();
+            $page = new ViewProviderPage($provider, ProviderRegistry::getConfig(), $version, $token);
+            $result = self::renderPage($response, $name, $page)->withHeader('Cache-Control', 'no-store');
+        }
+        catch (InvalidInputException | ConflictException | ConfigurationException $e)
+        {
+            WebSession::flash($e->getMessage(), true);
+            $result = self::redirect($response, '/providers/' . rawurlencode($name));
+        }
+
+        return $result;
     }
 
 

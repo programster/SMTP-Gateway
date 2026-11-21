@@ -14,6 +14,7 @@ class ViewProviderPage extends Programster\AbstractView\AbstractView
     private readonly ProviderDefinition $m_provider;
     private readonly ProvidersConfig $m_config;
     private readonly string $m_version;
+    private readonly string $m_newWebhookToken;
 
 
     /**
@@ -22,9 +23,18 @@ class ViewProviderPage extends Programster\AbstractView\AbstractView
      * @param ProvidersConfig $config - every provider, to say where this one is in the order.
      *
      * @param string $version - the version of the providers, for removing it.
+     *
+     * @param string $newWebhookToken - a webhook token that's just been generated, to show this once, or an empty
+     * string.
      */
-    public function __construct(ProviderDefinition $provider, ProvidersConfig $config, string $version)
+    public function __construct(
+        ProviderDefinition $provider,
+        ProvidersConfig $config,
+        string $version,
+        string $newWebhookToken = ''
+    )
     {
+        $this->m_newWebhookToken = $newWebhookToken;
         $this->m_provider = $provider;
         $this->m_config = $config;
         $this->m_version = $version;
@@ -147,16 +157,6 @@ class ViewProviderPage extends Programster\AbstractView\AbstractView
 
 
     /**
-     * Render the button that disables the provider, keeping its settings, or enables it again.
-     *
-     * @param string $path - the provider's page, e.g. "/providers/sendgrid-main".
-     *
-     * @param bool $isOnlyEnabled - whether it's the only enabled provider, which can't be disabled, as no email could
-     * be sent.
-     *
-     * @return void
-     */
-    /**
      * For an SMTP2GO provider, say whether its webhook has a secret yet, with a button to set it up if it has an API
      * key, and the steps to do it by hand. Other types of provider show nothing here.
      *
@@ -170,10 +170,11 @@ class ViewProviderPage extends Programster\AbstractView\AbstractView
 
         if ($settings instanceof Smtp2GoSettings)
         {
-            $hasSecret = ($settings->getWebhookSecret() !== '');
+            $token = $this->m_newWebhookToken;
+            $hasSecret = ($settings->getWebhookSecret() !== '' || $token !== '');
+            $isOpen = (!$settings->hasApiKey() || $token !== '');
             $url = ProviderWebhookUrl::get($this->m_provider->getName());
             $address = ($url === '') ? '/webhooks/' . rawurlencode($this->m_provider->getName()) : $url;
-            $withSecret = WebhookBasicAuth::createUrl($address, 'YOUR_WEBHOOK_SECRET');
             $events = implode(', ', Smtp2GoWebhook::RECORDED_EVENTS);
 ?>
 <h3>Delivery events</h3>
@@ -188,15 +189,62 @@ class ViewProviderPage extends Programster\AbstractView\AbstractView
         <button type="submit"><?= $hasSecret ? 'Set up the webhook again' : 'Set up the webhook' ?></button>
     </form>
     <p class="hint">Needs the API key to have the webhook view, add and edit permissions, and <code>PUBLIC_URL</code>
-        to be this service's public https address.</p>
+        to be this service's public https address. SMTP2GO's free plan only allows 1 webhook, and paid plans 10, so
+        the account needs room for this one.</p>
 <?php endif; ?>
-<details>
+<details class="advanced"<?= $isOpen ? ' open' : '' ?>>
     <summary>Set it up by hand</summary>
-    <ol>
-        <li>Edit this provider, and enter a long random <strong>Webhook secret</strong>.</li>
-        <li>In SMTP2GO, add a webhook under <strong>Settings &gt; Webhooks</strong> that posts to
-            <code><?= Html::e($withSecret) ?></code>, with your secret in place of YOUR_WEBHOOK_SECRET.</li>
-        <li>Set its output format to JSON, and tick these events: <?= Html::e($events) ?>.</li>
+    <?php if (!str_starts_with($url, 'https://')): ?>
+        <p class="flash flash-warning" role="status">First set <code>PUBLIC_URL</code> in .env to this service's public
+            https address, and recreate its container, as SMTP2GO has to be able to reach it.</p>
+    <?php endif; ?>
+    <ol id="smtp2go-webhook-steps">
+        <li>
+            <?php if ($token !== ''): ?>
+                <strong>Copy this bearer token now. It won't be shown again:</strong>
+                <?php $this->renderCopyableValue('smtp2go-webhook-token', $token); ?>
+            <?php else: ?>
+                Generate this provider's bearer token, before adding the webhook in SMTP2GO:
+                <form method="post" action="<?= Html::e("{$path}/webhook/token") ?>">
+                    <?= new ViewCsrfField() ?>
+                    <input type="hidden" name="version" value="<?= Html::e($this->m_version) ?>">
+                    <?php if ($hasSecret): ?>
+                        <p class="hint">It already has a token, which can't be shown again. A new one replaces it, and
+                            its webhook stops working until you update it in SMTP2GO.</p>
+                        <label><input type="checkbox" name="confirm_replace" value="1" required> Replace its
+                            token</label>
+                    <?php endif; ?>
+                    <button type="submit"><?= $hasSecret ? 'Generate a new token' : 'Generate a token' ?></button>
+                </form>
+            <?php endif; ?>
+        </li>
+        <li>Open SMTP2GO's webhooks page for your account's region, in a new tab:
+            <?php foreach (Smtp2GoAppRegion::cases() as $region): ?>
+                <a href="<?= Html::e($region->getWebhooksUrl()) ?>" target="_blank"
+                    rel="noopener noreferrer"><?= Html::e($region->getLabel()) ?></a><?=
+                    ($region === Smtp2GoAppRegion::GLOBAL) ? '.' : ',' ?>
+            <?php endforeach; ?>
+            Then press <strong>Add Webhook</strong>.
+        </li>
+        <li>Set its <strong>URL</strong> to:
+            <?php $this->renderCopyableValue('smtp2go-webhook-url', $address); ?>
+        </li>
+        <li>Set its <strong>Authorization header</strong> to <strong>Bearer</strong>, and paste the token as its value,
+            on its own.</li>
+        <li>Leave <strong>Users</strong> empty, so it covers all of them, and set <strong>Output type</strong> to
+            <strong>JSON</strong>.</li>
+        <li>Under <strong>Email events to include</strong>, tick:
+            <?php $this->renderCopyableValue('smtp2go-webhook-events', $events); ?>
+        </li>
+        <li>Press <strong>Save changes</strong>.</li>
+        <li>Check it's switched on, by running:
+            <pre>curl -i -X POST <?= Html::e($address) ?></pre>
+            <span class="hint"><strong>401</strong> is right: it's on, and refused this request for having no secret.
+                <strong>404</strong> means the secret isn't saved. Anything else, such as 403 or a login page, means
+                something in front of this service is blocking it.</span>
+        </li>
+        <li>Press <strong>Test this webhook</strong> in SMTP2GO, then send an email through this provider. Its page
+            under <strong>Activity &gt; Emails</strong> should show it as delivered within a minute or so.</li>
     </ol>
 </details>
 <?php
@@ -204,6 +252,34 @@ class ViewProviderPage extends Programster\AbstractView\AbstractView
     }
 
 
+    /**
+     * Render a read-only value with a button to copy it.
+     *
+     * @param string $id - the input's ID.
+     *
+     * @param string $value - the value.
+     *
+     * @return void
+     */
+    private function renderCopyableValue(string $id, string $value) : void
+    {
+?>
+<div class="secret-box"><input type="text" id="<?= Html::e($id) ?>" value="<?= Html::e($value) ?>" readonly><button
+    type="button" class="secondary" data-copy-target="<?= Html::e($id) ?>">Copy</button></div>
+<?php
+    }
+
+
+    /**
+     * Render the button that disables the provider, keeping its settings, or enables it again.
+     *
+     * @param string $path - the provider's page, e.g. "/providers/sendgrid-main".
+     *
+     * @param bool $isOnlyEnabled - whether it's the only enabled provider, which can't be disabled, as no email could
+     * be sent.
+     *
+     * @return void
+     */
     private function renderEnabledToggle(string $path, bool $isOnlyEnabled) : void
     {
         $isEnabled = $this->m_provider->isEnabled();

@@ -220,12 +220,41 @@ class ViewProviderFormPage extends Programster\AbstractView\AbstractView
 ?>
 <fieldset class="provider-type-fields" data-provider-type="<?= Html::e($type->value) ?>"<?= $hidden ?>>
     <legend><?= Html::e($type->getLabel()) ?></legend>
+    <?php if ($type === ProviderType::SMTP2GO): ?>
+        <?php $this->renderSmtp2GoConnectionChoice(); ?>
+    <?php endif; ?>
     <?php foreach (ProviderFormFields::getForType($type) as $field): ?>
         <?php $this->renderField($type, $field); ?>
     <?php endforeach; ?>
-    <?php if ($type->hasWebhook()): ?>
+    <?php if ($type === ProviderType::SMTP2GO): ?>
+        <div data-smtp2go-connection="<?= Smtp2GoConnection::SMTP->value ?>"><?php $this->renderWebhookHint(); ?></div>
+    <?php elseif ($type->hasWebhook()): ?>
         <?php $this->renderWebhookHint(); ?>
     <?php endif; ?>
+</fieldset>
+<?php
+    }
+
+
+    /**
+     * Render the choice of how to connect an SMTP2GO provider. It's the API key, unless the provider being edited has
+     * an SMTP login, so that opening its form can't change how it sends.
+     *
+     * @return void
+     */
+    private function renderSmtp2GoConnectionChoice() : void
+    {
+        $username = $this->m_values[ProviderType::SMTP2GO->value . '_smtp_username'] ?? '';
+        $current = ($username === '') ? Smtp2GoConnection::API_KEY : Smtp2GoConnection::SMTP;
+?>
+<fieldset class="choices">
+    <legend>How do you want to connect?</legend>
+    <?php foreach (Smtp2GoConnection::cases() as $connection): ?>
+        <label class="choice"><input type="radio" name="<?= Smtp2GoConnection::INPUT_NAME ?>"
+            value="<?= Html::e($connection->value) ?>"<?= ($connection === $current) ? ' checked' : '' ?>>
+            <span><strong><?= Html::e($connection->getTitle()) ?></strong>
+                <span class="hint"><?= Html::e($connection->getDescription()) ?></span></span></label>
+    <?php endforeach; ?>
 </fieldset>
 <?php
     }
@@ -259,6 +288,25 @@ class ViewProviderFormPage extends Programster\AbstractView\AbstractView
         $value = $this->m_values[$name] ?? '';
         $required = $field->isRequired() ? ' required' : '';
         $optional = $field->isRequired() ? '' : ' <span class="muted">(optional)</span>';
+        $isSmtp2Go = ($type === ProviderType::SMTP2GO);
+        $isApiKeyField = ($isSmtp2Go && $field->getKey() === 'api_key');
+        $isSmtpOnly = ($isSmtp2Go && !Smtp2GoConnection::API_KEY->showsSetting($field->getKey()));
+        $smtpValue = Smtp2GoConnection::SMTP->value;
+
+        if ($isSmtp2Go)
+        {
+            // What's required depends on how it connects, so only the API key's label can say it's optional.
+            $optional = $isApiKeyField
+                ? " <span class=\"muted\" data-smtp2go-connection=\"{$smtpValue}\">(optional)</span>"
+                : '';
+        }
+
+        if ($isSmtpOnly)
+        {
+?>
+<div data-smtp2go-connection="<?= $smtpValue ?>">
+<?php
+        }
 ?>
 <label for="<?= Html::e($name) ?>"><?= Html::e($field->getLabel()) ?><?= $optional ?></label>
 <?php
@@ -279,11 +327,15 @@ class ViewProviderFormPage extends Programster\AbstractView\AbstractView
 <?php
         }
 
-        if ($field->getPermissions() !== '')
+        if ($isApiKeyField)
         {
+            foreach (Smtp2GoConnection::cases() as $connection)
+            {
 ?>
-<p class="hint"><strong>Permissions:</strong> <?= Html::e($field->getPermissions()) ?></p>
+<p class="hint" data-smtp2go-connection="<?= Html::e($connection->value) ?>"><strong>Permissions:</strong> <?=
+    Html::e($connection->getApiKeyPermissions()) ?></p>
 <?php
+            }
         }
 
         if ($field->getKind() === ProviderFieldKind::SECRET)
@@ -295,6 +347,13 @@ class ViewProviderFormPage extends Programster\AbstractView\AbstractView
                 : "Written into {$path}. It's never shown again.";
 ?>
 <p class="hint"><?= Html::e($note) ?></p>
+<?php
+        }
+
+        if ($isSmtpOnly)
+        {
+?>
+</div>
 <?php
         }
     }
@@ -348,8 +407,21 @@ class ViewProviderFormPage extends Programster\AbstractView\AbstractView
         $saved = $isSet ? ' data-is-saved="1"' : '';
         $required = ($field->isRequired() && !$isSet && !$this->m_isEditing) ? ' required' : '';
 ?>
+<?php if ($field->isGeneratable()): ?>
+<div class="secret-box">
+<?php endif; ?>
 <input type="password" id="<?= Html::e($name) ?>" name="<?= Html::e($name) ?>" autocomplete="new-password"
     placeholder="<?= Html::e($placeholder) ?>"<?= $saved ?><?= $required ?>>
+<?php if ($field->isGeneratable()): ?>
+    <button type="button" class="secondary" data-role="generate-secret"
+        data-generate-target="<?= Html::e($name) ?>">Generate</button>
+    <button type="button" class="secondary" data-copy-target="<?= Html::e($name) ?>" hidden>Copy</button>
+</div>
+    <?php if ($isSet): ?>
+        <p class="hint">Generating a new one replaces the saved one when you save, and its webhook stops working until
+            it's updated with the new one.</p>
+    <?php endif; ?>
+<?php endif; ?>
 <?php
     }
 }

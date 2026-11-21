@@ -320,9 +320,9 @@ $requestFactory = new \Slim\Psr7\Factory\ServerRequestFactory();
 /**
  * Create a webhook request with an Authorization header.
  */
-$createWebhookRequest = function (string $authorization) use ($requestFactory) : \Psr\Http\Message\ServerRequestInterface {
+$createWebhookRequest = function (string $auth) use ($requestFactory) : \Psr\Http\Message\ServerRequestInterface {
     $request = $requestFactory->createServerRequest('POST', '/webhooks/smtp2go');
-    return ($authorization === '') ? $request : $request->withHeader('Authorization', $authorization);
+    return ($auth === '') ? $request : $request->withHeader('Authorization', $auth);
 };
 
 $basicAuth = 'Basic ' . base64_encode("webhook:{$webhookSecret}");
@@ -446,12 +446,14 @@ $added = $made[1][1] ?? [];
 
 $isAdded = (
        ($made[1][0] ?? '') === '/v3/webhook/add'
-    && $added['url'] === "https://webhook:{$webhookSecret}@smtp.example.org/webhooks/smtp2go"
+    && $added['url'] === $hookUrl
+    && $added['auth_header_type'] === 'bearer'
+    && $added['auth_header_value'] === $webhookSecret
     && $added['events'] === Smtp2GoWebhook::RECORDED_EVENTS
     && $added['output_format'] === 'json'
 );
 
-$suite->check('setting it up adds a webhook, with the secret and every event', $isAdded, json_encode($made));
+$suite->check('setting it up adds a webhook, with a bearer token and every event', $isAdded, json_encode($made));
 
 $client = new FakeHttpClient([
     '/v3/webhook/view' => [200, ['data' => [['id' => 9, 'url' => 'https://old:pw@smtp.example.org/webhooks/smtp2go']]]],
@@ -483,6 +485,23 @@ $createInstallerWithoutKey = function () use ($noKey) : void {
     $noKey->createWebhookInstaller();
 };
 
-$suite->checkThrows('setting it up without an API key is refused', InvalidInputException::class, $createInstallerWithoutKey);
+$name = 'setting it up without an API key is refused';
+$suite->checkThrows($name, InvalidInputException::class, $createInstallerWithoutKey);
+
+$limitReply = [400, ['data' => ['error' => 'Webhook limit reached', 'error_code' => 'E_ApiResponseCodes.LIMIT']]];
+$client = new FakeHttpClient(['/v3/webhook/view' => [200, ['data' => []]], '/v3/webhook/add' => $limitReply]);
+$limitMessage = '';
+
+try
+{
+    (new Smtp2GoWebhookInstaller('api-key', $client, $httpFactory))->install($hookUrl, $webhookSecret);
+}
+catch (InvalidInputException $e)
+{
+    $limitMessage = $e->getMessage();
+}
+
+$isExplained = (str_contains($limitMessage, 'Webhook limit reached') && str_contains($limitMessage, 'free plan'));
+$suite->check('a refused webhook says why, and warns about the plan\'s limit', $isExplained, $limitMessage);
 
 $suite->finish();

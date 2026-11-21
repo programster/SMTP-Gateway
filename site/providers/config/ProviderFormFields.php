@@ -138,24 +138,18 @@ final class ProviderFormFields
 
     private static function getSmtp2GoFields() : ProviderFieldCollection
     {
-        $usernameHint =
-            'Fill in an SMTP login, an API key, or (best) both. One of the account\'s SMTP users, under Sending > SMTP'
-            . ' Users. SMTP can send any email. To stop using it, clear this and leave the password blank.';
-
-        $apiKeyPermissions =
-            'give it /domain/view and /single_sender_emails/view for the sender checks, and /email/mime if there\'s no'
-            . ' SMTP login, as it then does the sending. Optionally, give it the webhook view, add and edit'
-            . ' permissions and the webhook is set up for you, or leave them out and set it up by hand.';
+        $usernameHint = 'One of the account\'s SMTP users, under Sending > SMTP Users.';
+        $apiKeyHint = 'Under Sending > API Keys in SMTP2GO.';
 
         $webhookSecretHint =
-            'Optional. Made for you if the API key sets up the webhook. To set it up by hand, enter a long random'
-            . ' value here, and follow the steps on the provider\'s page.';
+            'The bearer token for its webhook. Press Generate, paste it into the Authorization header of the webhook in'
+            . ' SMTP2GO, and save this form. The provider\'s page has the rest of the steps.';
 
         return new ProviderFieldCollection(
             ProviderField::createText('smtp_username', 'SMTP username', false, $usernameHint),
             ProviderField::createSecret('smtp_password', 'SMTP password', false, ''),
-            ProviderField::createSecret('api_key', 'API key', false, '', $apiKeyPermissions),
-            ProviderField::createSecret('webhook_secret', 'Webhook secret', false, $webhookSecretHint),
+            ProviderField::createSecret('api_key', 'API key', false, $apiKeyHint),
+            ProviderField::createGeneratableSecret('webhook_secret', 'Webhook secret', $webhookSecretHint),
         );
     }
 

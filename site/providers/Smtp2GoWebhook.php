@@ -2,8 +2,8 @@
 
 /*
  * SMTP2GO's webhook, which both ways of sending through it share (Smtp2GoProvider and Smtp2GoApiProvider). SMTP2GO
- * doesn't sign its webhooks, so they're checked with the webhook_secret (see WebhookBasicAuth), which is the password
- * in the webhook's address.
+ * doesn't sign its webhooks, so they're checked with the webhook_secret (see WebhookBasicAuth), which it sends as a
+ * bearer token in the Authorization header.
  *
  * Each event carries SMTP2GO's own ID for the email (email_id), which is what's saved when the email is sent, so
  * that's what it's matched back by. A webhook can be sent as JSON or form encoded, and both are read.
