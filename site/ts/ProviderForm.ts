@@ -11,6 +11,7 @@
 import { Elements } from './Elements.js';
 import { JsonClient } from './JsonClient.js';
 import { ProviderNameField } from './ProviderNameField.js';
+import { Smtp2GoLoginFields } from './Smtp2GoLoginFields.js';
 
 export class ProviderForm
 {
@@ -19,6 +20,10 @@ export class ProviderForm
     private readonly m_form: HTMLFormElement;
     private readonly m_name: HTMLInputElement;
     private readonly m_nameField: ProviderNameField;
+
+    // Null when editing a provider of another type, whose form doesn't have these fields.
+    private readonly m_smtp2GoLogin: Smtp2GoLoginFields | null;
+
     private readonly m_webhookUrls: HTMLElement[];
     private readonly m_error: HTMLElement;
     private readonly m_save: HTMLButtonElement;
@@ -51,6 +56,12 @@ export class ProviderForm
 
         this.m_name = Elements.findWithin(form, '#provider-name', HTMLInputElement);
         this.m_nameField = new ProviderNameField(form);
+        const smtp2GoFields = form.querySelector('fieldset[data-provider-type=smtp2go]');
+
+        this.m_smtp2GoLogin = (smtp2GoFields instanceof HTMLFieldSetElement)
+            ? new Smtp2GoLoginFields(smtp2GoFields)
+            : null;
+
         this.m_error = Elements.findWithin(form, '[data-role=form-error]', HTMLElement);
         this.m_save = Elements.findWithin(form, 'button[type=submit]', HTMLButtonElement);
         const csrfToken = Elements.findWithin(form, 'input[name=csrf_token]', HTMLInputElement).value;
@@ -88,6 +99,10 @@ export class ProviderForm
         {
             this.m_nameField.focus();
             this.m_form.reportValidity();
+        }
+        else if (this.m_smtp2GoLogin !== null && !this.m_smtp2GoLogin.check())
+        {
+            this.showError('');
         }
         else if (this.m_form.reportValidity())
         {

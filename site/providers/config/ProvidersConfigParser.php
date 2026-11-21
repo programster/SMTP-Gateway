@@ -471,12 +471,15 @@ final class ProvidersConfigParser
         PreviousSettings $previous
     ) : Smtp2GoSettings
     {
-        self::assertKnownKeys($data, [...self::COMMON_KEYS, 'smtp_username', 'smtp_password', 'api_key'], $where);
+        $keys = ['smtp_username', 'smtp_password', 'api_key', 'webhook_secret'];
+        self::assertKnownKeys($data, [...self::COMMON_KEYS, ...$keys], $where);
 
+        // Each is optional on its own: Smtp2GoSettings checks there's a whole SMTP login, an API key, or both.
         return new Smtp2GoSettings(
-            self::readValue($data, 'smtp_username', true, false, $previous),
-            self::readValue($data, 'smtp_password', true, true, $previous),
+            self::readValue($data, 'smtp_username', false, false, $previous),
+            self::readValue($data, 'smtp_password', false, true, $previous),
             self::readValue($data, 'api_key', false, true, $previous),
+            self::readValue($data, 'webhook_secret', false, true, $previous),
         );
     }
 

@@ -1,11 +1,13 @@
 # Development
 
 ```bash
+cp --no-clobber config-dev/settings.yaml.example config-dev/settings.yaml
 docker compose -f docker-dev-compose.yml up
 ```
 
-This is for testing the gateway without sending any real email. It uses `config-dev/settings.yaml`, whose
-providers relay every email to one of two [Mailpit](https://mailpit.axllent.org) containers (the
+This is for testing the gateway without sending any real email. It uses `config-dev/settings.yaml`, which
+git ignores, as it holds real credentials if you add a real provider to try it. Its starting point,
+`config-dev/settings.yaml.example`, has no secrets, and its providers relay every email to one of two [Mailpit](https://mailpit.axllent.org) containers (the
 maintained successor to MailHog), which catch them all: the primary at http://localhost:8025, and the
 secondary at http://localhost:8026. Both have Mailpit's **Chaos** turned on, so either can be made to
 refuse emails with an error code of your choosing (in its web interface, or with `PUT /api/v1/chaos`),
@@ -49,7 +51,7 @@ Anyone who'd rather build the image themselves can use `docker-compose.build.yml
 tests/run-tests.sh
 ```
 
-This runs every suite against a fresh, throwaway test stack of its own, 8 at once, then removes them.
+This runs every suite against a fresh, throwaway test stack of its own, 12 at once, then removes them.
 It needs Docker (with Compose 2.24 or later, and its socket at `/var/run/docker.sock`), and
 `composer install` run in `site/`. Everything else (PHP for the runner, and Python for the integration
 tests) is in the runner's own image, `tests/runner/Dockerfile`, which it builds. Most of the time is
@@ -88,7 +90,7 @@ fails to reach Google instead, which the service refuses in the same way.
 
 Options:
 
-* `--workers=N` runs N stacks at once, rather than 8. Each stack is 4 containers.
+* `--workers=N` runs N stacks at once, rather than 12. Each stack is 4 containers.
 * `--keep` leaves the test stacks running at the end, so you can look around one, or run a suite
   again, e.g. `cd tests && set -a && . .run/providers/stack.env && set +a &&
   TEST_STATE_DIR=.run/providers/state python3 -m integration.providers` (which needs Python 3.10 or

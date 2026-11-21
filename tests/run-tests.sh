@@ -15,7 +15,7 @@
 # repository mounted at the same path as here, so the stacks' bind mounts and ports are the same as if it ran here.
 #
 # Usage: tests/run-tests.sh [--workers=N] [--keep] [--load]
-#   --workers=N  run N stacks at once (8 by default).
+#   --workers=N  run N stacks at once (12 by default).
 #   --keep       leave the test stacks running at the end, e.g. to look around one, or re-run a suite (see the README).
 #   --load       also run the load test (tests/load/load_test.py), on a stack of its own.
 #   --remove     just remove the test stacks left running by --keep.

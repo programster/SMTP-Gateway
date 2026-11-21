@@ -10,7 +10,7 @@ declare(strict_types = 1);
 
 final readonly class RunOptions
 {
-    private const DEFAULT_WORKERS = 8;
+    private const DEFAULT_WORKERS = 12;
 
     private int $m_numWorkers;
     private bool $m_isKeepingStacks;

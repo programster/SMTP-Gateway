@@ -10,7 +10,7 @@ import re
 
 from lib import stack
 from lib.harness import Suite
-from lib.web import Response, WebClient, find_csrf_token
+from lib.web import Response, WebClient, find_csrf_token, forget_used_totp_code
 
 suite = Suite('Provider form')
 web = WebClient.create_logged_in()
@@ -60,6 +60,11 @@ page = web.get('/providers/new')
 has_types = all(f'<option value="{type_name}"' in page for type_name in REQUIRED)
 suite.check('the add form offers every type of provider', has_types)
 suite.check('with a fieldset of each type\'s fields', all(f'data-provider-type="{t}"' in page for t in REQUIRED))
+api_key_input = page.find('id="smtp2go_api_key"')
+permissions = page.find('<strong>Permissions:</strong>', api_key_input)
+written_note = page.find('Written into', api_key_input)
+is_ordered = (0 <= api_key_input < permissions < written_note)
+suite.check('a key\'s bold permissions come before the note on where it\'s saved', is_ordered)
 
 # Adding a provider of each type, with its required fields.
 for type_name, fields in REQUIRED.items():
@@ -70,6 +75,9 @@ for type_name, fields in REQUIRED.items():
 suite.check('every one is in settings.yaml', all(f'test-{t}' in provider_names() for t in REQUIRED))
 page = web.get('/providers')
 suite.check('and listed on the page', all(f'<strong>test-{t}</strong>' in page for t in REQUIRED))
+edit_page = web.get('/providers/test-smtp2go/edit')
+shows_dots = ('placeholder="••••••••••••" data-is-saved="1"' in edit_page and 'smtp2go-secret' not in edit_page)
+suite.check('a saved secret shows as dots, without its value', shows_dots)
 enabled_table, _, disabled_table = page.partition('<h2>Disabled</h2>')
 is_split = 'href="/providers/mailpit"' in enabled_table and 'test-sendgrid' not in enabled_table
 suite.check('the enabled providers are in one table, and the disabled ones below', is_split
@@ -171,6 +179,8 @@ relay = {'custom_host': 'relay.example.org', 'custom_port': '587', 'custom_secur
          'custom_username': 'relay@example.org', 'custom_password': 'relay-secret', 'custom_dkim_selector': ''}
 response = add('custom', 'test-relay', relay)
 suite.check('a custom provider with a login is added', response.get_status() == 303, response.get_status())
+# Only two logins fit in one 30 second TOTP step, and this suite has three. second_factor tests a code can't be reused.
+forget_used_totp_code(stack.ADMIN_EMAIL)
 other = WebClient.create_logged_in()
 
 
@@ -196,6 +206,7 @@ suite.check('and another session can, with the password entered again', response
             and 'relay2.example.org' in read_settings(), response.get_status())
 response = edit_relay(other, {'custom_host': 'relay3.example.org'})
 suite.check('after which that session knows it too', response.get_status() == 303, response.get_status())
+forget_used_totp_code(stack.ADMIN_EMAIL)
 third = WebClient.create_logged_in()
 response = edit_relay(third, {'custom_host': 'relay3.example.org', 'custom_dkim_selector': 'dkim'})
 saved = read_settings()

@@ -1,6 +1,6 @@
 # Providers
 
-The providers are set under **Settings > Providers** in the web interface, which keeps them in the
+The providers are set under **Providers** in the web interface, which keeps them in the
 `providers` section of `config/settings.yaml`.
 
 ## Adding and editing them
@@ -136,7 +136,8 @@ emails are accepted and queued, and sent once it's added.
 ## Types of provider
 
 Every type sends through the provider's SMTP relay (rather than its own send API), so each email is
-passed on exactly as the client sent it. Besides `name`, `type`, `enabled` and `rate_limits`, each has
+passed on exactly as the client sent it. The exception is an [SMTP2GO](#smtp2go) provider with only an
+API key, which sends through its API. Besides `name`, `type`, `enabled` and `rate_limits`, each has
 the settings below. The optional API key (or token) is only for the [sender checks](sender-checks.md),
 and the webhook's key or secret switches on recording what happens to each email after it's sent (see
 [Tracking](tracking.md)). The webhook posts to `PUBLIC_URL/webhooks/<provider name>`.
@@ -150,13 +151,13 @@ and the webhook's key or secret switches on recording what happens to each email
 | [`mailjet`](#mailjet) | `api_key`, `secret_key` | `webhook_secret` | HTTP Basic auth |
 | [`mailersend`](#mailersend) | `smtp_username`, `smtp_password` | `api_token`, `webhook_secret` | a signature |
 | [`mailtrap`](#mailtrap) | `smtp_token` | `api_token`, `webhook_secret` | a signature |
-| [`smtp2go`](#smtp2go) | `smtp_username`, `smtp_password` | `api_key` | (no events yet) |
+| [`smtp2go`](#smtp2go) | `smtp_username` and `smtp_password`, or `api_key` | the other, `webhook_secret` | HTTP Basic auth |
 | [`custom`](#custom) | `host`, `port`, `security` | `username`, `password`, `dkim_selector` | (no events) |
 
 Each type also removes the provider's own control headers that a client sent, as they could change how
 the provider sends the email (e.g. add recipients, or post a copy of it somewhere), and adds one carrying
-the email's ID, which the provider passes back in its events (except SMTP2GO, whose events aren't read
-yet).
+the email's ID, which the provider passes back in its events. SMTP2GO is the exception: its events are
+matched by its own ID for the email, which is saved when it's sent.
 
 ## SendGrid
 
@@ -444,13 +445,41 @@ check signatures, not make them), so it can be written into `settings.yaml` as i
 
 ## SMTP2GO
 
-Sends through `mail.smtp2go.com` on port 587, with STARTTLS. Its webhooks aren't read yet, so emails
-show as sent, without whether they were then delivered or bounced.
+It needs an SMTP login, an API key, or both. Both is best: it then sends over SMTP, and the key is used
+for the sender checks.
 
 * **`smtp_username`** and **`smtp_password`**: one of the account's SMTP users (Sending > SMTP Users).
-* **`api_key`** (optional): for the sender checks. It only needs to use `/domain/view` and
-  `/single_sender_emails/view` (Sending > API Keys > Permissions).
+  With these, it sends through `mail.smtp2go.com` on port 587, with STARTTLS.
+* **`api_key`**: set its permissions under Sending > API Keys > Permissions. It needs `/domain/view` and
+  `/single_sender_emails/view` for the sender checks, and `/email/mime` if there's no SMTP login, as it
+  then does the sending. Give it `/webhook/view`, `/webhook/add` and `/webhook/edit` too, for the
+  webhook to be set up for you.
+* **`webhook_secret`** (optional): what its webhook authenticates with. It's made for you if the API key
+  sets up the webhook.
 * **Headers**: every `X-Smtp2go-*` header the client sent is removed.
+
+SMTP2GO keeps an email's bounces to itself, so its webhook is the only way to know one bounced. Until
+it's set up, the provider's page says so, and its emails show as sent. There are two ways to set it up,
+and both need `PUBLIC_URL` to be this service's public https address:
+
+* **For you:** press **Set up the webhook** on the provider's page. It makes a `webhook_secret` if there
+  isn't one, and creates the webhook in SMTP2GO, or updates the one already posting here.
+* **By hand:** enter a long random `webhook_secret` on the provider's form. In SMTP2GO, under
+  **Settings > Webhooks**, add a webhook posting to
+  `https://webhook:<webhook_secret>@<host>/webhooks/<provider name>`, with the JSON output format, and
+  the events `processed`, `delivered`, `bounce`, `reject`, `spam`, `unsubscribe`, `open` and `click`.
+
+With only an API key, SMTP2GO takes an email's recipients from its headers, as its API has no separate
+list of them:
+
+* A recipient who isn't in `To` or `Cc` is added to a `Bcc` header, which SMTP2GO removes. It takes up to
+  100 of these.
+* An email whose `To` or `Cc` lists someone who isn't a recipient is **refused**, as they would otherwise
+  receive it. Mailing-list software and some mail-merge tools send emails like this, and need an SMTP
+  login.
+
+On either route, SMTP2GO replaces the envelope sender with its own bounce address, so bounces go to
+SMTP2GO rather than to the address a client set.
 
 ## Custom
 

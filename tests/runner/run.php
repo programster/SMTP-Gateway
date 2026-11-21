@@ -2,7 +2,7 @@
 
 /*
  * Runs every test suite, each against a fresh stack of its own, several at once. Each suite is put in a queue
- * (programster/pgsql-task-queue), with the longest first, and --workers=N workers (8 by default) take them from it,
+ * (programster/pgsql-task-queue), with the longest first, and --workers=N workers (12 by default) take them from it,
  * each starting a stack for its suite, running it, and removing the stack, until they're all done. Then it prints each
  * suite's totals and failures, as the shell runner did.
  *
@@ -53,7 +53,9 @@ function createSuites(bool $isLoadTesting) : SuiteCollection
 
     $suites = new SuiteCollection(
         $unitTests,
-        Suite::createPython('e2e', 'integration.e2e', 28),
+        Suite::createPython('e2e', 'integration.e2e', 12),
+        Suite::createPython('second-factor', 'integration.second_factor', 1),
+        Suite::createPython('smtp2go-webhook', 'integration.smtp2go_webhook', 3),
         Suite::createPython('accounts', 'integration.accounts', 1),
         Suite::createPython('login-throttle', 'integration.login_throttle', 35),
         Suite::createPython('google-login', 'integration.google_login', 1),

@@ -144,6 +144,30 @@ final class ProvidersFormService
 
 
     /**
+     * Save the secret a provider's webhook authenticates with, keeping everything else about it.
+     *
+     * @param string $name - its name.
+     *
+     * @param string $secret - the secret.
+     *
+     * @param string $version - the version of the providers the change is based on.
+     *
+     * @return void
+     *
+     * @throws NotFoundException - if there's no such provider.
+     * @throws InvalidInputException - if its type has no webhook_secret.
+     * @throws ConflictException - if the providers have changed since the version given.
+     * @throws ConfigurationException - if the providers can't be read or saved.
+     */
+    public static function setWebhookSecret(string $name, string $secret, string $version) : void
+    {
+        $data = self::loadData();
+        $data['providers'][self::findIndex($data, $name)]['webhook_secret'] = $secret;
+        self::save($data, $version);
+    }
+
+
+    /**
      * Put the enabled providers in an order, which is the order they're tried in, for the overflow and fallback
      * modes. The disabled ones, which aren't tried, go after them, in the order they were in.
      *

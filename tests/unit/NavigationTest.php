@@ -74,7 +74,19 @@ $isEveryIcon = ($iconCount === count(ViewSidebar::createMenu()) + 2);
 $suite->check('the menu\'s icons are in the page, and the account\'s two', $isEveryIcon, (string)$iconCount);
 $suite->check('a link in a section has none', (string)new ViewIcon(Icon::NONE) === '');
 
-// The settings' pages, in the order they're listed: the providers straight after General.
+// The main menu's order: the providers are on the main level, straight after Access.
+$menuLabels = [];
+
+foreach (ViewSidebar::createMenu() as $entry)
+{
+    $menuLabels[] = $entry->getLabel();
+}
+
+$providersIndex = array_search('Providers', $menuLabels, true);
+$isAfterAccess = ($providersIndex !== false && $menuLabels[$providersIndex - 1] === 'Access');
+$suite->check('Providers is on the main level, straight after Access', $isAfterAccess, implode(', ', $menuLabels));
+
+// The settings' pages, in the order they're listed.
 $settingsLabels = [];
 
 foreach (ViewSidebar::createMenu() as $entry)
@@ -88,7 +100,7 @@ foreach (ViewSidebar::createMenu() as $entry)
     }
 }
 
-$expected = ['General', 'Providers', 'Security', 'Proxies', 'Email retention', 'SSO', 'Server resources'];
+$expected = ['General', 'Security', 'Proxies', 'Email retention', 'SSO', 'Server resources'];
 $suite->check('the settings are listed in order', $settingsLabels === $expected, implode(', ', $settingsLabels));
 
 $suite->finish();

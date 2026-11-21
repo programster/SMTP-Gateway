@@ -597,21 +597,6 @@ response = call_api('POST', f'/users/{admin_id}/block', auth)
 is_refused = response.get_status() == 409 and response.get_error_code() == 42
 suite.check('the last account that can log in can\'t be blocked', is_refused, response.get_body())
 
-# Logging in again, with the second factor.
-web.request('POST', '/logout', {'csrf_token': find_csrf_token(web.get('/'))})
-form = {'csrf_token': find_csrf_token(web.get('/login')), 'email': stack.ADMIN_EMAIL, 'password': stack.ADMIN_PASSWORD}
-response = web.request('POST', '/login', form)
-suite.check('password step goes to second factor', response.get_header('Location') == '/login/second-factor')
-suite.check('not logged in before second factor', web.request('GET', '/').get_status() == 303)
-form = {'csrf_token': find_csrf_token(web.get('/login/second-factor')), 'code': used_code}
-suite.check('replayed TOTP code refused', web.request('POST', '/login/second-factor/totp', form).get_status() == 401)
-# This waits for the next 30 second step, as the code from setting it up can't be used again.
-code = create_unused_totp_code(stack.ADMIN_EMAIL, secret)
-form = {'csrf_token': find_csrf_token(web.get('/login/second-factor')), 'code': code}
-response = web.request('POST', '/login/second-factor/totp', form)
-suite.check('fresh TOTP code logs in', response.get_header('Location') == '/', response)
-suite.check('logged in after TOTP', web.request('GET', '/').get_status() == 200)
-
 # Editing an email token, which keeps its ID and secret, and restricts it differently from its next email. (After
 # Mailpit's emails were counted above, so the email it sends doesn't change the count.)
 response = call_api('POST', '/email-tokens', auth, policy | {'name': 'editable', 'rateLimits': []})

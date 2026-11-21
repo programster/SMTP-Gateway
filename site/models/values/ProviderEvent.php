@@ -16,6 +16,7 @@ readonly class ProviderEvent
     private string $m_recipient;
     private DateTimeImmutable $m_occurredAt;
     private string $m_detail;
+    private string $m_providerMessageId;
 
 
     /**
@@ -31,6 +32,9 @@ readonly class ProviderEvent
      * @param DateTimeImmutable $occurredAt - when it happened.
      *
      * @param string $detail - any detail, such as a bounce reason or a clicked URL, or an empty string.
+     *
+     * @param string $providerMessageId - the provider's own ID for the email, for matching it when the provider can't
+     * pass ours back, or an empty string.
      */
     public function __construct(
         string $messageId,
@@ -38,9 +42,11 @@ readonly class ProviderEvent
         EmailEventType $type,
         string $recipient,
         DateTimeImmutable $occurredAt,
-        string $detail
+        string $detail,
+        string $providerMessageId = ''
     )
     {
+        $this->m_providerMessageId = $providerMessageId;
         $this->m_messageId = $messageId;
         $this->m_providerEventId = $providerEventId;
         $this->m_type = $type;
@@ -57,4 +63,5 @@ readonly class ProviderEvent
     public function getRecipient() : string { return $this->m_recipient; }
     public function getOccurredAt() : DateTimeImmutable { return $this->m_occurredAt; }
     public function getDetail() : string { return $this->m_detail; }
+    public function getProviderMessageId() : string { return $this->m_providerMessageId; }
 }

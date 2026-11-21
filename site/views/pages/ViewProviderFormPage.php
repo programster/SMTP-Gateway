@@ -269,11 +269,32 @@ class ViewProviderFormPage extends Programster\AbstractView\AbstractView
             ProviderFieldKind::CHOICE => $this->renderChoice($name, $value, $field),
             ProviderFieldKind::SECRET => $this->renderSecret($name, $field),
         };
-
+?>
+<p class="field-error" id="<?= Html::e($name) ?>-error" hidden></p>
+<?php
         if ($field->getHint() !== '')
         {
 ?>
 <p class="hint"><?= Html::e($field->getHint()) ?></p>
+<?php
+        }
+
+        if ($field->getPermissions() !== '')
+        {
+?>
+<p class="hint"><strong>Permissions:</strong> <?= Html::e($field->getPermissions()) ?></p>
+<?php
+        }
+
+        if ($field->getKind() === ProviderFieldKind::SECRET)
+        {
+            $path = SettingsFile::getPath();
+
+            $note = isset($this->m_secretsSet[$name])
+                ? "Saved in {$path}. Leave it blank to keep it, or type a new one to replace it."
+                : "Written into {$path}. It's never shown again.";
+?>
+<p class="hint"><?= Html::e($note) ?></p>
 <?php
         }
     }
@@ -311,7 +332,8 @@ class ViewProviderFormPage extends Programster\AbstractView\AbstractView
 
     /**
      * Render a secret: a password input, which is never filled in (when editing, leaving it blank keeps the one
-     * there is).
+     * there is). A saved one shows a fixed row of dots as its placeholder, so it's clear there is one, while its value
+     * and length never reach the browser.
      *
      * @param string $name - its input's name.
      *
@@ -322,12 +344,12 @@ class ViewProviderFormPage extends Programster\AbstractView\AbstractView
     private function renderSecret(string $name, ProviderField $field) : void
     {
         $isSet = isset($this->m_secretsSet[$name]);
-        $placeholder = $isSet ? 'Set: leave blank to keep it' : '';
+        $placeholder = $isSet ? '••••••••••••' : '';
+        $saved = $isSet ? ' data-is-saved="1"' : '';
         $required = ($field->isRequired() && !$isSet && !$this->m_isEditing) ? ' required' : '';
 ?>
 <input type="password" id="<?= Html::e($name) ?>" name="<?= Html::e($name) ?>" autocomplete="new-password"
-    placeholder="<?= Html::e($placeholder) ?>"<?= $required ?>>
-<p class="hint">Written into <?= Html::e(SettingsFile::getPath()) ?>. It's never shown again.</p>
+    placeholder="<?= Html::e($placeholder) ?>"<?= $saved ?><?= $required ?>>
 <?php
     }
 }

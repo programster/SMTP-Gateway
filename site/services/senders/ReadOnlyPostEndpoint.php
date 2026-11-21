@@ -12,4 +12,6 @@ enum ReadOnlyPostEndpoint : string
 {
     case SMTP2GO_SENDER_DOMAINS = '/domain/view';
     case SMTP2GO_SINGLE_SENDERS = '/single_sender_emails/view';
+    case SMTP2GO_KEY_PERMISSIONS = '/api_keys/permissions';
+    case SMTP2GO_WEBHOOKS = '/webhook/view';
 }

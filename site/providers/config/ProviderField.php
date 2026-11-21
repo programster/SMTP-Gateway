@@ -18,6 +18,7 @@ final readonly class ProviderField
     private bool $m_isRequired;
     private string $m_hint;
     private string $m_default;
+    private string $m_permissions;
 
     /** @var array<string, string> - for a CHOICE, each value, and what it's shown as. */
     private array $m_options;
@@ -25,6 +26,8 @@ final readonly class ProviderField
 
     /**
      * @param array<string, string> $options - for a CHOICE, each value and its label. Empty for any other kind.
+     *
+     * @param string $permissions - for a SECRET, the permissions it needs, or an empty string.
      */
     private function __construct(
         string $key,
@@ -33,9 +36,11 @@ final readonly class ProviderField
         bool $isRequired,
         string $hint,
         string $default,
-        array $options
+        array $options,
+        string $permissions = ''
     )
     {
+        $this->m_permissions = $permissions;
         $this->m_key = $key;
         $this->m_label = $label;
         $this->m_kind = $kind;
@@ -85,11 +90,19 @@ final readonly class ProviderField
      *
      * @param string $hint - what it is, and where to find it, or an empty string.
      *
+     * @param string $permissions - the permissions it needs, shown under a bold "Permissions:", or an empty string.
+     *
      * @return ProviderField
      */
-    public static function createSecret(string $key, string $label, bool $isRequired, string $hint) : ProviderField
+    public static function createSecret(
+        string $key,
+        string $label,
+        bool $isRequired,
+        string $hint,
+        string $permissions = ''
+    ) : ProviderField
     {
-        return new ProviderField($key, $label, ProviderFieldKind::SECRET, $isRequired, $hint, '', []);
+        return new ProviderField($key, $label, ProviderFieldKind::SECRET, $isRequired, $hint, '', [], $permissions);
     }
 
 
@@ -172,6 +185,7 @@ final readonly class ProviderField
     public function isRequired() : bool { return $this->m_isRequired; }
     public function getHint() : string { return $this->m_hint; }
     public function getDefault() : string { return $this->m_default; }
+    public function getPermissions() : string { return $this->m_permissions; }
 
     /** @return array<string, string> */
     public function getOptions() : array { return $this->m_options; }

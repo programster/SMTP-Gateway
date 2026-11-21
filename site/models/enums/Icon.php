@@ -15,6 +15,7 @@ enum Icon : string
     case ACTIVITY = 'envelope-simple';
     case RATE_LIMITS = 'gauge';
     case ACCESS = 'key';
+    case PROVIDERS = 'paper-plane-tilt';
     case LOGS = 'scroll';
     case SETTINGS = 'gear-six';
     case DOCUMENTATION = 'book-open';

@@ -17,7 +17,9 @@ final readonly class Smtp2GoSenderChecker implements SenderCheckerInterface
     private bool $m_hasApi;
     private bool $m_canReadDomains;
     private bool $m_canReadAddresses;
+    private bool $m_isMissingSendPermission;
     private IdentityChecks $m_identities;
+    private SecretWebhookChecks $m_webhookChecks;
 
 
     /**
@@ -32,6 +34,16 @@ final readonly class Smtp2GoSenderChecker implements SenderCheckerInterface
      * @param bool $canReadAddresses - whether the key could list the single sender emails.
      *
      * @param VerifiedAddressCollection $addresses - the single sender emails.
+     *
+     * @param bool $isMissingSendPermission - whether the provider sends with its API key, but the key can't send.
+     *
+     * @param bool $canReadWebhooks - whether the key could list the webhooks.
+     *
+     * @param ConfiguredWebhookCollection $webhooks - the webhooks that are switched on.
+     *
+     * @param string $webhookSecret - the provider's webhook_secret, or an empty string if it isn't set.
+     *
+     * @param string $webhookUrl - where SMTP2GO should send its events, or an empty string if that isn't known.
      */
     public function __construct(
         string $providerName,
@@ -39,9 +51,30 @@ final readonly class Smtp2GoSenderChecker implements SenderCheckerInterface
         bool $canReadDomains,
         AuthenticatedDomainCollection $domains,
         bool $canReadAddresses,
-        VerifiedAddressCollection $addresses
+        VerifiedAddressCollection $addresses,
+        bool $isMissingSendPermission,
+        bool $canReadWebhooks,
+        ConfiguredWebhookCollection $webhooks,
+        string $webhookSecret,
+        string $webhookUrl
     )
     {
+        // SMTP2GO doesn't document whether it shows a webhook's password, so it isn't relied on to check it.
+        $this->m_webhookChecks = new SecretWebhookChecks(
+            $providerName,
+            'SMTP2GO',
+            'Settings → Webhooks',
+            WebhookAuthentication::PASSWORD,
+            $canReadWebhooks,
+            false,
+            $webhooks,
+            $webhookSecret,
+            $webhookUrl,
+            Smtp2GoWebhook::RECORDED_EVENTS,
+            Smtp2GoWebhook::ESSENTIAL_EVENTS
+        );
+
+        $this->m_isMissingSendPermission = $isMissingSendPermission;
         $this->m_providerName = $providerName;
         $this->m_hasApi = $hasApi;
         $this->m_canReadDomains = $canReadDomains;
@@ -67,16 +100,46 @@ final readonly class Smtp2GoSenderChecker implements SenderCheckerInterface
      *
      * @param JsonApiClient|null $api - SMTP2GO's API (see createApiClient()), or null if it has no api_key.
      *
+     * @param bool $isSendingWithApi - whether the provider has no SMTP login, so its key has to be able to send.
+     *
+     * @param string $webhookSecret - the provider's webhook_secret, or an empty string if it isn't set.
+     *
+     * @param string $webhookUrl - where SMTP2GO should send its events, or an empty string if that isn't known.
+     *
      * @return Smtp2GoSenderChecker
      *
      * @throws ProviderLookupException - if SMTP2GO couldn't be reached, or rejected the key.
      */
-    public static function fetch(string $providerName, ?JsonApiClient $api) : Smtp2GoSenderChecker
+    public static function fetch(
+        string $providerName,
+        ?JsonApiClient $api,
+        bool $isSendingWithApi,
+        string $webhookSecret,
+        string $webhookUrl
+    ) : Smtp2GoSenderChecker
     {
         $domains = [];
         $addresses = [];
+        $webhooks = [];
         $canReadDomains = false;
         $canReadAddresses = false;
+        $canReadWebhooks = false;
+        $isMissingSendPermission = false;
+
+        if ($api !== null && $isSendingWithApi)
+        {
+            try
+            {
+                $permissions = $api->fetchJsonUsingPost(ReadOnlyPostEndpoint::SMTP2GO_KEY_PERMISSIONS)['data'] ?? [];
+                $granted = is_array($permissions) ? $permissions : [];
+                $isMissingSendPermission = (count(array_intersect(['/email/mime', '/email/*', '*'], $granted)) === 0);
+            }
+            catch (ProviderPermissionException)
+            {
+                // What it's allowed to do isn't known, so it isn't reported as missing.
+                $isMissingSendPermission = false;
+            }
+        }
 
         if ($api !== null)
         {
@@ -116,6 +179,26 @@ final readonly class Smtp2GoSenderChecker implements SenderCheckerInterface
             {
                 $addresses = [];
             }
+
+            try
+            {
+                $response = $api->fetchJsonUsingPost(ReadOnlyPostEndpoint::SMTP2GO_WEBHOOKS);
+                $canReadWebhooks = true;
+
+                foreach (Smtp2GoWebhook::extractConfigured($response) as $entry)
+                {
+                    if (($entry['disabled'] ?? false) !== true)
+                    {
+                        $events = is_array($entry['events'] ?? null) ? array_map('strval', $entry['events']) : [];
+                        $password = WebhookBasicAuth::getPasswordInUrl((string)$entry['url']);
+                        $webhooks[] = new ConfiguredWebhook((string)$entry['url'], $password, $events);
+                    }
+                }
+            }
+            catch (ProviderPermissionException | ProviderNotFoundException)
+            {
+                $webhooks = [];
+            }
         }
 
         return new Smtp2GoSenderChecker(
@@ -124,7 +207,12 @@ final readonly class Smtp2GoSenderChecker implements SenderCheckerInterface
             $canReadDomains,
             new AuthenticatedDomainCollection(...$domains),
             $canReadAddresses,
-            new VerifiedAddressCollection(...$addresses)
+            new VerifiedAddressCollection(...$addresses),
+            $isMissingSendPermission,
+            $canReadWebhooks,
+            new ConfiguredWebhookCollection(...$webhooks),
+            $webhookSecret,
+            $webhookUrl
         );
     }
 
@@ -145,6 +233,16 @@ final readonly class Smtp2GoSenderChecker implements SenderCheckerInterface
     public function checkAccount() : SenderCheckCollection
     {
         $checks = [];
+
+        if ($this->m_isMissingSendPermission)
+        {
+            $detail =
+                'This provider has no SMTP login, so it sends with its API key, which isn\'t allowed to use'
+                . ' /email/mime. Add that permission (Sending → API Keys → Permissions in SMTP2GO), or add an SMTP'
+                . ' login.';
+
+            $checks[] = $this->createCheck(SenderCheckLevel::ERROR, 'The API key can\'t send email', $detail);
+        }
 
         if ($this->m_hasApi === false)
         {

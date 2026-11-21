@@ -70,7 +70,7 @@ deliveries and bounces. Mailtrap's API doesn't show a webhook's signing secret, 
 
 For each enabled **SMTP2GO** provider, with an `api_key`: whether each sender's domain has its DKIM and
 return-path records verified (listing the records that aren't), or the address is a verified single
-sender.
+sender. If it has no SMTP login, also that the key is allowed to send, with `/email/mime`.
 
 Every provider's API is only ever read from. That's with GET requests, apart from SMTP2GO's, which needs
 POST even to read, so only its two view endpoints can be reached that way. SendGrid's API key only needs **Mail Send**

@@ -21,6 +21,10 @@ site/public/js/*
 config/*
 !config/.gitkeep
 
+# The development stack's settings, which hold real credentials while trying a real provider. Copy them from
+# config-dev/settings.yaml.example, which only relays to Mailpit.
+config-dev/settings.yaml
+
 # What tests/run-tests.sh creates while it runs: the test stacks' settings, settings.yaml, logs and state.
 tests/.run
 

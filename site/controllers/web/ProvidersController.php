@@ -32,6 +32,7 @@ class ProvidersController extends AbstractController
         $group->post('/providers/{name}/remove', [self::class, 'remove'])->setName('providers.remove');
         $group->post('/providers/{name}/enable', [self::class, 'enable'])->setName('providers.enable');
         $group->post('/providers/{name}/disable', [self::class, 'disable'])->setName('providers.disable');
+        $group->post('/providers/{name}/webhook', [self::class, 'setUpWebhook'])->setName('providers.webhook');
     }
 
 
@@ -181,6 +182,30 @@ class ProvidersController extends AbstractController
     public function disable(Request $request, Response $response, array $args) : Response
     {
         return self::setEnabled($request, $response, (string)$args['name'], false);
+    }
+
+
+    /**
+     * Set up an SMTP2GO provider's webhook in its account, with its API key, and go back to its page.
+     *
+     * @throws NotFoundException - if there's no such provider.
+     */
+    public function setUpWebhook(Request $request, Response $response, array $args) : Response
+    {
+        $name = (string)$args['name'];
+
+        try
+        {
+            Smtp2GoWebhookSetup::run($name, self::getFormField($request, 'version'));
+            self::logChange('A provider\'s webhook was set up', $name);
+            WebSession::flash("The webhook is set up: SMTP2GO will now report what happens to \"{$name}\"'s emails.");
+        }
+        catch (InvalidInputException | ConflictException | ConfigurationException $e)
+        {
+            WebSession::flash($e->getMessage(), true);
+        }
+
+        return self::redirect($response, '/providers/' . rawurlencode($name));
     }
 
 

@@ -73,6 +73,7 @@ class ViewProviderPage extends Programster\AbstractView\AbstractView
             data-refused="<?= $removal->isRefused() ? 'true' : 'false' ?>"><?= new ViewIcon(Icon::TRASH) ?> Remove this
             provider</button>
     </div>
+    <?php $this->renderSmtp2GoWebhookSetup($path); ?>
     <?php if ($provider->isEnabled() && count($strandedIfDisabled) > 0): ?>
         <p class="hint">Disabling it would leave these email tokens with no enabled provider, so their emails would
             wait in the queue until it's enabled again: <?= Html::e($strandedIfDisabled->describeNames()) ?>.</p>
@@ -155,6 +156,54 @@ class ViewProviderPage extends Programster\AbstractView\AbstractView
      *
      * @return void
      */
+    /**
+     * For an SMTP2GO provider, say whether its webhook has a secret yet, with a button to set it up if it has an API
+     * key, and the steps to do it by hand. Other types of provider show nothing here.
+     *
+     * @param string $path - the provider's page.
+     *
+     * @return void
+     */
+    private function renderSmtp2GoWebhookSetup(string $path) : void
+    {
+        $settings = $this->m_provider->getSettings();
+
+        if ($settings instanceof Smtp2GoSettings)
+        {
+            $hasSecret = ($settings->getWebhookSecret() !== '');
+            $url = ProviderWebhookUrl::get($this->m_provider->getName());
+            $address = ($url === '') ? '/webhooks/' . rawurlencode($this->m_provider->getName()) : $url;
+            $withSecret = WebhookBasicAuth::createUrl($address, 'YOUR_WEBHOOK_SECRET');
+            $events = implode(', ', Smtp2GoWebhook::RECORDED_EVENTS);
+?>
+<h3>Delivery events</h3>
+<?php if ($hasSecret === false): ?>
+    <p class="flash flash-warning" role="status">Deliveries and bounces aren't being recorded until its webhook is set
+        up.</p>
+<?php endif; ?>
+<?php if ($settings->hasApiKey()): ?>
+    <form method="post" action="<?= Html::e("{$path}/webhook") ?>" class="inline-form">
+        <?= new ViewCsrfField() ?>
+        <input type="hidden" name="version" value="<?= Html::e($this->m_version) ?>">
+        <button type="submit"><?= $hasSecret ? 'Set up the webhook again' : 'Set up the webhook' ?></button>
+    </form>
+    <p class="hint">Needs the API key to have the webhook view, add and edit permissions, and <code>PUBLIC_URL</code>
+        to be this service's public https address.</p>
+<?php endif; ?>
+<details>
+    <summary>Set it up by hand</summary>
+    <ol>
+        <li>Edit this provider, and enter a long random <strong>Webhook secret</strong>.</li>
+        <li>In SMTP2GO, add a webhook under <strong>Settings &gt; Webhooks</strong> that posts to
+            <code><?= Html::e($withSecret) ?></code>, with your secret in place of YOUR_WEBHOOK_SECRET.</li>
+        <li>Set its output format to JSON, and tick these events: <?= Html::e($events) ?>.</li>
+    </ol>
+</details>
+<?php
+        }
+    }
+
+
     private function renderEnabledToggle(string $path, bool $isOnlyEnabled) : void
     {
         $isEnabled = $this->m_provider->isEnabled();

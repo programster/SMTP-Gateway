@@ -24,9 +24,10 @@ class ViewSidebar extends Programster\AbstractView\AbstractView
 
 
     /**
-     * Create the menu. Its links are the site's pages, grouped into sections. The settings have a page for each
-     * section of settings.yaml (including the providers, which have a page of their own), and Server resources. The
-     * documentation has a page for the README and each page in docs/, and the API's reference.
+     * Create the menu. Its links are the site's pages, grouped into sections. The providers are a link of their own, as
+     * they're the most important thing to set up. The settings have a page for each other section of settings.yaml,
+     * and Server resources. The documentation has a page for the README and each page in docs/, and the API's
+     * reference.
      *
      * @return NavEntryCollection
      */
@@ -39,19 +40,12 @@ class ViewSidebar extends Programster\AbstractView\AbstractView
         $users = new NavLink('Users', '/admin/users');
         $settingsLinks = [];
 
-        // The providers come straight after General, as they're the settings most often changed.
         foreach (SettingsSection::cases() as $section)
         {
             // A section shown as part of another's page (e.g. the sending settings, on the General page) has no link.
             if ($section !== SettingsSection::PROVIDERS && $section->getPageSection() === $section)
             {
                 $settingsLinks[] = new NavLink($section->getTitle(), $section->getPagePath());
-            }
-
-            if ($section === SettingsSection::GENERAL)
-            {
-                $providers = SettingsSection::PROVIDERS;
-                $settingsLinks[] = new NavLink($providers->getTitle(), $providers->getPagePath());
             }
         }
 
@@ -68,12 +62,14 @@ class ViewSidebar extends Programster\AbstractView\AbstractView
         $documentationLinks[] = new NavLink('API reference', '/docs');
 
         $below = NavMatch::PAGE_AND_BELOW;
+        $providers = SettingsSection::PROVIDERS;
 
         return new NavEntryCollection(
             new NavLink('Dashboard', '/', $below, Icon::DASHBOARD),
             new NavSection('Activity', Icon::ACTIVITY, $emails, $rejections),
             new NavLink('Global rate limits', '/rate-limits', $below, Icon::RATE_LIMITS),
             new NavSection('Access', Icon::ACCESS, $apiKeys, $emailTokens, $users),
+            new NavLink($providers->getTitle(), $providers->getPagePath(), $below, Icon::PROVIDERS),
             new NavLink('Logs', '/admin/logs', $below, Icon::LOGS),
             new NavSection('Settings', Icon::SETTINGS, ...$settingsLinks),
             new NavSection('Documentation', Icon::DOCUMENTATION, ...$documentationLinks)

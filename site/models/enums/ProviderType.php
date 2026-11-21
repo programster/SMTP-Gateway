@@ -40,7 +40,7 @@ enum ProviderType : string
             ProviderType::MAILJET => true,
             ProviderType::MAILERSEND => true,
             ProviderType::MAILTRAP => true,
-            ProviderType::SMTP2GO => false,
+            ProviderType::SMTP2GO => true,
             ProviderType::CUSTOM => false,
         };
     }

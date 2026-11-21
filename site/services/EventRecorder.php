@@ -31,7 +31,7 @@ final class EventRecorder
         foreach ($events as $event)
         {
             /* @var $event ProviderEvent */
-            if (Uuid::isValid($event->getMessageId()))
+            if (Uuid::isValid($event->getMessageId()) || $event->getProviderMessageId() !== '')
             {
                 $recorded += self::recordForMessage($providerName, $event);
             }
@@ -46,7 +46,8 @@ final class EventRecorder
      *
      * @param string $providerName - the provider that reported it.
      *
-     * @param ProviderEvent $event - the event, whose message ID is a valid UUID.
+     * @param ProviderEvent $event - the event, with a valid UUID as its message ID, or the provider's ID for the email,
+     * which only matches an email sent through this provider.
      *
      * @return int - 1 if it was recorded, or 0 if it's about an email this service doesn't have, or was recorded
      * before.
@@ -64,12 +65,17 @@ final class EventRecorder
             DB::escape($event->getOccurredAt()->format(DATE_ATOM)),
         ];
 
+        $matchesEmail = Uuid::isValid($event->getMessageId())
+            ? '"m"."id" = ' . DB::escape($event->getMessageId())
+            : '"m"."provider" = ' . DB::escape($providerName)
+                . ' AND "m"."provider_message_id" = ' . DB::escape($event->getProviderMessageId());
+
         // Selected from the email it's about, so an event for an email that isn't there inserts nothing.
         $result = ServiceFactory::getDb()->query(
             'INSERT INTO "email_event" ("id", "email_message_id", "provider", "provider_event_id", "event_type",'
             . ' "recipient", "detail", "occurred_at")'
             . ' SELECT ' . implode(', ', $values) . ' FROM "email_message" AS "m"'
-            . ' WHERE "m"."id" = ' . DB::escape($event->getMessageId())
+            . " WHERE {$matchesEmail} LIMIT 1"
             . ' ON CONFLICT ("provider", "provider_event_id") DO NOTHING'
         );
 

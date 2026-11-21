@@ -20,3 +20,10 @@ services:
 
   typescript:
     profiles: ["never"]
+
+# Each stack has its own subnet (see TestStack), so running many at once can't use up Docker's default address pools.
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${TEST_SUBNET}

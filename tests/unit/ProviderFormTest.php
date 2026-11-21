@@ -27,6 +27,12 @@ $createRequiredForm = function (ProviderType $type) : array {
         };
     }
 
+    // None of SMTP2GO's fields is required on its own, but it needs a login or an API key.
+    if ($type === ProviderType::SMTP2GO)
+    {
+        $form['smtp2go_api_key'] = 'api-test';
+    }
+
     return $form;
 };
 

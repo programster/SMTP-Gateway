@@ -72,6 +72,18 @@ final class ProviderFormInput
             self::assertPasswordGivenForNewServer($getField, $entry, $current);
         }
 
+        // Clearing the username, and leaving the password blank, stops an SMTP2GO provider using its SMTP login.
+        $isSmtp2GoLoginCleared = (
+               $type === ProviderType::SMTP2GO
+            && $entry['smtp_username'] === ''
+            && trim($getField(ProviderType::SMTP2GO->value . '_smtp_password')) === ''
+        );
+
+        if ($isSmtp2GoLoginCleared)
+        {
+            $entry['smtp_password'] = '';
+        }
+
         $entry['rate_limits'] = [];
 
         foreach (PolicyInput::readRateLimitsFromForm($getField)->getLimits() as $limit)

@@ -203,6 +203,30 @@ readonly class RawEmail
     }
 
 
+    /**
+     * Get a copy of this email with a header of addresses added at the top, each on its own folded line, so a long
+     * list can't go over the length a line of an email is allowed to be.
+     *
+     * @param string $name - the header's name, e.g. "Bcc".
+     *
+     * @param EmailAddress ...$addresses - its addresses. At least one.
+     *
+     * @return RawEmail
+     *
+     * @throws InvalidInputException - if there are no addresses.
+     */
+    public function withAddressHeaderPrepended(string $name, EmailAddress ...$addresses) : RawEmail
+    {
+        if (count($addresses) === 0)
+        {
+            throw new InvalidInputException("The {$name} header needs at least one address.");
+        }
+
+        $value = implode(",\r\n ", array_map('strval', $addresses));
+        return new RawEmail("{$name}: {$value}\r\n" . $this->m_headerBlock . "\r\n\r\n" . $this->m_body);
+    }
+
+
     public function getSizeInBytes() : int
     {
         return strlen($this->toString());

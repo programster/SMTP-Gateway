@@ -9,7 +9,7 @@ when it's clicked, and the section of the page you're on starts open.
   last day, week, month or year (counting only the email records still kept).
 * **Activity**: **Emails** and **Rejections**: what came through, and what was turned away and why.
 * **Global rate limits**: the limits on everything sent, across every email token and provider. Each
-  provider's own limits are set on its form, under **Settings > Providers**.
+  provider's own limits are set on its form, under **Providers**.
 * **Access**:
   * **API keys**: the keys for the management API, each restricted to IP addresses. Each key's age is
     shown in days, in yellow from 9 months old and red from a year, as a reminder to replace it.
@@ -24,13 +24,14 @@ when it's clicked, and the section of the page you're on starts open.
     can only reach **My account**. Each account has a page, with its last login, where its email address
     can be changed. Accounts can be blocked, archived and deleted (see [Blocking, archiving and deleting
     accounts](#blocking-archiving-and-deleting-accounts)).
+* **Providers**: the providers email is sent through, how much each has sent, whether any is being
+  skipped, and an editor for them.
 * **Logs**: the application's logs (stored in the database), a page at a time (50 by default), sorted
   by time or level, and filtered by time, by message (with an optional regular expression), by level,
   and by category: changes to the service, logins and account security, email, or the system. Times are
   shown as how long ago, as well as when. Clicking an entry shows it in full, with its context.
 * **Settings**: a page for each part of the settings: **General** (the time zone, how dates and
-  times are written, and the sending settings), **Providers** (the providers, how much each has sent,
-  whether any is being skipped, and an editor for them), **Security**, **Proxies**, **Email retention** (how
+  times are written, and the sending settings), **Security**, **Proxies**, **Email retention** (how
   long emails and logs are kept) and **SSO** (logging in with Google): see
   [Settings](configuration.md#settings). Also **Server resources** (see
   [Running on a small server](small-servers.md)).

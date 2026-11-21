@@ -121,15 +121,11 @@ def create_totp_code(secret: str, at: float = 0.0) -> str:
     return '%06d' % code
 
 
-def wait_for_next_totp_step() -> None:
-    """Wait for the next 30 second step, as each code can only be used once."""
-    time.sleep(31 - (time.time() % 30))
-
-
 def create_unused_totp_code(email: str, secret: str) -> str:
     """
-    Get a code for an account that it hasn't used yet. Each code can only be used once, so if this step's has been
-    used (by an earlier login, as far as these tests know), this waits for the next step.
+    Get a code for an account that it hasn't used yet, without waiting. Each code can only be used once, but the
+    service also accepts the next 30 second step's, so if this step's has been used (as far as these tests know), this
+    gets the next one. A third login within one step has no code left, so it's an error, rather than a slow wait.
     """
     path = os.path.join(stack.STATE_DIR, 'totp-used-steps.json')
     used_steps = {}
@@ -138,23 +134,27 @@ def create_unused_totp_code(email: str, secret: str) -> str:
         with open(path) as file:
             used_steps = json.load(file)
 
-    if used_steps.get(email.lower(), -1) >= int(time.time() // 30):
-        wait_for_next_totp_step()
+    current_step = int(time.time() // 30)
+    last_used_step = used_steps.get(email.lower(), -1)
 
-    used_steps[email.lower()] = int(time.time() // 30)
+    if last_used_step > current_step:
+        raise RuntimeError(f'{email} has used every TOTP code available now: call forget_used_totp_code() first.')
+
+    step = current_step if last_used_step < current_step else current_step + 1
+    used_steps[email.lower()] = step
     os.makedirs(stack.STATE_DIR, exist_ok=True)
 
     with open(path, 'w') as file:
         json.dump(used_steps, file)
 
-    return create_totp_code(secret)
+    return create_totp_code(secret, step * 30.0)
 
 
 def forget_used_totp_code(email: str) -> None:
     """
     Let an account use its current TOTP code again, by clearing the service's record of the last code it used, and
-    these tests' own (see create_unused_totp_code()), so the next login doesn't wait up to 30 seconds for a new code.
-    Only for a suite that logs in several times, and isn't testing that a code can't be used twice (e2e tests that).
+    these tests' own (see create_unused_totp_code()), for a suite that logs in more than twice within 30 seconds, and
+    isn't testing that a code can't be used twice (second_factor tests that).
     """
     stack.sql(f"UPDATE admin_user SET totp_last_used_step = NULL WHERE email = '{email.lower()}'")
     path = os.path.join(stack.STATE_DIR, 'totp-used-steps.json')

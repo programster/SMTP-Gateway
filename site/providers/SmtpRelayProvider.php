@@ -330,13 +330,14 @@ class SmtpRelayProvider implements SmtpProviderInterface
 
 
     /**
-     * Get the ID that most servers include in their reply to DATA, e.g. "250 Ok: queued as 9C2Kq0aJQw2".
+     * Get the ID that most servers include in their reply to DATA, e.g. "250 Ok: queued as 9C2Kq0aJQw2", or Exim's
+     * (which SMTP2GO runs), e.g. "250 OK id=1xUmcw-FnQW0hPxdkX-Lxmt".
      */
     private static function extractQueuedId(string $reply) : string
     {
         $id = '';
 
-        if (preg_match('/queued as\s+(\S+)/i', $reply, $matches) === 1)
+        if (preg_match('/(?:queued as\s+|\bid=)([^\s;,]+)/i', $reply, $matches) === 1)
         {
             $id = $matches[1];
         }

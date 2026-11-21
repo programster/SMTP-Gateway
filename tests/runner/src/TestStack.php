@@ -15,6 +15,10 @@ final readonly class TestStack
     # The web interface's port for stack 0. Each stack's ports are 100 above the last's, as in the stacks before.
     private const BASE_WEB_PORT = 18080;
 
+    # Each stack's network is <this>.<its number>.0/24, rather than one from Docker's default pools, which only have
+    # room for around 30 networks across every project on the machine, so a large run could use them up.
+    private const SUBNET_PREFIX = '10.213';
+
     private string $m_rootDir;
     private string $m_name;
 
@@ -32,16 +36,23 @@ final readonly class TestStack
      *
      * @param array<string, string> $settings - the settings to change from tests/test.env, by name.
      *
+     * @throws InvalidArgumentException - if the number can't be given a subnet of its own.
      * @throws RuntimeException - if tests/test.env can't be read.
      */
     public function __construct(string $rootDir, string $name, int $number, array $settings)
     {
+        if ($number < 1 || $number > 254)
+        {
+            throw new InvalidArgumentException("A test stack's number must be from 1 to 254, not {$number}.");
+        }
+
         $offset = $number * 100;
         $webPort = self::BASE_WEB_PORT + $offset;
 
         $added = [
             'TEST_STACK' => $name,
             'COMPOSE_PROJECT_NAME' => "smtpapitest-{$name}",
+            'TEST_SUBNET' => self::SUBNET_PREFIX . ".{$number}.0/24",
             'WEB_HOST_PORT' => (string)$webPort,
             'PUBLIC_URL' => "http://localhost:{$webPort}",
             'SMTPS_HOST_PORT' => (string)(14465 + $offset),
