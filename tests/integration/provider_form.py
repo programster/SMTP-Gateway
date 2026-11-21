@@ -78,12 +78,10 @@ suite.check('and listed on the page', all(f'<strong>test-{t}</strong>' in page f
 edit_page = web.get('/providers/test-smtp2go/edit')
 shows_dots = ('placeholder="••••••••••••" data-is-saved="1"' in edit_page and 'smtp2go-secret' not in edit_page)
 suite.check('a saved secret shows as dots, without its value', shows_dots)
-enabled_table, _, disabled_table = page.partition('<h2>Disabled</h2>')
-is_split = 'href="/providers/mailpit"' in enabled_table and 'test-sendgrid' not in enabled_table
-suite.check('the enabled providers are in one table, and the disabled ones below', is_split
-            and 'href="/providers/test-sendgrid"' in disabled_table)
-suite.check('only the enabled ones can be dragged into order', enabled_table.count('data-role="drag-handle"') == 2
-            and 'data-role="drag-handle"' not in disabled_table)
+suite.check('the enabled and disabled providers are in one table', '<h2>Disabled</h2>' not in page
+            and page.count('<tbody id="provider-rows">') == 1)
+suite.check('each can be dragged into order, and has a toggle', page.count('data-role="drag-handle"')
+            == len(provider_names()) and page.count('data-role="provider-enabled"') == len(provider_names()))
 pencil = 'href="/providers/test-sendgrid/edit" aria-label="Edit test-sendgrid"'
 suite.check('each has a pencil to edit it', pencil in page)
 
@@ -258,17 +256,23 @@ def post_from_list(path: str, fields: dict) -> Response:
     return web.post_form('/providers', path, {'version': get_version(page)} | fields)
 
 
-# Putting the enabled providers in order (as dragging them does), with the disabled ones after them.
-response = post_from_list('/providers/order', {'order_0': 'mailpit-secondary', 'order_1': 'mailpit'})
+def order_fields(names: list) -> dict:
+    """The form fields that put the providers in the order given."""
+    return {f'order_{index}': name for index, name in enumerate(names)}
+
+
+# Putting the providers in order (as dragging them does), where a disabled one keeps the place it's given.
+original = provider_names()
+others = [name for name in original if name not in ['mailpit', 'mailpit-secondary']]
+wanted = ['mailpit-secondary', others[0], 'mailpit'] + others[1:]
+response = post_from_list('/providers/order', order_fields(wanted))
 names = provider_names()
-is_ordered = response.get_status() == 303 and names[:2] == ['mailpit-secondary', 'mailpit']
-suite.check('the enabled providers are put in a new order', is_ordered, names)
-suite.check('with the disabled ones after them', all(name.startswith('test-') for name in names[2:]), names)
+suite.check('a disabled provider can sit between enabled ones', response.get_status() == 303 and names == wanted, names)
 response = post_from_list('/providers/order', {'order_0': 'mailpit'})
-suite.check('an order without every enabled provider is refused', provider_names()[:2] == names[:2]
-            and 'every enabled provider' in web.get('/providers'))
-post_from_list('/providers/order', {'order_0': 'mailpit', 'order_1': 'mailpit-secondary'})
-suite.check('and they\'re put back', provider_names()[:2] == ['mailpit', 'mailpit-secondary'])
+suite.check('an order without every provider is refused', provider_names() == wanted
+            and 'every provider' in web.get('/providers'))
+post_from_list('/providers/order', order_fields(original))
+suite.check('and they\'re put back', provider_names() == original)
 
 # The mode, as a radio group, with each mode explained.
 page = web.get('/providers')

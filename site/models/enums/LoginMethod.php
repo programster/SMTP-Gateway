@@ -12,6 +12,9 @@ enum LoginMethod : string
     // Their password, on an account with no second factor.
     case PASSWORD = 'password';
 
+    // Their password alone, using up a grace period an administrator gave them, which removed their second factors.
+    case PASSWORD_WITH_MFA_GRACE = 'password, with a grace period';
+
     // Their Google account, then the account's second factor, if it has one (unless Google skips it).
     case GOOGLE = 'Google';
 

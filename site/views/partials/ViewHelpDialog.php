@@ -49,7 +49,7 @@ class ViewHelpDialog extends Programster\AbstractView\AbstractView
     <?php foreach ($this->m_entries as $entry): ?>
         <?php /* @var $entry HelpEntry */ ?>
         <dt><?= Html::e($entry->getTerm()) ?></dt>
-        <dd><?= Html::e($entry->getExplanation()) ?></dd>
+        <dd><?= self::formatExplanation($entry->getExplanation()) ?></dd>
     <?php endforeach; ?>
     </dl>
     <?php if ($this->m_footnote !== ''): ?>
@@ -58,5 +58,12 @@ class ViewHelpDialog extends Programster\AbstractView\AbstractView
 </dialog>
 <script type="module" src="/js/HelpDialogsOnPage.js"></script>
 <?php
+    }
+
+
+    // Escape an explanation for HTML, showing anything between backticks as code.
+    private static function formatExplanation(string $explanation) : string
+    {
+        return (string)preg_replace('/`([^`]+)`/', '<code>$1</code>', Html::e($explanation));
     }
 }

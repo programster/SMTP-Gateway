@@ -27,7 +27,8 @@ when it's clicked, and the section of the page you're on starts open.
 * **Providers**: the providers email is sent through, how much each has sent, whether any is being
   skipped, and an editor for them.
 * **Logs**: the application's logs (stored in the database), a page at a time (50 by default), sorted
-  by time or level, and filtered by time, by message (with an optional regular expression), by level,
+  by time or level, and filtered by time, by message (optionally a PostgreSQL, PHP or JavaScript regular
+  expression, with PHP and JavaScript ones converted, or refused if they have no equivalent), by level,
   and by category: changes to the service, logins and account security, email, or the system. Times are
   shown as how long ago, as well as when. Clicking an entry shows it in full, with its context.
 * **Settings**: a page for each part of the settings: **General** (the time zone, how dates and
@@ -59,8 +60,18 @@ password) replaces them with six new ones: the old ones stop working, used or no
 have been used, or if someone else may have seen them. Removing an account's last second factor
 deletes its backup codes too, and it's given new ones when it sets one up again.
 
-If someone loses their second factor and their backup codes, remove them with the command below
-(while a second factor is required, they're asked to set up a new one the next time they log in):
+If someone loses their second factor and their backup codes, another administrator can open their
+account on the **Users** page, and under **Multi-factor authentication** choose **Give a 1-hour grace
+period**, which asks for the administrator's password. For the next hour, the account's next password
+login gets in without a second factor. That login removes its old authenticator app, security keys and
+backup codes, and takes it to **My account** to set up a new one. It works once, doesn't apply to
+Google logins, and is logged. Changing the password, blocking or archiving the account cancels it, so
+a password reset link can't be used to get past the second factor. If they've lost their password too,
+use **Send password reset email** on the same page, and give the grace period once they've set the new
+one. Nobody can give their own account a grace period.
+
+Without another administrator, remove them with the command below (while a second factor is required,
+they're asked to set up a new one the next time they log in):
 
 ```bash
 docker exec -u www-data <container> php /var/www/site/scripts/reset-mfa.php <email>
@@ -78,8 +89,8 @@ be blocked or archived.
 * **Archiving** blocks it, and removes its email address, password, authenticator app, security keys,
   backup codes and reset links, keeping only its ID: a delete that's good enough for a GDPR erasure
   request. The service's own emails to it (e.g. password reset links) have its address replaced with
-  `user <ID>`. It asks for your password. Archived accounts are only listed with **Show archived
-  accounts** switched on, where each can be:
+  `user <ID>`. It asks for your password. Archived accounts are listed on the **Archived** tab, where
+  each can be:
   * **restored**: given its email address again, and a password (or a link to choose one), keeping its
     ID, so its logs are still its own; or
   * **deleted** for good, with everything linked to it. This also asks for your password. Only an
@@ -108,6 +119,11 @@ The link works once, for an hour, and at most one is sent to an account every fi
 the same thing whether or not there's an account for the address, so it can't be used to find out which
 addresses have one. Resetting the password logs the account out everywhere, but leaves its second factor
 as it is, so someone who can read the account's email can't get in with that alone.
+
+An administrator can also do this from another account's page on the **Users** page, under **Password reset**:
+**Send password reset email** emails it the same kind of link, and **Set temporary password** replaces its password
+with a random one, shown once, to pass on. Whoever gets a random password has to choose their own when
+they next log in, and still needs their second factor.
 
 If email isn't working, reset a password on the server instead. This sets a new random password, and
 prints it:

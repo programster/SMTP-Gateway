@@ -1,7 +1,8 @@
 <?php
 
 /*
- * The management API's API keys, and the form for creating one.
+ * The management API's API keys, on two tabs: the active ones (the default), and the revoked ones, with when each was
+ * revoked and how old it was then. Below them is the form for creating one.
  */
 
 declare(strict_types = 1);
@@ -9,22 +10,44 @@ declare(strict_types = 1);
 
 class ViewApiKeysPage extends Programster\AbstractView\AbstractView
 {
-    private readonly ApiKeyCollection $m_apiKeys;
+    private readonly ApiKeyCollection $m_active;
+    private readonly ApiKeyCollection $m_revoked;
+    private readonly bool $m_isShowingRevoked;
     private readonly array $m_values;
     private readonly string $m_error;
 
 
     /**
-     * @param ApiKeyCollection $apiKeys - the API keys.
+     * @param ApiKeyCollection $apiKeys - every API key, active and revoked.
+     *
+     * @param bool $isShowingRevoked - whether the Revoked tab is the one open.
      *
      * @param array<string, string> $values - the form's values: "name", and the allowed IP addresses' rows,
      * "allowed_ips_0" and so on (see ViewValueRows).
      *
      * @param string $error - why the form was invalid, or an empty string.
      */
-    public function __construct(ApiKeyCollection $apiKeys, array $values, string $error)
+    public function __construct(ApiKeyCollection $apiKeys, bool $isShowingRevoked, array $values, string $error)
     {
-        $this->m_apiKeys = clone $apiKeys;
+        $active = [];
+        $revoked = [];
+
+        foreach ($apiKeys as $apiKey)
+        {
+            /* @var $apiKey ApiKey */
+            if ($apiKey->isRevoked())
+            {
+                $revoked[] = $apiKey;
+            }
+            else
+            {
+                $active[] = $apiKey;
+            }
+        }
+
+        $this->m_active = new ApiKeyCollection(...$active);
+        $this->m_revoked = new ApiKeyCollection(...$revoked);
+        $this->m_isShowingRevoked = $isShowingRevoked;
         $this->m_values = $values;
         $this->m_error = $error;
     }
@@ -47,39 +70,18 @@ class ViewApiKeysPage extends Programster\AbstractView\AbstractView
     be shown again: if one is lost, create a new one and revoke the old one. See the
     <a href="/docs">API documentation</a>.</p>
 
-<?php if (count($this->m_apiKeys) > 0): ?>
-<div class="table-wrap">
-<table>
-    <thead><tr><th>Name</th><th>ID</th><th>Created</th><th>Age</th><th>Last used</th><th>Status</th><th></th></tr>
-    </thead>
-    <tbody>
-    <?php foreach ($this->m_apiKeys as $apiKey): ?>
-        <?php /* @var $apiKey ApiKey */ ?>
-        <tr>
-            <td><?= Html::e($apiKey->getName()) ?><br><span
-                class="hint mono"><?= Html::e(
-                    implode(', ', ApiKeyRepository::loadAllowedNetworks($apiKey)->toStrings())
-                ) ?></span></td>
-            <td class="mono"><?= Html::e($apiKey->getId()) ?></td>
-            <td><?= Html::e(Time::format($apiKey->getCreatedAt())) ?></td>
-            <td><?= new ViewKeyAge($apiKey->getCreatedAt()) ?></td>
-            <td><?= new ViewLastUse($apiKey->getLastUsedAt(), $apiKey->getLastUsedIp()) ?></td>
-            <td><?= $apiKey->isRevoked()
-                ? '<span class="badge badge-revoked">revoked</span>'
-                : '<span class="badge badge-sent">active</span>' ?></td>
-            <td>
-                <?php if ($apiKey->isRevoked() === false): ?>
-                <form method="post" action="/api-keys/<?= Html::e($apiKey->getId()) ?>/revoke" class="inline-form">
-                    <?= new ViewCsrfField() ?>
-                    <button type="submit" class="danger">Revoke</button>
-                </form>
-                <?php endif; ?>
-            </td>
-        </tr>
-    <?php endforeach; ?>
-    </tbody>
-</table>
-</div>
+<?= new ViewListTabs(
+    '/api-keys',
+    'Revoked',
+    'revoked',
+    count($this->m_active),
+    count($this->m_revoked),
+    $this->m_isShowingRevoked
+) ?>
+<?php if ($this->m_isShowingRevoked): ?>
+    <?php $this->renderRevoked(); ?>
+<?php else: ?>
+    <?php $this->renderActive(); ?>
 <?php endif; ?>
 
 <h2>Create an API key</h2>
@@ -96,6 +98,81 @@ class ViewApiKeysPage extends Programster\AbstractView\AbstractView
     <div class="form-actions"><button type="submit">Create the API key</button></div>
 </form>
 <script type="module" src="/js/ApiKeysPage.js"></script>
+<?php
+    }
+
+
+    private function renderActive() : void
+    {
+?>
+<?php if (count($this->m_active) === 0): ?>
+<p class="muted">No active API keys.</p>
+<?php else: ?>
+<div class="table-wrap">
+<table>
+    <thead><tr><th>Name</th><th>ID</th><th>Created</th><th>Age</th><th>Last used</th><th></th></tr></thead>
+    <tbody>
+    <?php foreach ($this->m_active as $apiKey): ?>
+        <?php /* @var $apiKey ApiKey */ ?>
+        <tr>
+            <td><?php $this->renderName($apiKey); ?></td>
+            <td class="mono"><?= Html::e($apiKey->getId()) ?></td>
+            <td><?= Html::e(Time::format($apiKey->getCreatedAt())) ?></td>
+            <td><?= new ViewKeyAge($apiKey->getCreatedAt()) ?></td>
+            <td><?= new ViewLastUse($apiKey->getLastUsedAt(), $apiKey->getLastUsedIp()) ?></td>
+            <td>
+                <form method="post" action="/api-keys/<?= Html::e($apiKey->getId()) ?>/revoke" class="inline-form">
+                    <?= new ViewCsrfField() ?>
+                    <button type="submit" class="danger">Revoke</button>
+                </form>
+            </td>
+        </tr>
+    <?php endforeach; ?>
+    </tbody>
+</table>
+</div>
+<?php endif; ?>
+<?php
+    }
+
+
+    private function renderRevoked() : void
+    {
+?>
+<?php if (count($this->m_revoked) === 0): ?>
+<p class="muted">No revoked API keys.</p>
+<?php else: ?>
+<div class="table-wrap">
+<table>
+    <thead><tr><th>Name</th><th>ID</th><th>Created</th><th>Revoked</th><th>Age when revoked</th><th>Last used</th></tr>
+    </thead>
+    <tbody>
+    <?php foreach ($this->m_revoked as $apiKey): ?>
+        <?php /* @var $apiKey ApiKey */ $revokedAt = (string)$apiKey->getRevokedAt(); ?>
+        <tr>
+            <td><?php $this->renderName($apiKey); ?></td>
+            <td class="mono"><?= Html::e($apiKey->getId()) ?></td>
+            <td><?= Html::e(Time::format($apiKey->getCreatedAt())) ?></td>
+            <td><?= Html::e(Time::format($revokedAt)) ?></td>
+            <td><?= new ViewRevokedAge($apiKey->getCreatedAt(), $revokedAt) ?></td>
+            <td><?= new ViewLastUse($apiKey->getLastUsedAt(), $apiKey->getLastUsedIp()) ?></td>
+        </tr>
+    <?php endforeach; ?>
+    </tbody>
+</table>
+</div>
+<?php endif; ?>
+<?php
+    }
+
+
+    // A key's name, with the IP addresses it can be used from under it.
+    private function renderName(ApiKey $apiKey) : void
+    {
+?>
+<?= Html::e($apiKey->getName()) ?><br><span class="hint mono"><?= Html::e(
+    implode(', ', ApiKeyRepository::loadAllowedNetworks($apiKey)->toStrings())
+) ?></span>
 <?php
     }
 }

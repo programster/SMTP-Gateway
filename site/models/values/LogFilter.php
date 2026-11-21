@@ -3,9 +3,8 @@
 /*
  * What to search the logs for: a time range (the start and end are each optional), text to find in the message (not
  * the context), the levels, the categories (see LogCategory, kept in the context), and a name and value in the context
- * (see LogContextMatch). The text is found anywhere in
- * the message, ignoring case, unless it's marked as a regular expression (PostgreSQL's POSIX syntax, also ignoring
- * case). Which page of what it finds is a LogPage.
+ * (see LogContextMatch). The text is found anywhere in the message, ignoring case, unless its syntax says it's a
+ * regular expression (PostgreSQL, PHP or JavaScript, also ignoring case). Which page of what it finds is a LogPage.
  */
 
 declare(strict_types = 1);
@@ -16,7 +15,7 @@ readonly class LogFilter
     private string $m_from;
     private string $m_to;
     private string $m_search;
-    private bool $m_isRegex;
+    private MessageSearchSyntax $m_syntax;
     private LogLevelCollection $m_levels;
     private LogCategoryCollection $m_categories;
     private LogContextMatch $m_context;
@@ -30,7 +29,7 @@ readonly class LogFilter
      *
      * @param string $search - the text (or regular expression) to find in the message, or an empty string.
      *
-     * @param bool $isRegex - whether $search is a regular expression.
+     * @param MessageSearchSyntax $syntax - whether $search is plain text, or which kind of regular expression.
      *
      * @param LogLevelCollection $levels - the levels to show, or none for every level.
      *
@@ -44,7 +43,7 @@ readonly class LogFilter
         string $from,
         string $to,
         string $search,
-        bool $isRegex,
+        MessageSearchSyntax $syntax,
         LogLevelCollection $levels,
         LogCategoryCollection $categories,
         LogContextMatch $context
@@ -53,7 +52,7 @@ readonly class LogFilter
         $this->m_from = trim($from);
         $this->m_to = trim($to);
         $this->m_search = $search;
-        $this->m_isRegex = $isRegex;
+        $this->m_syntax = $syntax;
         $this->m_levels = $levels;
         $this->m_categories = $categories;
         $this->m_context = $context;
@@ -74,7 +73,7 @@ readonly class LogFilter
      *
      * @return string[] - each condition, with its values escaped.
      *
-     * @throws InvalidInputException - if a time isn't valid.
+     * @throws InvalidInputException - if a time isn't valid, or the regular expression can't be converted.
      */
     public function toSqlConditions() : array
     {
@@ -92,9 +91,9 @@ readonly class LogFilter
             $conditions[] = '"created_at" < ' . (Time::parseLocalTime($this->m_to) + ($hasSeconds ? 1 : 60));
         }
 
-        if ($this->m_search !== '' && $this->m_isRegex)
+        if ($this->m_search !== '' && $this->m_syntax->isRegex())
         {
-            $conditions[] = '"message" ~* ' . DB::escape($this->m_search);
+            $conditions[] = '"message" ~* ' . DB::escape($this->getPostgresPattern());
         }
         elseif ($this->m_search !== '')
         {
@@ -139,12 +138,29 @@ readonly class LogFilter
     public function toQueryParams() : array
     {
         $params = ['from' => $this->m_from, 'to' => $this->m_to, 'search' => $this->m_search];
-        $params['regex'] = $this->m_isRegex ? '1' : '';
+        $params['regex'] = $this->m_syntax->value;
         $params['level'] = implode(',', $this->m_levels->column('value'));
         $params['category'] = (count($this->m_categories) > 0) ? $this->m_categories[0]->value : '';
         $params['context_name'] = $this->m_context->getName();
         $params['context_value'] = $this->m_context->getValue();
         return array_filter($params, 'strlen');
+    }
+
+
+    /**
+     * Get the regular expression as PostgreSQL runs it.
+     * @return string
+     * @throws InvalidInputException - if it can't be converted.
+     */
+    public function getPostgresPattern() : string
+    {
+        return $this->m_syntax->toPostgresPattern($this->m_search);
+    }
+
+
+    public function isRegex() : bool
+    {
+        return $this->m_syntax->isRegex();
     }
 
 
@@ -165,7 +181,7 @@ readonly class LogFilter
     public function getFrom() : string { return $this->m_from; }
     public function getTo() : string { return $this->m_to; }
     public function getSearch() : string { return $this->m_search; }
-    public function isRegex() : bool { return $this->m_isRegex; }
+    public function getSyntax() : MessageSearchSyntax { return $this->m_syntax; }
     public function getLevels() : LogLevelCollection { return $this->m_levels; }
     public function getCategories() : LogCategoryCollection { return $this->m_categories; }
     public function getContext() : LogContextMatch { return $this->m_context; }

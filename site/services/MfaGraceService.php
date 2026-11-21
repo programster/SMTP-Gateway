@@ -1,0 +1,92 @@
+<?php
+
+/*
+ * A grace period for an account that has lost its second factor and backup codes. An administrator gives it one, and
+ * the account's next password login within the hour gets in without a second factor. That login uses it up, and
+ * removes the old authenticator app, security keys and backup codes, so it has to set up new ones. Changing the
+ * password, blocking and archiving all cancel it, so a password reset link alone can never get past the second factor.
+ */
+
+declare(strict_types = 1);
+
+
+final class MfaGraceService
+{
+    /**
+     * Give an account a grace period of one hour.
+     *
+     * @param AdminUser $user - the account.
+     *
+     * @return void
+     *
+     * @throws InvalidInputException - if it isn't active, or has no second factor to get past.
+     */
+    public static function grant(AdminUser $user) : void
+    {
+        if ($user->getStatus() !== AccountStatus::ACTIVE)
+        {
+            throw new InvalidInputException('Only an active account can be given a grace period. Unblock it first.');
+        }
+
+        if (AdminUserRepository::hasSecondFactor($user) === false)
+        {
+            throw new InvalidInputException('This account has no second factor, so it doesn\'t need a grace period.');
+        }
+
+        $id = DB::escape($user->getId());
+        ServiceFactory::getDb()->query(
+            "UPDATE \"admin_user\" SET \"mfa_grace_until\" = now() + interval '1 hour' WHERE \"id\" = {$id}"
+        );
+    }
+
+
+    /**
+     * Cancel an account's grace period, if it has one.
+     *
+     * @param AdminUser $user - the account.
+     *
+     * @return void
+     */
+    public static function cancel(AdminUser $user) : void
+    {
+        $id = DB::escape($user->getId());
+        ServiceFactory::getDb()->query("UPDATE \"admin_user\" SET \"mfa_grace_until\" = NULL WHERE \"id\" = {$id}");
+    }
+
+
+    /**
+     * Use up an account's grace period, if it has one that hasn't expired, removing its second factors and backup
+     * codes and logging out its other sessions. It's done in one step, so a grace period can only ever be used once.
+     * Only call this once the account's password has been checked.
+     *
+     * @param AdminUser $user - the account.
+     *
+     * @return bool - whether it had a grace period to use.
+     */
+    public static function redeem(AdminUser $user) : bool
+    {
+        $id = DB::escape($user->getId());
+
+        $redeem = function () use ($id) : bool {
+            $rows = DB::fetchRows(
+                'UPDATE "admin_user" SET "mfa_grace_until" = NULL, "totp_secret" = NULL, "totp_last_used_step" = NULL,'
+                . ' "session_version" = "session_version" + 1'
+                . " WHERE \"id\" = {$id} AND \"status\" = 'active' AND \"mfa_grace_until\" > now() RETURNING \"id\""
+            );
+
+            $isRedeemed = (count($rows) > 0);
+
+            if ($isRedeemed)
+            {
+                foreach (['admin_webauthn_credential', 'admin_backup_code'] as $table)
+                {
+                    ServiceFactory::getDb()->query("DELETE FROM \"{$table}\" WHERE \"admin_user_id\" = {$id}");
+                }
+            }
+
+            return $isRedeemed;
+        };
+
+        return (bool)DB::transaction($redeem);
+    }
+}

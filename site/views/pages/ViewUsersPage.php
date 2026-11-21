@@ -1,10 +1,10 @@
 <?php
 
 /*
- * The accounts that can log in to the web interface: the live ones (active and blocked), each with buttons to block or
- * unblock it and to archive it, and, when "show archived accounts" is switched on, the archived ones, each with
- * buttons to restore or delete it. Archiving and deleting each ask for your password, in a dialog that says what will
- * happen. An account can only be deleted once it's archived, so deleting always takes two steps.
+ * The accounts that can log in to the web interface, on two tabs: the live ones (active and blocked, the default), each
+ * with buttons to block or unblock it and to archive it, and the archived ones, each with buttons to restore or delete
+ * it. Archiving and deleting each ask for your password, in a dialog that says what will happen. An account can only be
+ * deleted once it's archived, so deleting always takes two steps.
  */
 
 declare(strict_types = 1);
@@ -23,9 +23,9 @@ class ViewUsersPage extends Programster\AbstractView\AbstractView
     /**
      * @param AdminUserSummaryCollection $users - the live accounts (active and blocked).
      *
-     * @param AdminUserCollection $archived - the archived accounts, shown when $isShowingArchived.
+     * @param AdminUserCollection $archived - the archived accounts.
      *
-     * @param bool $isShowingArchived - whether "show archived accounts" is switched on.
+     * @param bool $isShowingArchived - whether the Archived tab is the one open.
      *
      * @param AdminUser $currentUser - who is logged in (who can't block, archive or delete themselves).
      *
@@ -57,9 +57,39 @@ class ViewUsersPage extends Programster\AbstractView\AbstractView
 <h1>Users</h1>
 <p>Everyone listed here who isn't blocked can log in to the web interface, and has full control of the service.</p>
 <?= new ViewFormError($this->m_error) ?>
-<form method="get" action="/admin/users" id="archived-filter" class="archived-filter">
-    <?= new ViewToggle('archived', 'Show archived accounts', $this->m_isShowingArchived) ?>
+<?= new ViewListTabs(
+    '/admin/users',
+    'Archived',
+    'archived',
+    count($this->m_users),
+    count($this->m_archived),
+    $this->m_isShowingArchived
+) ?>
+<?php if ($this->m_isShowingArchived): ?>
+    <?php $this->renderArchived(); ?>
+<?php else: ?>
+    <?php $this->renderLive(); ?>
+<?php endif; ?>
+
+<h2>Add an account</h2>
+<form method="post" action="/admin/users" class="card" id="new-account-form">
+    <?= new ViewCsrfField() ?>
+    <?= new ViewAccountFields($this->m_form) ?>
+    <div class="form-actions"><button type="submit">Add account</button></div>
 </form>
+<?= new ViewAccountActionDialog(AccountAction::ARCHIVE) ?>
+<?php if ($this->m_isShowingArchived): ?>
+    <?= new ViewAccountActionDialog(AccountAction::DELETE) ?>
+<?php endif; ?>
+<script type="module" src="/js/UsersPage.js"></script>
+<?php
+    }
+
+
+    // The live accounts (active and blocked), each with its buttons.
+    private function renderLive() : void
+    {
+?>
 <div class="table-wrap">
 <table>
     <thead><tr><th>Email address</th><th>Created</th><th>Last login</th><th>Authenticator app</th><th>Security
@@ -85,26 +115,6 @@ class ViewUsersPage extends Programster\AbstractView\AbstractView
     </tbody>
 </table>
 </div>
-<p class="hint">Blocking stops an account logging in (and logs it out) until it's unblocked. Archiving also removes
-    its email address and sign-in details, keeping only its ID, and is how an account is deleted. If someone loses
-    their second factor, it can be removed by running <code>php /var/www/site/scripts/reset-mfa.php
-    &lt;email&gt;</code> in the container, and a forgotten password reset with <code>reset-password.php
-    &lt;email&gt;</code> (or by email, from the login page).</p>
-<?php if ($this->m_isShowingArchived): ?>
-    <?php $this->renderArchived(); ?>
-<?php endif; ?>
-
-<h2>Add an account</h2>
-<form method="post" action="/admin/users" class="card" id="new-account-form">
-    <?= new ViewCsrfField() ?>
-    <?= new ViewAccountFields($this->m_form) ?>
-    <div class="form-actions"><button type="submit">Add account</button></div>
-</form>
-<?= new ViewAccountActionDialog(AccountAction::ARCHIVE) ?>
-<?php if ($this->m_isShowingArchived): ?>
-    <?= new ViewAccountActionDialog(AccountAction::DELETE) ?>
-<?php endif; ?>
-<script type="module" src="/js/UsersPage.js"></script>
 <?php
     }
 
@@ -118,8 +128,12 @@ class ViewUsersPage extends Programster\AbstractView\AbstractView
         $statusPath = '/admin/users/' . rawurlencode($user->getId()) . '/' . $statusAction;
 
         $statusTitle = $isBlocked
-            ? 'Unblock: let it log in again'
-            : 'Block: it can\'t log in until it\'s unblocked, and is logged out now';
+            ? 'Unblock user: let them log in again'
+            : 'Block user: stop them logging in, and log them out now, until they\'re unblocked';
+
+        $archiveTitle =
+            'Archive user: remove their email address and sign-in details, keeping only their ID. This is the first'
+            . ' step to deleting an account.';
 ?>
 <form method="post" action="<?= Html::e($statusPath) ?>" class="inline-form">
     <?= new ViewCsrfField() ?>
@@ -130,8 +144,8 @@ class ViewUsersPage extends Programster\AbstractView\AbstractView
 </form>
 <button type="button" class="icon-button" data-role="archive-account"
     data-action="<?= Html::e(AccountAction::ARCHIVE->getPath($user->getId())) ?>" data-name="<?= Html::e($email) ?>"
-    title="Archive: remove its email address and sign-in details" aria-label="Archive <?= Html::e($email) ?>"><?=
-    new ViewIcon(Icon::ARCHIVE) ?></button>
+    title="<?= Html::e($archiveTitle) ?>"
+    aria-label="Archive <?= Html::e($email) ?>"><?= new ViewIcon(Icon::ARCHIVE) ?></button>
 <?php
     }
 
@@ -140,7 +154,6 @@ class ViewUsersPage extends Programster\AbstractView\AbstractView
     private function renderArchived() : void
     {
 ?>
-<h2>Archived accounts</h2>
 <?php if (count($this->m_archived) === 0): ?>
     <p class="muted">No accounts are archived.</p>
 <?php else: ?>

@@ -47,21 +47,6 @@ class ViewProvidersPage extends Programster\AbstractView\AbstractView
         $links = EmailTokenRepository::loadProviderLinks();
         $systemSenderWarning = SystemSenderWarning::describe($this->m_config);
         $mode = $this->m_config->getMode();
-        $enabled = [];
-        $disabled = [];
-
-        foreach ($this->m_config->getProviders() as $provider)
-        {
-            /* @var $provider ProviderDefinition */
-            if ($provider->isEnabled())
-            {
-                $enabled[] = $provider;
-            }
-            else
-            {
-                $disabled[] = $provider;
-            }
-        }
 ?>
 <h1>Providers</h1>
 <?php if ($systemSenderWarning !== ''): ?>
@@ -78,21 +63,27 @@ class ViewProvidersPage extends Programster\AbstractView\AbstractView
         settings, including these providers, as a backup. <strong>It holds every password, key and token in
         full</strong>, so keep it as safe as they are: don't commit it to version control, or share it.</span></p>
 </div>
-<h2>Enabled</h2>
-<p class="hint">Drag a provider by its handle (or focus the handle, and use the up and down arrow keys) to change the
-    order they're tried in, for the overflow and fallback modes.</p>
+<h2>Order</h2>
+<p class="hint">Drag a provider by its handle to change the order they're tried in. Alternatively, select the handle
+    using Tab on your keyboard, and then press the up/down arrow keys to change the order. A disabled provider keeps
+    its place, and is skipped.</p>
 <div class="table-wrap">
 <table class="providers-table">
     <thead><tr><th><span class="visually-hidden">Order</span></th><th>Provider</th>
-        <th class="num">Attempts (minute / hour / 24h)</th><th>Status</th>
+        <th class="num">Attempts (minute / hour / 24h)</th><th>Enabled</th>
         <th><span class="visually-hidden">Actions</span></th></tr></thead>
-    <tbody id="enabled-providers">
-    <?php foreach ($enabled as $provider): ?>
-        <?php $this->renderRow($provider, $counts, $unavailable, $links, true); ?>
+    <tbody id="provider-rows">
+    <?php foreach ($this->m_config->getProviders() as $provider): ?>
+        <?php $this->renderRow($provider, $counts, $unavailable, $links); ?>
     <?php endforeach; ?>
     </tbody>
 </table>
 </div>
+<p class="flash flash-error provider-toggle-error" id="provider-toggle-error" role="alert" hidden></p>
+<form id="provider-toggle-form" hidden>
+    <?= new ViewCsrfField() ?>
+    <input type="hidden" name="version" value="<?= Html::e($this->m_version) ?>">
+</form>
 <form method="post" action="/providers/order" id="provider-order" class="card order-bar" hidden>
     <?= new ViewCsrfField() ?>
     <input type="hidden" name="version" value="<?= Html::e($this->m_version) ?>">
@@ -101,22 +92,6 @@ class ViewProvidersPage extends Programster\AbstractView\AbstractView
     <button type="submit">Save the order</button>
     <a class="button secondary" href="/providers">Undo</a>
 </form>
-<?php if (count($disabled) > 0): ?>
-<h2>Disabled</h2>
-<p class="hint">Not used for sending, until they're enabled again (on their edit form). They go after the enabled
-    providers in the order.</p>
-<div class="table-wrap">
-<table class="providers-table">
-    <thead><tr><th>Provider</th><th class="num">Attempts (minute / hour / 24h)</th><th>Status</th><th><span
-        class="visually-hidden">Actions</span></th></tr></thead>
-    <tbody>
-    <?php foreach ($disabled as $provider): ?>
-        <?php $this->renderRow($provider, $counts, $unavailable, $links, false); ?>
-    <?php endforeach; ?>
-    </tbody>
-</table>
-</div>
-<?php endif; ?>
 <?php $this->renderModeForm($mode); ?>
 <?= new ViewSenderChecks('/providers/sender-checks', self::SENDER_CHECKS_INTRO) ?>
 <details class="card advanced"<?= ($this->m_error !== '') ? ' open' : '' ?>>
@@ -130,8 +105,8 @@ class ViewProvidersPage extends Programster\AbstractView\AbstractView
 
 
     /**
-     * Render a provider's row: its name (a link to its page), type, attempts and status, and buttons to edit and
-     * remove it. An enabled provider's row also has a handle, to drag it into another place in the order.
+     * Render a provider's row: a handle to drag it into another place in the order, its name (a link to its page),
+     * type, attempts, a toggle that enables or disables it straight away, and buttons to edit and remove it.
      *
      * @param ProviderDefinition $provider - the provider.
      *
@@ -143,16 +118,13 @@ class ViewProvidersPage extends Programster\AbstractView\AbstractView
      * @param ProviderTokenLinkCollection $links - the email tokens restricted to particular providers, for the warning
      * before it's removed.
      *
-     * @param bool $isSortable - whether it has a handle to drag it by.
-     *
      * @return void
      */
     private function renderRow(
         ProviderDefinition $provider,
         array $counts,
         array $unavailable,
-        ProviderTokenLinkCollection $links,
-        bool $isSortable
+        ProviderTokenLinkCollection $links
     ) : void
     {
         $name = $provider->getName();
@@ -160,19 +132,29 @@ class ViewProvidersPage extends Programster\AbstractView\AbstractView
         $noneSent = ['last_minute' => 0, 'last_hour' => 0, 'last_24_hours' => 0, 'recipients_last_24_hours' => 0];
         $sent = $counts[$name] ?? $noneSent;
         $removal = ProviderRemovalNotice::createForProvider($provider, $this->m_config, $links);
+        $isEnabled = $provider->isEnabled();
+        $rowClass = $isEnabled ? '' : ' class="is-provider-off"';
 ?>
-<tr data-role="sortable-row" data-name="<?= Html::e($name) ?>">
-    <?php if ($isSortable): ?>
-        <td class="drag-cell"><button type="button" class="icon-button drag-handle" data-role="drag-handle"
-            aria-label="Move <?= Html::e($name) ?>: drag it, or use the up and down arrow keys"
-            title="Drag to change the order"><?= new ViewIcon(Icon::DRAG_HANDLE) ?></button></td>
-    <?php endif; ?>
-    <td><a href="<?= Html::e($path) ?>"><strong><?= Html::e($name) ?></strong></a><br><span
+<tr data-role="sortable-row" data-name="<?= Html::e($name) ?>"<?= $rowClass ?>>
+    <td class="drag-cell"><button type="button" class="icon-button drag-handle" data-role="drag-handle"
+        aria-label="Move <?= Html::e($name) ?>: drag it, or use the up and down arrow keys"
+        title="Drag to change the order"><?= new ViewIcon(Icon::DRAG_HANDLE) ?></button></td>
+    <td class="provider-info"><a href="<?= Html::e($path) ?>"><strong><?= Html::e($name) ?></strong></a><br><span
         class="hint"><?= Html::e($provider->getType()->getLabel()) ?></span></td>
-    <td class="num"><?= number_format($sent['last_minute']) ?> / <?= number_format($sent['last_hour']) ?> /
-        <?= number_format($sent['last_24_hours']) ?><br><span
+    <td class="num provider-info"><?= number_format($sent['last_minute']) ?> / <?= number_format($sent['last_hour'])
+        ?> / <?= number_format($sent['last_24_hours']) ?><br><span
         class="hint"><?= number_format($sent['recipients_last_24_hours']) ?> recipients in 24h</span></td>
-    <td><?= new ViewProviderStatus($provider, $unavailable) ?></td>
+    <td>
+        <label class="toggle" title="Enable or disable it. This saves straight away."><input type="checkbox"
+            role="switch" data-role="provider-enabled" data-path="<?= Html::e($path) ?>"
+            aria-label="<?= Html::e("Enabled: {$name}") ?>"<?= $isEnabled ? ' checked' : '' ?>><span
+            class="toggle-track" aria-hidden="true"></span></label>
+        <?php if (isset($unavailable[$name])): ?>
+            <div class="provider-skip"><span class="badge badge-failed">skipped until
+                <?= Html::e(Time::format($unavailable[$name]['unavailable_until'])) ?></span>
+                <div class="hint"><?= Html::e($unavailable[$name]['last_error']) ?></div></div>
+        <?php endif; ?>
+    </td>
     <td class="row-actions">
         <a class="icon-button neutral" href="<?= Html::e("{$path}/edit") ?>" aria-label="Edit <?= Html::e($name) ?>"
             title="Edit"><?= new ViewIcon(Icon::EDIT) ?></a>

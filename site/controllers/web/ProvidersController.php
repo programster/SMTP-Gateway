@@ -559,7 +559,7 @@ class ProvidersController extends AbstractController
 
     /**
      * Enable or disable a provider, and go back to its page, saying what was done, or why it couldn't be (e.g. that
-     * the last enabled provider can't be disabled).
+     * the last enabled provider can't be disabled). A toggle on the Providers page asks for JSON instead.
      *
      * @param Request $request - the request, with the version of the providers it's based on.
      *
@@ -575,6 +575,8 @@ class ProvidersController extends AbstractController
      */
     private static function setEnabled(Request $request, Response $response, string $name, bool $isEnabled) : Response
     {
+        $path = '/providers/' . rawurlencode($name);
+
         try
         {
             ProvidersFormService::setEnabled($name, $isEnabled, self::getFormField($request, 'version'));
@@ -585,14 +587,60 @@ class ProvidersController extends AbstractController
                 ? "The provider \"{$name}\" was enabled: emails can be sent through it again."
                 : "The provider \"{$name}\" was disabled. Its settings are kept, so it can be enabled again.";
 
-            WebSession::flash($message);
+            if (self::wantsJson($request))
+            {
+                $result = self::json($response, self::buildListState());
+            }
+            else
+            {
+                WebSession::flash($message);
+                $result = self::redirect($response, $path);
+            }
         }
         catch (InvalidInputException | ConflictException | ConfigurationException $e)
         {
-            WebSession::flash($e->getMessage(), true);
+            $showOnPage = function () use ($response, $e, $path) : Response {
+                WebSession::flash($e->getMessage(), true);
+                return self::redirect($response, $path);
+            };
+
+            $result = self::respondNotSaved($request, $response, $e, $showOnPage);
         }
 
-        return self::redirect($response, '/providers/' . rawurlencode($name));
+        return $result;
+    }
+
+
+    /**
+     * Build what the Providers page needs to stay correct after a provider's toggle is saved, without reloading: the
+     * new version and YAML, and what each provider's Remove button should now warn about.
+     *
+     * @return array<string, mixed> - the JSON: "version", "yaml", and "providers", each with its "name", "warning"
+     * and "isRefused".
+     */
+    private static function buildListState() : array
+    {
+        $config = ProviderRegistry::getConfig();
+        $links = EmailTokenRepository::loadProviderLinks();
+        $providers = [];
+
+        foreach ($config->getProviders() as $provider)
+        {
+            /* @var $provider ProviderDefinition */
+            $removal = ProviderRemovalNotice::createForProvider($provider, $config, $links);
+
+            $providers[] = [
+                'name' => $provider->getName(),
+                'warning' => $removal->getMessage(),
+                'isRefused' => $removal->isRefused(),
+            ];
+        }
+
+        return [
+            'version' => SettingsFile::getSectionVersion(SettingsSection::PROVIDERS),
+            'yaml' => ProvidersConfigParser::toYaml($config, SecretOutput::MASKED),
+            'providers' => $providers,
+        ];
     }
 
 

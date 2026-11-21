@@ -12,6 +12,9 @@ declare(strict_types = 1);
 
 class ViewLogsPage extends Programster\AbstractView\AbstractView
 {
+    private const string SEARCH_HELP_ID = 'log-search-help';
+    private const string CONTEXT_HELP_ID = 'log-context-help';
+
     private readonly LogSearchResult $m_result;
     private readonly LogFilter $m_filter;
     private readonly LogPage $m_page;
@@ -63,80 +66,105 @@ class ViewLogsPage extends Programster\AbstractView\AbstractView
         $levels = $filter->getLevels();
         $categories = $filter->getCategories();
         $chosenCategory = (count($categories) > 0) ? $categories[0] : null;
-        $sort = $this->m_page->getSort();
+        $isAdvancedOpen = ($filter->isRegex() || $chosenCategory !== null || $filter->getContext()->getName() !== '');
+        $syntax = $filter->getSyntax();
+        $isConverted = ($syntax === MessageSearchSyntax::PHP || $syntax === MessageSearchSyntax::JAVASCRIPT);
+        $isShowingConverted = ($isConverted && $filter->getSearch() !== '' && $this->m_error === '');
 ?>
-<h1>Logs</h1>
-<form method="get" action="/admin/logs" class="card filters log-filters">
-    <div>
-        <label for="from">From</label>
-        <input type="datetime-local" id="from" name="from" step="1" value="<?= Html::e($this->m_from) ?>">
-    </div>
-    <div>
-        <label for="to">To</label>
-        <input type="datetime-local" id="to" name="to" step="1" value="<?= Html::e($this->m_to) ?>">
-    </div>
-    <div class="search-field">
-        <label for="search">Message contains</label>
-        <input type="search" id="search" name="search" value="<?= Html::e($filter->getSearch()) ?>"
-            placeholder="e.g. failed">
-        <div class="regex-option"><?= new ViewToggle('regex', 'Regular expression', $filter->isRegex()) ?></div>
-    </div>
-    <div class="level-field">
-        <label for="level">Levels</label>
-        <select id="level" name="level[]" multiple size="<?= count(LogLevel::cases()) ?>"
-            aria-describedby="level-hint">
-            <?php foreach (LogLevel::cases() as $level): ?>
-                <option value="<?= $level->value ?>"<?= $levels->contains($level) ? ' selected' : '' ?>><?= Html::e(
-                    $level->getLabel()
-                ) ?></option>
-            <?php endforeach; ?>
-        </select>
-        <p class="hint" id="level-hint">None for every level. Shift-click to choose a range (e.g. Error to Emergency),
-            or Ctrl-click (&#8984;-click on a Mac) to add or remove one.</p>
-    </div>
-    <div>
-        <label for="category">Category</label>
-        <select id="category" name="category">
-            <option value="">Any category</option>
-            <?php foreach (LogCategory::cases() as $case): ?>
-                <option value="<?= $case->value ?>"<?= ($case === $chosenCategory) ? ' selected' : '' ?>><?= Html::e(
-                    $case->getLabel()
-                ) ?></option>
-            <?php endforeach; ?>
-        </select>
-    </div>
-    <div class="context-field">
-        <label for="context_name">Context contains</label>
-        <div class="context-inputs">
-            <input type="text" id="context_name" name="context_name" value="<?= Html::e(
-                $filter->getContext()->getName()
-            ) ?>" placeholder="name, e.g. email" aria-label="The name in the context" spellcheck="false">
-            <input type="text" id="context_value" name="context_value" value="<?= Html::e(
-                $filter->getContext()->getValue()
-            ) ?>" placeholder="value (optional)" aria-label="Text its value contains" spellcheck="false">
+<div class="log-heading">
+    <h1>Logs</h1>
+    <span class="hint"><?= number_format($this->m_result->getTotalCount()) ?> <?=
+        ($this->m_result->getTotalCount() === 1) ? 'entry' : 'entries' ?></span>
+</div>
+<form method="get" action="/admin/logs" class="card log-filters">
+    <div class="log-filters-main">
+        <div class="search-field">
+            <div class="label-with-help"><label for="search">Message contains</label><?=
+                new ViewHelpButton(self::SEARCH_HELP_ID, 'Searching the messages') ?></div>
+            <input type="search" id="search" name="search" value="<?= Html::e($filter->getSearch()) ?>"
+                placeholder="e.g. failed">
         </div>
+        <div class="level-field">
+            <span class="field-label" id="level-label">Levels</span>
+            <details class="multi-select" id="log-level-dropdown">
+                <summary aria-labelledby="level-label level-summary"><span id="level-summary"
+                    data-role="level-summary"><?= Html::e($this->describeChosenLevels()) ?></span></summary>
+                <div class="multi-select-menu">
+                    <?php foreach (LogLevel::cases() as $level): ?>
+                        <label class="multi-select-option"><input type="checkbox" name="level[]"
+                            value="<?= $level->value ?>" data-label="<?= Html::e($level->getLabel()) ?>"<?=
+                            $levels->contains($level) ? ' checked' : '' ?>> <span class="level-dot"
+                            data-level="<?= $level->value ?>"></span> <?= Html::e($level->getLabel()) ?></label>
+                    <?php endforeach; ?>
+                    <p class="hint">Shift-click to select a range.</p>
+                </div>
+            </details>
+        </div>
+        <div>
+            <label for="from">From</label>
+            <input type="datetime-local" id="from" name="from" step="1" value="<?= Html::e($this->m_from) ?>">
+        </div>
+        <div>
+            <label for="to">To</label>
+            <input type="datetime-local" id="to" name="to" step="1" value="<?= Html::e($this->m_to) ?>">
+        </div>
+        <div class="log-filter-actions"><button type="submit">Search</button><?php if ($filter->isFiltered()): ?> <a
+            href="/admin/logs">Clear</a><?php endif; ?></div>
     </div>
+    <details class="advanced log-advanced"<?= $isAdvancedOpen ? ' open' : '' ?>>
+        <summary>Advanced</summary>
+        <div class="log-advanced-fields">
+            <div>
+                <label for="category">Category</label>
+                <select id="category" name="category">
+                    <option value="">Any category</option>
+                    <?php foreach (LogCategory::cases() as $case): ?>
+                        <option value="<?= $case->value ?>"<?= ($case === $chosenCategory) ? ' selected' : '' ?>><?=
+                            Html::e($case->getLabel()) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            <div class="context-field">
+                <div class="label-with-help"><label for="context_name">Context contains</label><?=
+                    new ViewHelpButton(self::CONTEXT_HELP_ID, 'Searching the context') ?></div>
+                <div class="context-inputs">
+                    <input type="text" id="context_name" name="context_name" value="<?= Html::e(
+                        $filter->getContext()->getName()
+                    ) ?>" placeholder="name, e.g. email" aria-label="The name in the context" spellcheck="false">
+                    <input type="text" id="context_value" name="context_value" value="<?= Html::e(
+                        $filter->getContext()->getValue()
+                    ) ?>" placeholder="value (optional)" aria-label="Text its value contains" spellcheck="false">
+                </div>
+            </div>
+            <div class="regex-option" id="regex-option">
+                <input type="hidden" name="regex" value="<?= Html::e($syntax->value) ?>" data-role="regex-value">
+                <label class="toggle"><input type="checkbox" role="switch" data-role="regex-toggle"<?=
+                    $filter->isRegex() ? ' checked' : '' ?>><span class="toggle-track" aria-hidden="true"></span><span
+                    class="toggle-label">Message is a regular expression</span></label>
+                <strong data-role="regex-label"><?= $filter->isRegex() ? Html::e($syntax->getLabel()) : '' ?></strong>
+                <button type="button" class="secondary regex-change" data-role="regex-change"<?=
+                    $filter->isRegex() ? '' : ' hidden' ?>>Change</button>
+            </div>
+        </div>
+        <?php if ($isShowingConverted): ?>
+            <p class="hint">Run in PostgreSQL as <code><?= Html::e($filter->getPostgresPattern()) ?></code></p>
+        <?php endif; ?>
+    </details>
     <?php // Searching keeps the order and page size, and starts at the first page. ?>
     <?php foreach (array_diff_key($this->m_page->toQueryParams(), ['page' => '']) as $name => $value): ?>
         <input type="hidden" name="<?= Html::e($name) ?>" value="<?= Html::e($value) ?>">
     <?php endforeach; ?>
-    <div class="form-actions"><button type="submit">Search</button><?php if ($filter->isFiltered()): ?> <a
-        href="/admin/logs">Clear</a><?php endif; ?></div>
 </form>
-<p class="hint">
-    Times are in <?= Html::e($this->m_timezone->getName()) ?>. Either time can be left empty.
-    The search ignores case, and only looks at each message (not its context). With "Regular expression" ticked, it's a
-    <a href="https://www.postgresql.org/docs/current/functions-matching.html#FUNCTIONS-POSIX-REGEXP">PostgreSQL regular
-        expression</a>, e.g. <code>^failed (web )?login</code>. "Context contains" finds the entries whose context has
-    that name (e.g. <code>email_token_id</code>), with a value containing the text, if one's given, ignoring case.
-    Click an entry to see it in full, with its context.
-</p>
+<?= new ViewHelpDialog(self::SEARCH_HELP_ID, 'Message contains', self::createSearchHelp(), '') ?>
+<?= new ViewHelpDialog(self::CONTEXT_HELP_ID, 'Context contains', self::createContextHelp(), '') ?>
+<?= new ViewRegexTypeDialog($syntax) ?>
+<p class="hint log-timezone">Times are in <?= Html::e($this->m_timezone->getName()) ?>.</p>
 <?= new ViewFormError($this->m_error) ?>
 <?php if (count($entries) === 0): ?>
-    <p class="muted">No log entries<?= $filter->isFiltered() ? ' match' : '' ?><?= ($this->m_page->getNumber() > 1)
-        ? ' on this page' : '' ?>.</p>
+    <div class="card log-empty"><p class="muted">No log entries<?= $filter->isFiltered() ? ' match' : ''
+        ?><?= ($this->m_page->getNumber() > 1) ? ' on this page' : '' ?>.</p></div>
 <?php else: ?>
-<div class="table-wrap">
+<div class="table-wrap log-table-wrap">
 <table class="log-table">
     <thead><tr>
         <th><?php $this->renderSortLink('Time', false); ?></th>
@@ -147,7 +175,7 @@ class ViewLogsPage extends Programster\AbstractView\AbstractView
     <tbody>
     <?php foreach ($entries as $entry): ?>
         <?php /* @var $entry LogEntry */ ?>
-        <tr class="clickable-row">
+        <tr class="clickable-row" data-level="<?= Html::e($entry->getLevel()) ?>">
             <td><?= Html::e(Time::describeAgo($entry->getCreatedAt())) ?><br><span
                 class="hint mono"><?= Html::e(Time::formatUnixTimestamp($entry->getCreatedAt())) ?></span></td>
             <td><span
@@ -164,6 +192,70 @@ class ViewLogsPage extends Programster\AbstractView\AbstractView
 <?php endif; ?>
 <?php $this->renderPagination(); ?>
 <?php
+    }
+
+
+    // What the "Message contains" search does, for its help dialog.
+    private static function createSearchHelp() : HelpEntryCollection
+    {
+        return new HelpEntryCollection(
+            new HelpEntry(
+                'Plain text',
+                'By default, this finds entries whose message contains exactly what you type, anywhere in it, ignoring'
+                . ' case. Characters like `%` and `_` are treated as ordinary text.'
+            ),
+            new HelpEntry(
+                'Using a regular expression',
+                'Click Advanced, and switch on "Message is a regular expression". It asks which kind you\'re writing:'
+                . ' PostgreSQL, PHP or JavaScript. It ignores case, and can match anywhere in the message, unless you'
+                . ' use `^` for the start or `$` for the end. If it isn\'t valid, the page says why.'
+            ),
+            new HelpEntry(
+                'Example',
+                '`^failed (web )?login` finds messages that start with `failed login` or `failed web login`.'
+            ),
+            new HelpEntry(
+                'What isn\'t searched',
+                'Only the message is searched, not the context. To search the context, use "Context contains" under'
+                . ' Advanced.'
+            )
+        );
+    }
+
+
+    // What the "Context contains" search does, for its help dialog.
+    private static function createContextHelp() : HelpEntryCollection
+    {
+        return new HelpEntryCollection(
+            new HelpEntry('Name', 'Finds entries whose context has this name, e.g. `email_token_id`.'),
+            new HelpEntry('Value', 'Optionally, only those whose value for that name contains this text.')
+        );
+    }
+
+
+    /**
+     * Describe the levels chosen, for the closed dropdown (LogLevelDropdown keeps it up to date as they're changed).
+     * @return string - e.g. "All levels", "Error, Critical" or "3 levels".
+     */
+    private function describeChosenLevels() : string
+    {
+        $labels = [];
+
+        foreach (LogLevel::cases() as $level)
+        {
+            if ($this->m_filter->getLevels()->contains($level))
+            {
+                $labels[] = $level->getLabel();
+            }
+        }
+
+        $description = match (true) {
+            count($labels) === 0 => 'All levels',
+            count($labels) <= 2 => implode(', ', $labels),
+            default => count($labels) . ' levels',
+        };
+
+        return $description;
     }
 
 

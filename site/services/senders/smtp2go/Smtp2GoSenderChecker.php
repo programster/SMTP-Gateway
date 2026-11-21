@@ -262,6 +262,11 @@ final readonly class Smtp2GoSenderChecker implements SenderCheckerInterface
             $checks[] = $this->createCheck(SenderCheckLevel::WARNING, $title, $detail);
         }
 
+        foreach ($this->m_webhookChecks->check() as $check)
+        {
+            $checks[] = $check;
+        }
+
         return new SenderCheckCollection(...$checks);
     }
 

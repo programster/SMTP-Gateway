@@ -168,56 +168,48 @@ final class ProvidersFormService
 
 
     /**
-     * Put the enabled providers in an order, which is the order they're tried in, for the overflow and fallback
-     * modes. The disabled ones, which aren't tried, go after them, in the order they were in.
+     * Put the providers in an order, which is the order they're tried in, in every mode. A disabled provider keeps
+     * its place, and is just skipped: with 1, 2 and 3, and 2 disabled, they're tried 1, then 3.
      *
      * @param string $version - the version of the providers the change is based on.
      *
-     * @param string ...$enabledNames - the name of every enabled provider, each once, in their new order.
+     * @param string ...$names - the name of every provider, each once, in their new order.
      *
      * @return void
      *
-     * @throws InvalidInputException - if the names aren't exactly the enabled providers', e.g. one was added since.
+     * @throws InvalidInputException - if the names aren't exactly the providers', e.g. one was added since.
      * @throws ConflictException - if the providers have changed since the version given.
      * @throws ConfigurationException - if the providers can't be read or saved.
      */
-    public static function reorder(string $version, string ...$enabledNames) : void
+    public static function reorder(string $version, string ...$names) : void
     {
         $data = self::loadData();
-        $enabled = [];
-        $disabled = [];
+        $entries = [];
 
         foreach ($data['providers'] as $entry)
         {
-            if (($entry['enabled'] ?? true) === false)
-            {
-                $disabled[] = $entry;
-            }
-            else
-            {
-                $enabled[(string)$entry['name']] = $entry;
-            }
+            $entries[(string)$entry['name']] = $entry;
         }
 
-        $given = $enabledNames;
-        $current = array_keys($enabled);
+        $given = $names;
+        $current = array_keys($entries);
         sort($given);
         sort($current);
 
         if ($given !== $current)
         {
-            $msg = 'The order must have every enabled provider in it, once. Reload the page, and try again.';
+            $msg = 'The order must have every provider in it, once. Reload the page, and try again.';
             throw new InvalidInputException($msg);
         }
 
         $ordered = [];
 
-        foreach ($enabledNames as $name)
+        foreach ($names as $name)
         {
-            $ordered[] = $enabled[$name];
+            $ordered[] = $entries[$name];
         }
 
-        $data['providers'] = array_merge($ordered, $disabled);
+        $data['providers'] = $ordered;
         self::save($data, $version);
     }
 

@@ -35,7 +35,9 @@ class EmailTokensController extends AbstractController
 
     public function list(Request $request, Response $response) : Response
     {
-        return self::renderPage($response, 'Email tokens', new ViewEmailTokensPage(EmailTokenRepository::loadAll()));
+        $isShowingRevoked = (self::getQueryParam($request, 'revoked') === '1');
+        $page = new ViewEmailTokensPage(EmailTokenRepository::loadAll(), $isShowingRevoked);
+        return self::renderPage($response, 'Email tokens', $page);
     }
 
 

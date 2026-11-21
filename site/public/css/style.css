@@ -17,6 +17,8 @@
     --bar-sent: #6b93e8;
     --bar-queued: #1f3f8a;
     --code-bg: #eef0f4;
+    --inline-code-bg: #e2e6ed;
+    --inline-code-border: #c9cfd9;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -41,6 +43,8 @@
         --bar-sent: #4d74c9;
         --bar-queued: #9bb8f5;
         --code-bg: #262b34;
+        --inline-code-bg: #323945;
+        --inline-code-border: #4a5261;
     }
 }
 
@@ -58,7 +62,14 @@ h1 { font-size: 1.6rem; margin: 0 0 1rem; }
 h2 { font-size: 1.25rem; margin: 2rem 0 0.75rem; }
 h3 { font-size: 1rem; margin: 1.25rem 0 0.5rem; color: var(--muted); }
 code, pre, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.9em; }
-code { background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 4px; overflow-wrap: anywhere; }
+code {
+    background: var(--inline-code-bg);
+    border: 1px solid var(--inline-code-border);
+    padding: 0.05em 0.35em 0.2em;
+    border-radius: 4px;
+    overflow-wrap: anywhere;
+}
+pre code, .backup-codes code { background: none; border: none; padding: 0; }
 pre { background: var(--code-bg); padding: 0.75rem; border-radius: 6px; overflow-x: auto; margin: 0.5rem 0; }
 
 .site-header {
@@ -149,19 +160,34 @@ details.advanced > summary { cursor: pointer; font-weight: 600; }
 details.advanced[open] > summary { margin-bottom: 0.5rem; }
 
 /* A page of the documentation, rendered from its Markdown. */
-.documentation { max-width: 880px; }
-.documentation h1 { margin-top: 0; }
+.documentation { max-width: 880px; font-size: 1.0625rem; line-height: 1.65; }
+.documentation h1 { margin-top: 0; font-size: 2.75rem; line-height: 1.15; }
 .documentation img { max-width: 100%; height: auto; }
-.documentation h2 { border-bottom: 1px solid var(--border); padding-bottom: 0.3rem; }
+.documentation h2 {
+    font-size: 2.1rem;
+    line-height: 1.2;
+    margin: 3rem 0 1rem;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 0.4rem;
+}
 /* Headings get smaller with each level, and stay in the text's colour (unlike the site's muted h3, for forms). */
-.documentation h3 { font-size: 1.1rem; margin-top: 1.75rem; color: var(--text); }
-.documentation h4 { font-size: 1rem; margin: 1.5rem 0 0.5rem; }
-.documentation h5 { font-size: 0.9rem; margin: 1.25rem 0 0.5rem; color: var(--muted); }
-/* A table's first column is usually a name (e.g. a type of provider), which shouldn't break in the middle. */
-.documentation td:first-child { white-space: nowrap; }
+.documentation h3 { font-size: 1.65rem; line-height: 1.25; margin-top: 2.25rem; color: var(--text); }
+.documentation h4 { font-size: 1.35rem; line-height: 1.3; margin: 1.75rem 0 0.5rem; }
+.documentation h5 { font-size: 1.2rem; line-height: 1.35; margin: 1.5rem 0 0.5rem; color: var(--muted); }
+/*
+ * A table's first column is usually a name, so it's kept narrow, leaving the room for the text beside it. A column of
+ * code names (e.g. settings) is as wide as its longest name, which never breaks, with a list of them wrapping.
+ */
+.documentation td:first-child { width: 1%; min-width: 11rem; }
+.documentation td:first-child:has(code) { min-width: 0; }
+.documentation td:first-child code { white-space: nowrap; }
+
+/* A name in a table stays whole, with the column growing to fit it, rather than breaking in the middle of a word. */
+.documentation td code { overflow-wrap: normal; }
+
 .documentation table { margin: 0.75rem 0; }
 .documentation th, .documentation td { vertical-align: top; text-align: left; }
-.documentation li { margin: 0.2rem 0; }
+.documentation li { margin: 0.65rem 0; }
 
 /*
  * A documentation page's list of its sections ("On this page", see DocumentationContents.ts), beside it on screens
@@ -450,6 +476,23 @@ dialog [data-role=confirm]:disabled { cursor: not-allowed; }
 /* Grid items can shrink below their content (e.g. a row of selects), rather than spilling into the next column. */
 .grid-2 > *, .rate-limit-row > * { min-width: 0; }
 /* An API key's age (see ViewKeyAge): yellow as it nears a year, red from a year. */
+/* Tabs that are links, e.g. the Active and Revoked API keys. */
+.list-tabs { display: flex; gap: 0.25rem; margin: 1.25rem 0 1rem; border-bottom: 1px solid var(--border); }
+.list-tabs a {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: -1px;
+    padding: 0.45rem 0.85rem;
+    border-bottom: 2px solid transparent;
+    color: var(--muted);
+    font-weight: 600;
+    text-decoration: none;
+}
+.list-tabs a:hover { color: var(--text); }
+.list-tabs a[aria-current=page] { border-bottom-color: var(--accent); color: var(--text); }
+.tab-count { padding: 0 0.4rem; border-radius: 999px; background: var(--code-bg); font-size: 0.8rem; font-weight: 600; }
+
 .key-age { white-space: nowrap; }
 .key-age.age-warning, .key-age.age-danger { padding: 0.05rem 0.45rem; border-radius: 999px; font-weight: 600; }
 .key-age.age-warning { background: var(--warning-bg); color: var(--warning-text); }
@@ -480,26 +523,139 @@ dialog [data-role=confirm]:disabled { cursor: not-allowed; }
 .rate-limit-row { display: grid; grid-template-columns: 1fr 1.6fr 1.3fr auto; gap: 0.5rem; margin-bottom: 0.5rem; }
 .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0 1rem; align-items: end; }
 
-/*
- * The logs' filters line up along their tops, so the "Regular expression" box can sit under the message's, in line
- * with its left edge, with the buttons on a row of their own.
- */
-.log-filters { align-items: start; }
-@media (min-width: 700px) {
-    .log-filters .search-field, .log-filters .context-field { grid-column: span 2; }
-
-    /* The levels are a list of them all, taller than the other fields, so it spans both rows, beside them. */
-    .log-filters .level-field { grid-row: span 2; }
+/* The logs: the everyday filters on one row, with the rest under "Advanced". */
+.log-heading { display: flex; align-items: baseline; gap: 0.75rem; margin-bottom: 1rem; }
+.log-heading h1 { margin: 0; }
+.log-filters { padding-top: 0.9rem; padding-bottom: 0.9rem; }
+.log-filters-main {
+    display: grid;
+    grid-template-columns: minmax(200px, 2fr) minmax(150px, 1fr) minmax(190px, 1fr) minmax(190px, 1fr) auto;
+    gap: 0.75rem;
+    align-items: end;
 }
+.log-filters label { margin: 0 0 0.25rem; }
+.log-filters .label-with-help { display: flex; align-items: center; margin-bottom: 0.25rem; }
+.log-filters .label-with-help label { margin-bottom: 0; }
+.log-filters .label-with-help .help-button { margin-block: -0.2rem; }
+.log-filters .field-label { display: block; margin: 0 0 0.25rem 2px; font-weight: 600; }
+
+/* Every control is the same height, so their labels, and the Search button, all line up. */
+.log-filters input:not([type=checkbox]), .log-filters select, .log-filters .multi-select > summary,
+.log-filter-actions button {
+    height: 2.5rem;
+    margin: 0;
+}
+.log-filter-actions { display: flex; align-items: center; gap: 0.75rem; white-space: nowrap; }
+.log-advanced { margin-top: 0.75rem; }
+.log-advanced > summary { color: var(--muted); font-size: 0.9rem; }
+.log-advanced-fields {
+    display: grid;
+    grid-template-columns: minmax(180px, 1fr) minmax(280px, 2fr) auto;
+    gap: 0.75rem;
+    align-items: end;
+}
+.log-advanced .regex-option { display: flex; align-items: center; gap: 0.5rem; padding-bottom: 0.45rem; }
+.log-advanced .regex-option label { margin: 0; }
+.log-advanced .regex-option strong:empty { display: none; }
+.account-action p { margin: 0 0 0.6rem; }
+.account-action form + .hint { margin: 0.5rem 0 0; }
+.account-password-note { margin-top: 1rem; }
+.account-action + .account-action { margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid var(--border); }
+#account-recovery h3 { margin: 1.25rem 0 0.4rem; }
+#account-recovery > p:first-child { margin-top: 0; }
+.regex-change { padding: 0.15rem 0.55rem; font-size: 0.85rem; }
+.regex-change[hidden] { display: none; }
+.regex-info ul { margin: 0.5rem 0; padding-left: 1.25rem; }
+.regex-info li { margin-bottom: 0.35rem; }
+.regex-info p { margin: 0.75rem 0 0.5rem; }
+.log-timezone { margin: 0 0 0.5rem 2px; }
+.log-empty { text-align: center; }
+.log-empty p { margin: 0.75rem 0; }
+
+@media (max-width: 1300px) {
+    .log-filters-main { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .log-filter-actions { grid-column: 1 / -1; }
+    .log-advanced-fields { grid-template-columns: minmax(0, 1fr); }
+}
+
+@media (max-width: 560px) {
+    .log-filters-main { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* A dropdown of checkboxes, drawn like a select, so more than one can be chosen. */
+.multi-select { position: relative; }
+.multi-select > summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.45rem 0.6rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+    list-style: none;
+    white-space: nowrap;
+}
+.multi-select > summary::-webkit-details-marker { display: none; }
+.multi-select > summary::after { content: "\25BE"; color: var(--muted); }
+.multi-select > summary span { overflow: hidden; text-overflow: ellipsis; }
+.multi-select > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.multi-select-menu {
+    position: absolute;
+    z-index: 20;
+    top: calc(100% + 4px);
+    left: 0;
+    min-width: 100%;
+    width: max-content;
+    padding: 0.35rem;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
+}
+.log-filters .multi-select-option {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+    padding: 0.3rem 0.5rem;
+    border-radius: 5px;
+    font-weight: normal;
+    cursor: pointer;
+    user-select: none;
+}
+.multi-select-option:hover { background: var(--code-bg); }
+.multi-select-option input { margin: 0; }
+.multi-select-menu .hint { margin: 0.3rem 0.5rem 0.15rem; }
+
+/* Each log level's colour, as a dot in the filter and a stripe down its row. */
+[data-level] { --level-colour: var(--muted); }
+[data-level=debug] { --level-colour: var(--border); }
+[data-level=info], [data-level=notice] { --level-colour: var(--accent); }
+[data-level=warning] { --level-colour: #d98e04; }
+[data-level=error], [data-level=critical], [data-level=alert], [data-level=emergency] { --level-colour: var(--danger); }
+.level-dot { flex: none; width: 0.55rem; height: 0.55rem; border-radius: 50%; background: var(--level-colour); }
+
+.log-table-wrap { border: 1px solid var(--border); border-radius: 8px; background: var(--surface); }
+.log-table td { padding-top: 0.45rem; padding-bottom: 0.45rem; vertical-align: middle; }
+.log-table tbody tr:last-child td { border-bottom: 0; }
+.log-table th:first-child, .log-table td:first-child { padding-left: 0.85rem; }
+.log-table td:first-child { white-space: nowrap; box-shadow: inset 3px 0 0 var(--level-colour); font-size: 0.9rem; }
+.log-table td:first-child .hint { font-size: 0.75rem; }
+.log-table td:nth-child(2), .log-table td:nth-child(3) { white-space: nowrap; }
+.log-table td:last-child { width: 100%; overflow-wrap: anywhere; }
+.log-table .badge { text-transform: capitalize; }
+.log-table .badge-warning { background: var(--warning-bg); color: var(--warning-text); }
+.log-table .badge-notice, .log-table .badge-info { background: var(--code-bg); color: var(--text); }
+.log-table .badge-debug { background: transparent; color: var(--muted); border: 1px solid var(--border); }
 
 .context-inputs { display: flex; gap: 0.5rem; }
 .context-inputs input { min-width: 0; }
 
 .page-size { display: flex; align-items: center; gap: 0.5rem; margin: 0; }
 .page-size label { margin: 0; }
-.log-filters .regex-option { margin: 0.35rem 0 0; }
-
-.log-filters .form-actions { grid-column: 1 / -1; margin-top: 0.75rem; }
 
 /* A table whose rows each open a page: the row's link covers the whole row, so it can be middle-clicked anywhere. */
 .clickable-row { position: relative; }
@@ -528,6 +684,16 @@ dialog [data-role=confirm]:disabled { cursor: not-allowed; }
 .pagination .pages .current { background: var(--accent); color: var(--accent-text); font-weight: 600; }
 .log-context { overflow-x: auto; white-space: pre; }
 
+/* A hint that introduces a table, card, form or list needs some space before it. */
+.hint:has(+ :is(.table-wrap, table, .card, form, ul, ol, pre, details)) { margin-bottom: 0.75rem; }
+
+/* The Providers table: a disabled provider is dimmed, and whether it's being skipped no longer matters. */
+.providers-table .toggle { margin: 0; }
+.is-provider-off .provider-info { opacity: 0.55; }
+.is-provider-off .provider-skip { display: none; }
+.provider-skip { margin-top: 0.35rem; }
+.provider-toggle-error { margin: 0.75rem 0 0; }
+
 .table-wrap { overflow-x: auto; }
 td.differs { background: var(--warning-bg); color: var(--warning-text); font-weight: 600; }
 table { width: 100%; border-collapse: collapse; background: var(--surface); }
@@ -555,43 +721,37 @@ a.tile:hover, a.tile:focus-visible { border-color: var(--accent); }
 .chart { margin: 1rem 0; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; }
 .chart figcaption { color: var(--muted); font-size: 0.85rem; margin-bottom: 0.5rem; }
 .legend-queued { color: var(--bar-queued); font-weight: 700; }
-.chart-bars { display: flex; align-items: flex-end; gap: 3px; height: 160px; padding-bottom: 1.4rem; position: relative; }
-.chart-bar { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; position: relative; min-width: 6px; }
-.chart-bar-sent { background: var(--bar-sent); border-radius: 2px 2px 0 0; }
-.chart-bar-queued { background: var(--bar-queued); }
-.chart-bar-label { position: absolute; bottom: -1.4rem; left: 50%; transform: translateX(-50%); font-size: 0.65rem; color: var(--muted); }
-.chart-bar:nth-child(odd) .chart-bar-label { visibility: hidden; }
+.chart-plot { display: flex; gap: 0.5rem; padding-top: 0.4rem; }
+.chart-axis {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    height: 240px;
+    color: var(--muted);
+    font-size: 0.7rem;
+    text-align: right;
+}
+.chart-axis span { height: 0; line-height: 0; }
+.chart-area { flex: 1; min-width: 0; }
+.chart-svg { display: block; width: 100%; height: 240px; overflow: visible; }
+.chart-gridline { stroke: var(--border); stroke-width: 1; }
+.chart-baseline { stroke: var(--muted); stroke-width: 1; }
+.chart-hit { fill: transparent; }
+.chart-hour:hover .chart-hit { fill: var(--code-bg); }
+.chart-bar-sent { fill: var(--bar-sent); }
+.chart-bar-queued { fill: var(--bar-queued); }
+.chart-hours { display: flex; margin-top: 0.3rem; color: var(--muted); font-size: 0.65rem; }
+.chart-hours span { display: flex; flex: 1; justify-content: center; min-width: 0; white-space: nowrap; }
+.chart-hours span:nth-child(odd) { visibility: hidden; }
 
 details summary { cursor: pointer; color: var(--accent); }
 .qr { background: #fff; padding: 0.5rem; border-radius: 6px; width: 220px; height: 220px; }
 
 @media (max-width: 640px) {
-    .chart-bar-label { display: none; }
+    .chart-hours { display: none; }
     .rate-limit-row { grid-template-columns: 1fr auto; }
 }
 
-/* Bar heights, in steps of 5%, as classes (the Content-Security-Policy doesn't allow inline styles). */
-.h-0 { height: 0%; }
-.h-5 { height: 5%; }
-.h-10 { height: 10%; }
-.h-15 { height: 15%; }
-.h-20 { height: 20%; }
-.h-25 { height: 25%; }
-.h-30 { height: 30%; }
-.h-35 { height: 35%; }
-.h-40 { height: 40%; }
-.h-45 { height: 45%; }
-.h-50 { height: 50%; }
-.h-55 { height: 55%; }
-.h-60 { height: 60%; }
-.h-65 { height: 65%; }
-.h-70 { height: 70%; }
-.h-75 { height: 75%; }
-.h-80 { height: 80%; }
-.h-85 { height: 85%; }
-.h-90 { height: 90%; }
-.h-95 { height: 95%; }
-.h-100 { height: 100%; }
 
 .yaml-editor { min-height: 28rem; white-space: pre; overflow-wrap: normal; overflow-x: auto; tab-size: 2; }
 
@@ -758,5 +918,4 @@ details summary { cursor: pointer; color: var(--accent); }
 }
 
 /* The users page: the "show archived accounts" toggle above the table, and a blocked or archived account's badge. */
-.archived-filter { margin: 0 0 1rem; }
 .badge-blocked { background: var(--error-bg); color: var(--error-text); }

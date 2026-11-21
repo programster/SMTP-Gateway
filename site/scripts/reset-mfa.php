@@ -37,6 +37,7 @@ function main(array $argv) : void
     }
 
     BackupCodeService::deleteAll($user);
+    MfaGraceService::cancel($user);
 
     $logger = ServiceFactory::getLogger(LogCategory::ACCESS);
 

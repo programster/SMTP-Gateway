@@ -5,6 +5,7 @@ account a link to choose its own password, making one given a password change it
 (given with the first second factor, logging in with one once, and generating new ones), and deleting them.
 """
 
+import html
 import re
 import time
 
@@ -149,7 +150,7 @@ page = admin.get('/admin/users?archived=1')
 suite.check('until archived accounts are shown', f'/admin/users/{bob_id}/restore' in page
             and f'data-action="/admin/users/{bob_id}/delete"' in page)
 page = admin.get(f'/admin/users/{bob_id}')
-suite.check('its page says it\'s archived', 'Archived account' in page and 'Restore it' in page)
+suite.check('its page says it\'s archived', 'Archived account' in page and 'Restore user' in page)
 entry_id = stack.sql(f"SELECT id FROM log WHERE context->>'user_id' = '{bob_id}' ORDER BY created_at LIMIT 1")
 page = admin.get(f'/admin/logs/{entry_id}')
 suite.check('its log entries still link to it', f'href="/admin/users/{bob_id}">Archived account</a>' in page)
@@ -311,5 +312,141 @@ suite.check('but not when some are left', response.get_header('Location') == '/'
 result = stack.run_script('reset-mfa.php', erin_email)
 remaining = stack.sql(f"SELECT count(*) FROM admin_backup_code WHERE admin_user_id = '{erin_id}'")
 suite.check('reset-mfa.php removes the backup codes too', result.returncode == 0 and remaining == '0', remaining)
+
+
+# A grace period, for an account that has lost its second factor.
+def give_second_factor() -> None:
+    """Give the account a second factor and a backup code again, directly."""
+    stack.sql(f"UPDATE admin_user SET totp_secret = 'grace-test' WHERE id = '{erin_id}'")
+    stack.sql(f"DELETE FROM admin_backup_code WHERE admin_user_id = '{erin_id}'")
+    stack.sql("INSERT INTO admin_backup_code (id, admin_user_id, code_hash) "
+              f"VALUES (gen_random_uuid(), '{erin_id}', 'grace-test')")
+
+
+def grace_until() -> str:
+    """Get when the account's grace period ends, or an empty string if it has none."""
+    return stack.sql(f"SELECT mfa_grace_until FROM admin_user WHERE id = '{erin_id}'")
+
+
+def has_second_factor() -> bool:
+    """Check whether the account still has its authenticator app."""
+    return stack.sql(f"SELECT totp_secret IS NOT NULL FROM admin_user WHERE id = '{erin_id}'") == 't'
+
+
+def give_password(given: str = password) -> Response:
+    """Give a password on the login page, in a new browser session."""
+    client = WebClient()
+    form = {'csrf_token': find_csrf_token(client.get('/login')), 'email': erin_email, 'password': given}
+    return client.request('POST', '/login', form)
+
+
+erin_path = f'/admin/users/{erin_id}'
+grace_path = f'{erin_path}/mfa-grace'
+right_password = {'current_password': stack.ADMIN_PASSWORD}
+give_second_factor()
+page = admin.get(erin_path)
+suite.check('an account with a second factor offers a grace period', f'data-action="{grace_path}"' in page)
+suite.check('and the command to remove them', 'reset-mfa.php' in page)
+suite.check('and a button to email a reset link, instead of a command', f'action="{erin_path}/password-reset"' in page
+            and 'reset-password.php' not in page)
+suite.check('without a password login skipping it first', give_password().get_header('Location')
+            == '/login/second-factor')
+response = admin.post_form(erin_path, grace_path, {'current_password': 'wrong'})
+suite.check('a grace period needs your password', response.get_status() == 400 and grace_until() == '')
+admin_id = stack.sql(f"SELECT id FROM admin_user WHERE email = '{stack.ADMIN_EMAIL.lower()}'")
+own_path = f'/admin/users/{admin_id}'
+response = admin.post_form(own_path, f'{own_path}/mfa-grace', right_password)
+suite.check('nobody can give themselves one', response.get_status() == 400, response.get_status())
+
+response = admin.post_form(erin_path, grace_path, right_password)
+suite.check('with it, the account has one', response.get_status() == 303 and grace_until() != '', grace_until())
+suite.check('which its page says', 'A grace period is active' in admin.get(erin_path))
+admin.post_form(erin_path, f'{grace_path}/cancel', {})
+suite.check('and it can be cancelled', grace_until() == '', grace_until())
+suite.check('after which the second factor is needed again', give_password().get_header('Location')
+            == '/login/second-factor')
+
+admin.post_form(erin_path, grace_path, right_password)
+stack.sql(f"UPDATE admin_user SET mfa_grace_until = now() - interval '1 minute' WHERE id = '{erin_id}'")
+suite.check('an expired one does nothing', give_password().get_header('Location') == '/login/second-factor'
+            and has_second_factor())
+
+admin.post_form(erin_path, grace_path, right_password)
+response = give_password('not-the-password')
+suite.check('a wrong password doesn\'t use it', response.get_status() == 401 and grace_until() != ''
+            and has_second_factor(), response.get_status())
+
+admin.post_form(erin_path, f'{erin_path}/block', {})
+suite.check('blocking cancels it', grace_until() == '', grace_until())
+admin.post_form(erin_path, f'{erin_path}/unblock', {})
+
+admin.post_form(erin_path, grace_path, right_password)
+response = give_password()
+codes_left = stack.sql(f"SELECT count(*) FROM admin_backup_code WHERE admin_user_id = '{erin_id}'")
+suite.check('the password alone logs in, to set up a new one', response.get_header('Location') == '/account',
+            response.get_header('Location'))
+suite.check('having removed the old second factors', not has_second_factor() and codes_left == '0', codes_left)
+suite.check('and used it up', grace_until() == '', grace_until())
+logged = stack.sql("SELECT count(*) FROM log WHERE message = 'A grace period replaced the second factors'")
+suite.check('which is logged', logged == '1', logged)
+give_second_factor()
+suite.check('so it only works once', give_password().get_header('Location') == '/login/second-factor')
+
+admin.post_form(erin_path, grace_path, right_password)
+result = stack.run_script('reset-password.php', erin_email)
+suite.check('changing the password cancels it', result.returncode == 0 and grace_until() == '', grace_until())
+
+# An administrator emailing an account a link to choose a new password.
+reset_path = f'{erin_path}/password-reset'
+stack.sql("UPDATE password_reset_token SET created_at = now() - interval '10 minutes' "
+          f"WHERE admin_user_id = '{erin_id}'")
+admin.post_form(erin_path, f'{erin_path}/block', {})
+response = admin.post_form(erin_path, reset_path, {})
+suite.check('a blocked account can\'t be sent a reset link', response.get_status() == 400, response.get_status())
+admin.post_form(erin_path, f'{erin_path}/unblock', {})
+response = admin.post_form(erin_path, reset_path, {})
+suite.check('an active one can', response.get_status() == 303, response.get_status())
+found = {'messages': []}
+deadline = time.time() + 15
+
+while len(found['messages']) == 0 and time.time() < deadline:
+    found = stack.search_mailpit(f'to:{erin_email} subject:"Reset your password"')
+    time.sleep(0.5)
+
+text = stack.get_mailpit_text(found['messages'][0]['ID']) if found['messages'] else ''
+suite.check('which says an administrator sent it', 'An administrator' in text
+            and re.search(r'/reset-password/[0-9a-f]{64}', text) is not None, text[:200])
+response = admin.post_form(erin_path, reset_path, {})
+is_refused = response.get_status() == 400 and 'last few minutes' in response.get_body()
+suite.check('but not twice in a few minutes', is_refused, response.get_status())
+response = admin.post_form(own_path, f'{own_path}/password-reset', {})
+suite.check('nor to your own account from here', response.get_status() == 400, response.get_status())
+
+# An administrator setting a random password, which the account has to change when it next logs in.
+stack.sql(f"UPDATE admin_user SET totp_secret = NULL WHERE id = '{erin_id}'")
+stack.sql(f"DELETE FROM admin_backup_code WHERE admin_user_id = '{erin_id}'")
+temporary_path = f'{erin_path}/temporary-password'
+old_hash = stack.sql(f"SELECT password_hash FROM admin_user WHERE id = '{erin_id}'")
+response = admin.post_form(erin_path, temporary_path, {})
+shown = re.search(r'id="temporary-password" value="([^"]+)"', response.get_body())
+suite.check('an admin can set a random password, shown once', response.get_status() == 200 and shown is not None,
+            response.get_status())
+temporary = html.unescape(shown.group(1)) if shown else ''
+row = stack.sql(f"SELECT must_change_password, password_hash <> '{old_hash}' FROM admin_user WHERE id = '{erin_id}'")
+suite.check('which replaces the password, and must be changed', row == 't|t', row)
+suite.check('and isn\'t logged', stack.sql(f"SELECT count(*) FROM log WHERE message LIKE '%{temporary[:8]}%' "
+                                            f"OR context::text LIKE '%{temporary[:8]}%'") == '0')
+suite.check('it logs in', give_password(temporary).get_header('Location') == '/')
+temporary_client = WebClient()
+form = {'csrf_token': find_csrf_token(temporary_client.get('/login')), 'email': erin_email, 'password': temporary}
+temporary_client.request('POST', '/login', form)
+landing = temporary_client.request('GET', '/admin/users')
+suite.check('but has to choose a new one first', landing.get_status() == 303
+            and landing.get_header('Location') != '/admin/users', landing.get_header('Location'))
+response = admin.post_form(own_path, f'{own_path}/temporary-password', {})
+suite.check('nobody can set their own this way', response.get_status() == 400, response.get_status())
+admin.post_form(erin_path, f'{erin_path}/block', {})
+response = admin.post_form(erin_path, temporary_path, {})
+suite.check('nor a blocked account\'s', response.get_status() == 400, response.get_status())
 
 suite.finish()

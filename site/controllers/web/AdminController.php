@@ -30,6 +30,17 @@ class AdminController extends AbstractController
             ->setName('admin.users.restore.submit');
 
         $group->post('/admin/users/{id}/delete', [self::class, 'deleteUser'])->setName('admin.users.delete');
+        $group->post('/admin/users/{id}/mfa-grace', [self::class, 'grantMfaGrace'])->setName('admin.users.mfa-grace');
+
+        $group->post('/admin/users/{id}/mfa-grace/cancel', [self::class, 'cancelMfaGrace'])
+            ->setName('admin.users.mfa-grace.cancel');
+
+        $group->post('/admin/users/{id}/password-reset', [self::class, 'sendPasswordReset'])
+            ->setName('admin.users.password-reset');
+
+        $group->post('/admin/users/{id}/temporary-password', [self::class, 'setTemporaryPassword'])
+            ->setName('admin.users.temporary-password');
+
         $group->get('/admin/logs', [self::class, 'showLogs'])->setName('admin.logs');
         $group->get('/admin/logs/{id}', [self::class, 'showLog'])->setName('admin.logs.entry');
     }
@@ -161,7 +172,7 @@ class AdminController extends AbstractController
         $archive = function (AdminUser $user) use ($password) : string {
             AdminUserRepository::requirePassword(WebSession::getUser(), $password);
             AdminUserRepository::archive($user);
-            return 'The account was archived. Switch on "Show archived accounts" to restore or delete it.';
+            return 'The account was archived. It can be restored or deleted from the Archived tab.';
         };
 
         return $this->changeAccount($request, $response, (string)$args['id'], 'Account archived', $archive);
@@ -237,12 +248,92 @@ class AdminController extends AbstractController
     }
 
 
+    /**
+     * Give an account a one-hour grace period, once the password of whoever is doing it has been checked.
+     * @throws NotFoundException - if there's no such account.
+     */
+    public function grantMfaGrace(Request $request, Response $response, array $args) : Response
+    {
+        $password = self::getFormField($request, 'current_password');
+
+        $grant = function (AdminUser $user) use ($password) : string {
+            AdminUserRepository::requirePassword(WebSession::getUser(), $password);
+            MfaGraceService::grant($user);
+            return 'The account has a grace period for the next hour.';
+        };
+
+        return $this->changeOnPage($response, (string)$args['id'], 'Account given an MFA grace period', $grant);
+    }
+
+
+    /**
+     * @throws NotFoundException - if there's no such account.
+     */
+    public function cancelMfaGrace(Request $request, Response $response, array $args) : Response
+    {
+        $cancel = function (AdminUser $user) : string {
+            MfaGraceService::cancel($user);
+            return 'The grace period was cancelled.';
+        };
+
+        return $this->changeOnPage($response, (string)$args['id'], 'Account\'s MFA grace period cancelled', $cancel);
+    }
+
+
+    /**
+     * Email an account a link to choose a new password.
+     * @throws NotFoundException - if there's no such account.
+     */
+    public function sendPasswordReset(Request $request, Response $response, array $args) : Response
+    {
+        $clientIp = (string)ClientIpResolver::resolve($request);
+
+        $send = function (AdminUser $user) use ($clientIp) : string {
+            PasswordResetService::sendResetFromAdmin($user, $clientIp);
+            return "A link to choose a new password was emailed to \"{$user->getEmail()}\". It works for an hour.";
+        };
+
+        return $this->changeOnPage($response, (string)$args['id'], 'Password reset link sent to account', $send);
+    }
+
+
+    /**
+     * Give an account a random password, shown once, which it has to change when it next logs in.
+     * @throws NotFoundException - if there's no such account.
+     */
+    public function setTemporaryPassword(Request $request, Response $response, array $args) : Response
+    {
+        $user = AdminUserRepository::load((string)$args['id']);
+
+        try
+        {
+            if ($user->getId() === WebSession::getUser()->getId())
+            {
+                throw new InvalidInputException('You can\'t do this to your own account.');
+            }
+
+            $password = AdminUserRepository::setTemporaryPassword($user);
+            $this->logAccountChange('Temporary password set for account', $user);
+            $page = new ViewTemporaryPasswordPage($user, $password);
+            $result = self::renderPage($response, 'Temporary password set', $page);
+        }
+        catch (InvalidInputException $e)
+        {
+            $email = ($user->getStatus() === AccountStatus::ARCHIVED) ? '' : $user->getEmail();
+            $result = self::renderUserPage($response, $user, $email, $e->getMessage(), 400);
+        }
+
+        return $result;
+    }
+
+
     public function showLogs(Request $request, Response $response) : Response
     {
         $from = self::getQueryParam($request, 'from');
         $to = self::getQueryParam($request, 'to');
         $search = (string)($request->getQueryParams()['search'] ?? '');
-        $isRegex = self::getQueryParam($request, 'regex') === '1';
+        $regexType = self::getQueryParam($request, 'regex');
+        $syntax = MessageSearchSyntax::tryFrom($regexType) ?? MessageSearchSyntax::PLAIN_TEXT;
         $levels = self::readLogLevels($request->getQueryParams()['level'] ?? '');
         $category = LogCategory::tryFrom(self::getQueryParam($request, 'category'));
         $categories = ($category === null) ? new LogCategoryCollection() : new LogCategoryCollection($category);
@@ -260,13 +351,13 @@ class AdminController extends AbstractController
         try
         {
             $context = LogContextMatch::createFromFields($contextName, $contextValue);
-            $filter = new LogFilter($from, $to, $search, $isRegex, $levels, $categories, $context);
+            $filter = new LogFilter($from, $to, $search, $syntax, $levels, $categories, $context);
             $result = LogRepository::search($filter, $logPage);
         }
         catch (InvalidInputException $e)
         {
             $any = LogContextMatch::createForAny();
-            $filter = new LogFilter('', '', $search, $isRegex, $levels, $categories, $any);
+            $filter = new LogFilter('', '', $search, $syntax, $levels, $categories, $any);
             $error = $e->getMessage();
         }
 
@@ -354,6 +445,46 @@ class AdminController extends AbstractController
             $status = ($e instanceof AccountStateException) ? 409 : 400;
             $form = NewAccountForm::createEmpty();
             $result = $this->renderUsers($response, $e->getMessage(), $form, $status, $isArchived);
+        }
+
+        return $result;
+    }
+
+
+    /**
+     * Do something to another account from its page, and go back there, saying what was done or why it couldn't be.
+     *
+     * @param Response $response - the response.
+     *
+     * @param string $userId - the account's ID.
+     *
+     * @param string $logMessage - what to log once it's done.
+     *
+     * @param Closure(AdminUser): string $change - makes the change, and returns what to tell the user.
+     *
+     * @return Response
+     *
+     * @throws NotFoundException - if there's no such account.
+     */
+    private function changeOnPage(Response $response, string $userId, string $logMessage, Closure $change) : Response
+    {
+        $user = AdminUserRepository::load($userId);
+
+        try
+        {
+            if ($user->getId() === WebSession::getUser()->getId())
+            {
+                throw new InvalidInputException('You can\'t do this to your own account.');
+            }
+
+            WebSession::flash($change($user));
+            $this->logAccountChange($logMessage, $user);
+            $result = self::redirect($response, '/admin/users/' . rawurlencode($user->getId()));
+        }
+        catch (InvalidInputException | ConfigurationException $e)
+        {
+            $email = ($user->getStatus() === AccountStatus::ARCHIVED) ? '' : $user->getEmail();
+            $result = self::renderUserPage($response, $user, $email, $e->getMessage(), 400);
         }
 
         return $result;
@@ -476,7 +607,7 @@ class AdminController extends AbstractController
      *
      * @param int $status - the HTTP status.
      *
-     * @param bool $isShowingArchived - whether to list the archived accounts too.
+     * @param bool $isShowingArchived - whether the Archived tab is the one open.
      *
      * @return Response
      */
@@ -497,7 +628,7 @@ class AdminController extends AbstractController
         }
 
         $users = new AdminUserSummaryCollection(...$summaries);
-        $archived = $isShowingArchived ? AdminUserRepository::loadArchived() : new AdminUserCollection();
+        $archived = AdminUserRepository::loadArchived();
         $page = new ViewUsersPage($users, $archived, $isShowingArchived, WebSession::getUser(), $form, $error);
         return self::renderPage($response, 'Users', $page, $status);
     }

@@ -254,21 +254,30 @@ final class AdminUserRepository
      */
     public static function changePassword(AdminUser $user, string $newPassword) : AdminUser
     {
-        $hash = self::hashPassword($newPassword);
-        $id = DB::escape($user->getId());
+        return self::replacePassword($user, $newPassword, false);
+    }
 
-        $change = function () use ($user, $hash, $id) : void {
-            $changes = ['password_hash' => $hash, 'session_version' => $user->getSessionVersion() + 1];
-            $user->update($changes + ['must_change_password' => false]);
 
-            ServiceFactory::getDb()->query(
-                "UPDATE \"password_reset_token\" SET \"used_at\" = now() WHERE \"admin_user_id\" = {$id}"
-                . ' AND "used_at" IS NULL'
-            );
-        };
+    /**
+     * Give an active account a new random password, which it has to change when it next logs in. Like any password
+     * change, this logs it out everywhere, and cancels its reset links and any grace period.
+     *
+     * @param AdminUser $user - the account.
+     *
+     * @return string - the new password, which can't be got again.
+     *
+     * @throws InvalidInputException - if the account is blocked or archived.
+     */
+    public static function setTemporaryPassword(AdminUser $user) : string
+    {
+        if ($user->getStatus() !== AccountStatus::ACTIVE)
+        {
+            throw new InvalidInputException('Only an active account can be given a temporary password.');
+        }
 
-        DB::transaction($change);
-        return self::load($user->getId());
+        $password = PasswordGenerator::generate(self::getPasswordPolicy());
+        self::replacePassword($user, $password, true);
+        return $password;
     }
 
 
@@ -328,7 +337,7 @@ final class AdminUserRepository
 
             $db->query(
                 "UPDATE \"admin_user\" SET \"status\" = 'blocked', \"status_changed_at\" = now(),"
-                . " \"session_version\" = \"session_version\" + 1 WHERE \"id\" = {$id}"
+                . " \"mfa_grace_until\" = NULL, \"session_version\" = \"session_version\" + 1 WHERE \"id\" = {$id}"
             );
 
             $db->query(
@@ -393,8 +402,8 @@ final class AdminUserRepository
             $db->query(
                 "UPDATE \"admin_user\" SET \"status\" = 'archived', \"status_changed_at\" = now(), \"email\" = NULL,"
                 . " \"password_hash\" = {$unusablePassword}, \"totp_secret\" = NULL, \"totp_last_used_step\" = NULL,"
-                . " \"must_change_password\" = false, \"session_version\" = \"session_version\" + 1"
-                . " WHERE \"id\" = {$id}"
+                . " \"must_change_password\" = false, \"mfa_grace_until\" = NULL,"
+                . " \"session_version\" = \"session_version\" + 1 WHERE \"id\" = {$id}"
             );
 
             foreach (['admin_webauthn_credential', 'admin_backup_code', 'password_reset_token'] as $table)
@@ -503,6 +512,41 @@ final class AdminUserRepository
     public static function getPasswordPolicy() : PasswordPolicy
     {
         return Settings::get()->getSecurity()->getPasswordPolicy();
+    }
+
+
+    /**
+     * Replace an account's password, logging it out everywhere, and cancelling its reset links and any grace period.
+     *
+     * @param AdminUser $user - the account.
+     *
+     * @param string $newPassword - the new password, which must meet the rules.
+     *
+     * @param bool $mustChange - whether it has to choose another when it next logs in.
+     *
+     * @return AdminUser - the account as it now is.
+     *
+     * @throws InvalidInputException - if the new password doesn't meet the rules.
+     */
+    private static function replacePassword(AdminUser $user, string $newPassword, bool $mustChange) : AdminUser
+    {
+        $hash = self::hashPassword($newPassword);
+        $id = DB::escape($user->getId());
+
+        $change = function () use ($user, $hash, $id, $mustChange) : void {
+            $changes = ['password_hash' => $hash, 'session_version' => $user->getSessionVersion() + 1];
+
+            // A grace period ends here, so a reset link can't be combined with one to get past the second factor.
+            $user->update($changes + ['must_change_password' => $mustChange, 'mfa_grace_until' => null]);
+
+            ServiceFactory::getDb()->query(
+                "UPDATE \"password_reset_token\" SET \"used_at\" = now() WHERE \"admin_user_id\" = {$id}"
+                . ' AND "used_at" IS NULL'
+            );
+        };
+
+        DB::transaction($change);
+        return self::load($user->getId());
     }
 
 

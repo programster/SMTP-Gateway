@@ -1,7 +1,7 @@
 /*
- * The order of the enabled providers on the Providers page, which they're tried in for the overflow and fallback
- * modes: their rows are dragged into another order (see SortableRows), and once it has changed, a bar appears to save
- * it, which posts each provider's name, in order, as "order_0", "order_1" and so on (or to undo it).
+ * The order of the providers on the Providers page, which they're tried in, in every mode (a disabled one keeps its
+ * place, and is skipped): their rows are dragged into another order (see SortableRows), and once it has changed, a bar
+ * appears to save it, which posts each provider's name, in order, as "order_0", "order_1" and so on (or to undo it).
  */
 
 import { Elements } from './Elements.js';
@@ -16,7 +16,7 @@ export class ProviderOrder
 
 
     /**
-     * @param rows - the element whose rows are the enabled providers, each with its name as data-name.
+     * @param rows - the element whose rows are the providers, each with its name as data-name.
      * @param form - the form that saves the order, with a [data-role=names] element to put the names in.
      */
     public constructor(rows: HTMLElement, form: HTMLFormElement)

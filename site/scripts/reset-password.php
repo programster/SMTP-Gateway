@@ -33,48 +33,12 @@ function main(array $argv) : void
         exit(1);
     }
 
-    $password = generatePassword();
+    $password = PasswordGenerator::generate(AdminUserRepository::getPasswordPolicy());
     AdminUserRepository::changePassword($user, $password);
     $logger = ServiceFactory::getLogger(LogCategory::ACCESS);
     $logger->warning('Password was reset from the command line', ['user_id' => $user->getId()]);
     print "The password for \"{$user->getEmail()}\" is now: {$password}" . PHP_EOL;
     print "Change it from \"My account\" once you've logged in." . PHP_EOL;
-}
-
-
-/**
- * Generate a random password that meets any of the rules that can be set under Settings > Security: 20 characters (or
- * the minimum length, if that's more), with at least one capital letter, number and symbol, leaving out characters
- * that are easily mixed up (0/O, 1/l/I).
- */
-function generatePassword() : string
-{
-    $lower = 'abcdefghijkmnopqrstuvwxyz';
-    $capitals = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-    $numbers = '23456789';
-    $symbols = '!@#%*-_+=?';
-    $length = max(20, AdminUserRepository::getPasswordPolicy()->getMinLength());
-    $characters = [pickCharacter($capitals), pickCharacter($numbers), pickCharacter($symbols)];
-
-    while (count($characters) < $length)
-    {
-        $characters[] = pickCharacter($lower . $capitals . $numbers);
-    }
-
-    // Shuffle them (Fisher-Yates, with a secure random source), so the capital, number and symbol aren't always first.
-    for ($i = count($characters) - 1; $i > 0; $i--)
-    {
-        $j = random_int(0, $i);
-        [$characters[$i], $characters[$j]] = [$characters[$j], $characters[$i]];
-    }
-
-    return implode('', $characters);
-}
-
-
-function pickCharacter(string $alphabet) : string
-{
-    return $alphabet[random_int(0, strlen($alphabet) - 1)];
 }
 
 

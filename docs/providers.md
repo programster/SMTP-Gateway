@@ -11,11 +11,13 @@ The providers are set under **Providers** in the web interface, which keeps them
   where to find it in the provider's dashboard. Its own rate limits are on the same form.
 * Each **secret** (a password, key or token) is entered there, and written into `settings.yaml`. It's
   never shown again, and when editing, one left blank keeps the value it has.
-* The enabled providers are listed first, and the disabled ones below. Drag an enabled provider by its
-  handle (or focus the handle and use the up and down arrow keys) to change the order they're tried in,
-  for the overflow and fallback modes, then **Save the order**. Each has a pencil to edit it, and a
-  dustbin to remove it, which asks first. The last enabled provider can't be removed, as no email could
-  be sent. A provider's type can't be changed: add one of the other type.
+* The providers are in one list. Drag one by its handle to change the order they're tried in, in every
+  mode (in round robin, it's the order they take turns in), then **Save the order**. Without a mouse, press Tab until the handle is
+  selected, then use the up and down arrow keys. A disabled provider keeps its place and is skipped: with
+  1, 2 and 3, and 2 disabled, they're tried 1, then 3.
+* Each has a toggle that enables or disables it, which saves straight away, a pencil to edit it, and a
+  dustbin to remove it, which asks first. The last enabled provider can't be disabled or removed, as no
+  email could be sent. A provider's type can't be changed: add one of the other type.
 * Clicking a provider's name shows its own page: its id, settings (secrets never shown), rate limits,
   attempts, status, where it is in the order, and the email tokens [restricted to
   it](sending-email.md#restricting-the-providers).

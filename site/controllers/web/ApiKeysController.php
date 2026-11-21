@@ -25,7 +25,8 @@ class ApiKeysController extends AbstractController
     {
         // The first row of the allowed IP addresses (see ViewValueRows) is the address being used now.
         $defaults = ['name' => '', 'allowed_ips_0' => (string)ClientIpResolver::resolve($request)];
-        $page = new ViewApiKeysPage(ApiKeyRepository::loadAll(), $defaults, '');
+        $isShowingRevoked = (self::getQueryParam($request, 'revoked') === '1');
+        $page = new ViewApiKeysPage(ApiKeyRepository::loadAll(), $isShowingRevoked, $defaults, '');
         return self::renderPage($response, 'API keys', $page);
     }
 
@@ -60,7 +61,7 @@ class ApiKeysController extends AbstractController
                 $values['allowed_ips_' . ($row - 1)] = $value;
             }
 
-            $page = new ViewApiKeysPage(ApiKeyRepository::loadAll(), $values, $e->getMessage());
+            $page = new ViewApiKeysPage(ApiKeyRepository::loadAll(), false, $values, $e->getMessage());
             $result = self::renderPage($response, 'API keys', $page, 400);
         }
 

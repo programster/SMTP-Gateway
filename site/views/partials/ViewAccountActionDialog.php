@@ -1,10 +1,10 @@
 <?php
 
 /*
- * The dialog for archiving or deleting an account: what will happen, and a field for the password of whoever is doing
- * it. Each button that opens it (see ConfirmDialog.ts) says which account, with its data-action (where the form
- * posts) and data-name (the account, as shown in the dialog). Submitting it does the action, once the server has
- * checked the password.
+ * The dialog for archiving or deleting an account, or giving it a grace period: what will happen, and a field for the
+ * password of whoever is doing it. Each button that opens it (see ConfirmDialog.ts) says which account, with its
+ * data-action (where the form posts) and data-name (the account, as shown in the dialog). Submitting it does the
+ * action, once the server has checked the password.
  */
 
 declare(strict_types = 1);
@@ -36,6 +36,12 @@ class ViewAccountActionDialog extends Programster\AbstractView\AbstractView
                 recovered. Only its ID is kept, which is all the logs name it by, so they still make sense.</p>
             <p>It can be restored later, but its email address will have to be entered again, and it will need a new
                 password. To remove it completely, delete it from the archived accounts afterwards.</p>
+        <?php elseif ($action === AccountAction::MFA_GRACE): ?>
+            <h3 id="<?= Html::e($id) ?>-title">Give <span data-role="name"></span> a grace period?</h3>
+            <p>For the next hour, anyone with this account's password can log in without a second factor. That first
+                login removes its authenticator app, security keys and backup codes, and takes them to set up a new
+                one. It only works once.</p>
+            <p>Only do this once you're sure the request really came from them.</p>
         <?php else: ?>
             <h3 id="<?= Html::e($id) ?>-title">Delete <span data-role="name"></span> for good?</h3>
             <p>The account, and everything linked to it, is removed from the database, and this can't be undone. Log

@@ -26,7 +26,15 @@ class AdminUserTable extends AbstractUuidTable
 
     public function getFieldsThatAllowNull() : array
     {
-        return ['email', 'totp_secret', 'totp_last_used_step', 'last_login_at', 'last_login_ip', 'status_changed_at'];
+        return [
+            'email',
+            'totp_secret',
+            'totp_last_used_step',
+            'last_login_at',
+            'last_login_ip',
+            'status_changed_at',
+            'mfa_grace_until',
+        ];
     }
 
 

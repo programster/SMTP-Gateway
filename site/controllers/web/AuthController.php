@@ -394,8 +394,8 @@ class AuthController extends AbstractController
 
 
     /**
-     * Carry on logging in, once the password (or Google) has been checked: on to the second factor if the account
-     * has one, or straight in if not.
+     * Carry on logging in, once the password (or Google) has been checked: with a grace period if a password login
+     * has one to use, on to the second factor if the account has one, or straight in if not.
      */
     private function continueLogin(
         Request $request,
@@ -404,7 +404,20 @@ class AuthController extends AbstractController
         LoginMethod $method
     ) : Response
     {
-        if (AdminUserRepository::hasSecondFactor($user))
+        if ($method === LoginMethod::PASSWORD && MfaGraceService::redeem($user))
+        {
+            $changed = AdminUserRepository::load($user->getId());
+            $this->completeLogin($request, $changed, LoginMethod::PASSWORD_WITH_MFA_GRACE);
+
+            ServiceFactory::getLogger(LogCategory::ACCESS)->warning('A grace period replaced the second factors', [
+                'user_id' => $changed->getId(),
+                'client_ip' => (string)ClientIpResolver::resolve($request),
+            ]);
+
+            WebSession::flash('Your old second factors have been removed. Set up a new one below.');
+            $result = self::redirect($response, '/account');
+        }
+        elseif (AdminUserRepository::hasSecondFactor($user))
         {
             WebSession::setPendingLogin($user);
             $result = self::redirect($response, '/login/second-factor');

@@ -23,6 +23,7 @@ class AdminUser extends \Programster\PgsqlObjects\AbstractRecord
     private bool $m_mustChangePassword;
     private string $m_status;
     private ?string $m_statusChangedAt;
+    private ?string $m_mfaGraceUntil;
 
 
     public function getTableHandler() : TableInterface
@@ -45,6 +46,7 @@ class AdminUser extends \Programster\PgsqlObjects\AbstractRecord
             'must_change_password' => function () : bool { return $this->m_mustChangePassword; },
             'status' => function () : string { return $this->m_status; },
             'status_changed_at' => function () : ?string { return $this->m_statusChangedAt; },
+            'mfa_grace_until' => function () : ?string { return $this->m_mfaGraceUntil; },
         ];
     }
 
@@ -63,6 +65,7 @@ class AdminUser extends \Programster\PgsqlObjects\AbstractRecord
             'must_change_password' => function (bool $value) : void { $this->m_mustChangePassword = $value; },
             'status' => function (string $value) : void { $this->m_status = $value; },
             'status_changed_at' => function (?string $value) : void { $this->m_statusChangedAt = $value; },
+            'mfa_grace_until' => function (?string $value) : void { $this->m_mfaGraceUntil = $value; },
         ];
     }
 
@@ -108,6 +111,19 @@ class AdminUser extends \Programster\PgsqlObjects\AbstractRecord
     }
 
 
+    /**
+     * Check whether the account has a grace period that hasn't expired (see MfaGraceService).
+     * @return bool
+     */
+    public function hasActiveMfaGrace() : bool
+    {
+        return (
+               $this->m_mfaGraceUntil !== null
+            && new DateTimeImmutable($this->m_mfaGraceUntil) > new DateTimeImmutable()
+        );
+    }
+
+
     # Accessors
     public function getPasswordHash() : string { return $this->m_passwordHash; }
     public function getTotpSecret() : ?string { return $this->m_totpSecret; }
@@ -118,4 +134,5 @@ class AdminUser extends \Programster\PgsqlObjects\AbstractRecord
     public function getLastLoginIp() : ?string { return $this->m_lastLoginIp; }
     public function mustChangePassword() : bool { return $this->m_mustChangePassword; }
     public function getStatusChangedAt() : ?string { return $this->m_statusChangedAt; }
+    public function getMfaGraceUntil() : ?string { return $this->m_mfaGraceUntil; }
 }

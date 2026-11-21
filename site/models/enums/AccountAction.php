@@ -1,8 +1,8 @@
 <?php
 
 /*
- * The things done to an account that can't simply be undone, so need the password of whoever does them, in a
- * dialog that says what will happen (see ViewAccountActionDialog).
+ * The things done to an account that can't simply be undone, or that weaken its security, so need the password of
+ * whoever does them, in a dialog that says what will happen (see ViewAccountActionDialog).
  */
 
 declare(strict_types = 1);
@@ -15,6 +15,9 @@ enum AccountAction : string
 
     // Delete an archived account for good.
     case DELETE = 'delete';
+
+    // Let its next password login, within the hour, replace its second factors (see MfaGraceService).
+    case MFA_GRACE = 'mfa-grace';
 
 
     /**
@@ -37,8 +40,9 @@ enum AccountAction : string
     public function getButtonLabel() : string
     {
         return match ($this) {
-            AccountAction::ARCHIVE => 'Archive it',
-            AccountAction::DELETE => 'Delete it for good',
+            AccountAction::ARCHIVE => 'Archive user',
+            AccountAction::DELETE => 'Delete user for good',
+            AccountAction::MFA_GRACE => 'Give a 1-hour grace period',
         };
     }
 }

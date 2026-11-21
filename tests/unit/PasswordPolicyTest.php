@@ -81,4 +81,12 @@ $tooLong = function () : void {
 $suite->checkThrows('a minimum below 8 is refused', InvalidInputException::class, $tooShort);
 $suite->checkThrows('as is one over 64, past what bcrypt uses', InvalidInputException::class, $tooLong);
 
+$isAlwaysValid = true;
+
+for ($i = 0; $i < 200; $i++)
+{
+    $isAlwaysValid = ($isAlwaysValid && $isAccepted($default, PasswordGenerator::generate($default)));
+}
+
+$suite->check('a generated password always meets the rules', $isAlwaysValid);
 $suite->finish();

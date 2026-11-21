@@ -78,6 +78,22 @@ final class Time
 
 
     /**
+     * Get how many whole days passed between two times.
+     *
+     * @param string $from - the earlier time, as read from the database.
+     *
+     * @param string $to - the later time, as read from the database.
+     *
+     * @return int - 0 for less than a day.
+     */
+    public static function getDaysBetween(string $from, string $to) : int
+    {
+        $seconds = (new DateTimeImmutable($to))->getTimestamp() - (new DateTimeImmutable($from))->getTimestamp();
+        return max(0, intdiv($seconds, 86400));
+    }
+
+
+    /**
      * Describe how long ago something was last used: in whole days, e.g. "12 days ago", or, if it was less than a day
      * ago, as describeAgo() does, e.g. "3 hours ago" or "10 seconds ago".
      *

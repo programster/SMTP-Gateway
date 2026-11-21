@@ -175,6 +175,49 @@ final class PasswordResetService
     }
 
 
+    /**
+     * Email an account a link to choose a new password, because an administrator asked to. Unlike someone asking on
+     * the login page, whoever asked can be told when it wasn't sent, and why.
+     *
+     * @param AdminUser $user - the account.
+     *
+     * @param string $clientIp - the IP address of the administrator.
+     *
+     * @return void
+     *
+     * @throws InvalidInputException - if it can't log in, or was sent a link in the last few minutes.
+     * @throws ConfigurationException - if PUBLIC_URL, or the address the service's own emails are sent from, isn't set.
+     */
+    public static function sendResetFromAdmin(AdminUser $user, string $clientIp) : void
+    {
+        if ($user->getStatus()->canLogIn() === false)
+        {
+            throw new InvalidInputException('A blocked or archived account can\'t be sent a password reset link.');
+        }
+
+        if (self::wasEmailedRecently($user))
+        {
+            throw new InvalidInputException('This account was sent a link in the last few minutes. Try again later.');
+        }
+
+        $minutes = self::TOKEN_LIFETIME_MINUTES;
+        $siteUrl = Config::get()->getPublicUrl();
+
+        $writeText = function (string $link) use ($minutes, $siteUrl) : string {
+            return
+                "An administrator of the SMTP gateway at {$siteUrl} has sent you this link to set a new password for"
+                . " your account.\r\n\r\n"
+                . "To choose a new password, open this link within {$minutes} minutes. It only works once:\r\n\r\n"
+                . "{$link}\r\n\r\n"
+                . "You'll still need your second factor (authenticator app or security key) to log in"
+                . " afterwards.\r\n\r\n"
+                . "If you weren't expecting this, you can ignore this email: your password hasn't been changed.\r\n";
+        };
+
+        self::sendLink($user, $clientIp, $minutes, 'Reset your password', $writeText);
+    }
+
+
     private static function wasEmailedRecently(AdminUser $user) : bool
     {
         $seconds = self::MIN_SECONDS_BETWEEN_EMAILS;

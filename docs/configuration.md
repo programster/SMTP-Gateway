@@ -33,7 +33,7 @@ restart:
 | General | The time zone times are shown in. Times are stored in UTC. | UTC |
 | Security | Whether every web account must use two-factor authentication, and what a password must have: a minimum length (8 to 64), and optionally a capital letter, a number and a symbol, checked whenever a password is set | Required, and at least 12 characters, with a capital letter, a number and a symbol |
 | Proxies | Whether the site is behind Cloudflare (see below), and your own reverse proxies, whose `X-Forwarded-For` header is believed | Not behind Cloudflare, and none |
-| Sending (on the General page) | The address password reset emails are sent from, and how long a client waits to be told an email was sent (0 to 60 seconds) | None, and 5 seconds |
+| Sending (on&nbsp;the&nbsp;General&nbsp;page) | The address password reset emails are sent from, and how long a client waits to be told an email was sent (0 to 60 seconds) | None, and 5 seconds |
 | Email retention | How long emails and logs are kept: see [How long emails are kept](retention.md) | Records and logs 90 days, content not kept |
 | SSO | Logging in with Google: see [Logging in with Google](web-interface.md#logging-in-with-google) | Off |
 

@@ -306,7 +306,7 @@ class ViewProviderPage extends Programster\AbstractView\AbstractView
 
 
     /**
-     * Describe where the provider is in the order they're tried in (for the overflow and fallback modes).
+     * Describe where the provider is in the order they're tried in.
      */
     private function describePlace() : string
     {
