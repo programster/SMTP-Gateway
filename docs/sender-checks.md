@@ -68,7 +68,12 @@ sending domains with its DNS verified (listing the records that aren't), whether
 each domain (until then, it only sends to the account's owner), and that a webhook posts here for
 deliveries and bounces. Mailtrap's API doesn't show a webhook's signing secret, so that isn't checked.
 
-Every provider's API is only ever read from (GET requests). SendGrid's API key only needs **Mail Send**
+For each enabled **SMTP2GO** provider, with an `api_key`: whether each sender's domain has its DKIM and
+return-path records verified (listing the records that aren't), or the address is a verified single
+sender.
+
+Every provider's API is only ever read from. That's with GET requests, apart from SMTP2GO's, which needs
+POST even to read, so only its two view endpoints can be reached that way. SendGrid's API key only needs **Mail Send**
 to send email, so the rest is optional: a check the key isn't allowed to make says which permission
 would allow it. Giving it read access to **Sender Authentication** (`whitelabel.read`), the verified
 senders, and the event webhook settings (`user.webhooks.event.settings.read`) lets everything be

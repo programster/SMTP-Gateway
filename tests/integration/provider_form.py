@@ -25,11 +25,12 @@ REQUIRED = {
     'mailjet': {'mailjet_api_key': 'public-key', 'mailjet_secret_key': 'mailjet-secret'},
     'mailersend': {'mailersend_smtp_username': 'user@example.org', 'mailersend_smtp_password': 'mailersend-secret'},
     'mailtrap': {'mailtrap_smtp_token': 'mailtrap-secret'},
+    'smtp2go': {'smtp2go_smtp_username': 'relay-user', 'smtp2go_smtp_password': 'smtp2go-secret'},
     'custom': {'custom_host': 'smtp.example.org', 'custom_port': '587', 'custom_security': 'tls'},
 }
 
 SECRETS = ['SG.sendgrid-secret', 'mailgun-secret', 'postmark-secret', 'brevo-secret', 'mailjet-secret',
-           'mailersend-secret', 'mailtrap-secret']
+           'mailersend-secret', 'mailtrap-secret', 'smtp2go-secret']
 
 
 def get_version(page: str) -> str:

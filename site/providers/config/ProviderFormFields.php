@@ -32,6 +32,7 @@ final class ProviderFormFields
             ProviderType::MAILJET => self::getMailjetFields(),
             ProviderType::MAILERSEND => self::getMailerSendFields(),
             ProviderType::MAILTRAP => self::getMailtrapFields(),
+            ProviderType::SMTP2GO => self::getSmtp2GoFields(),
             ProviderType::CUSTOM => self::getCustomFields(),
         };
     }
@@ -131,6 +132,19 @@ final class ProviderFormFields
             ProviderField::createSecret('smtp_token', 'SMTP token', true, $smtpTokenHint),
             ProviderField::createSecret('api_token', 'API token', false, $apiTokenHint),
             ProviderField::createSecret('webhook_secret', 'Webhook secret', false, self::WEBHOOK_SECRET_HINT),
+        );
+    }
+
+
+    private static function getSmtp2GoFields() : ProviderFieldCollection
+    {
+        $usernameHint = 'One of the account\'s SMTP users, under Sending > SMTP Users.';
+        $apiKeyHint = 'Optional. For the sender checks: it only needs to view sender domains and single sender emails.';
+
+        return new ProviderFieldCollection(
+            ProviderField::createText('smtp_username', 'SMTP username', true, $usernameHint),
+            ProviderField::createSecret('smtp_password', 'SMTP password', true, ''),
+            ProviderField::createSecret('api_key', 'API key', false, $apiKeyHint),
         );
     }
 

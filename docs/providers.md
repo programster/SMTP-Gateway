@@ -6,7 +6,7 @@ The providers are set under **Settings > Providers** in the web interface, which
 ## Adding and editing them
 
 * **Add a provider** asks for its type first (SendGrid, Mailgun, Postmark, Brevo, Mailjet, MailerSend,
-  Mailtrap, or your own SMTP server), then shows that type's fields: e.g. an API key for SendGrid, an SMTP
+  Mailtrap, SMTP2GO, or your own SMTP server), then shows that type's fields: e.g. an API key for SendGrid, an SMTP
   login and password for Mailgun, or a public and secret key for Mailjet. Each field says what it is, and
   where to find it in the provider's dashboard. Its own rate limits are on the same form.
 * Each **secret** (a password, key or token) is entered there, and written into `settings.yaml`. It's
@@ -150,11 +150,13 @@ and the webhook's key or secret switches on recording what happens to each email
 | [`mailjet`](#mailjet) | `api_key`, `secret_key` | `webhook_secret` | HTTP Basic auth |
 | [`mailersend`](#mailersend) | `smtp_username`, `smtp_password` | `api_token`, `webhook_secret` | a signature |
 | [`mailtrap`](#mailtrap) | `smtp_token` | `api_token`, `webhook_secret` | a signature |
+| [`smtp2go`](#smtp2go) | `smtp_username`, `smtp_password` | `api_key` | (no events yet) |
 | [`custom`](#custom) | `host`, `port`, `security` | `username`, `password`, `dkim_selector` | (no events) |
 
 Each type also removes the provider's own control headers that a client sent, as they could change how
 the provider sends the email (e.g. add recipients, or post a copy of it somewhere), and adds one carrying
-the email's ID, which the provider passes back in its events.
+the email's ID, which the provider passes back in its events (except SMTP2GO, whose events aren't read
+yet).
 
 ## SendGrid
 
@@ -440,6 +442,16 @@ check signatures, not make them), so it can be written into `settings.yaml` as i
 * **Headers**: every `X-MT-*` header the client sent is removed, and `X-MT-Custom-Variables` is set to
   the email's ID.
 
+## SMTP2GO
+
+Sends through `mail.smtp2go.com` on port 587, with STARTTLS. Its webhooks aren't read yet, so emails
+show as sent, without whether they were then delivered or bounced.
+
+* **`smtp_username`** and **`smtp_password`**: one of the account's SMTP users (Sending > SMTP Users).
+* **`api_key`** (optional): for the sender checks. It only needs to use `/domain/view` and
+  `/single_sender_emails/view` (Sending > API Keys > Permissions).
+* **Headers**: every `X-Smtp2go-*` header the client sent is removed.
+
 ## Custom
 
 An SMTP server of your own, e.g. mailcow or Postfix. It can't report events.
@@ -455,3 +467,44 @@ Its saved password is only ever sent to the server it was saved for: changing th
 their own just by changing the host. The web session that entered it is the exception, so a typo in the
 host can be fixed straight away. On the form, any other session has to type it again, as does a change
 through the YAML editor or the API that keeps it as `<unchanged>`.
+
+### Setting up mailcow
+
+To send through mailcow, create one SMTP-only mailbox that's allowed to send as your domains. The
+tutorial [Mailcow - Create SMTP Credentials for Entire Domains](https://blog.programster.org/mailcow-create-smtp-credentials-for-entire-domains)
+has each step. In short:
+
+1. Add a mailbox (e.g. `relay`) under **E-Mail > Configuration > Mailboxes**, with **SMTP** as its only
+   allowed protocol.
+2. Edit it, and under **Allow to send as**, tick **Disable sender check for domain...** for each domain
+   it should send as. Avoid the `*` option, which also allows domains you don't host.
+3. Log in as the mailbox, and create an **app password** with **SMTP** as its only protocol. App
+   passwords don't inherit the mailbox's allowed protocols, so it needs its own restriction.
+4. For each domain, publish the DKIM key from mailcow's **ARC/DKIM keys** settings, and include the
+   mailcow server in the domain's SPF record.
+
+Then add it as a custom provider, using the mailbox's full address as the username:
+
+```yaml
+- name: "mailcow"
+  type: "custom"
+  enabled: true
+  host: "mail.example.org"
+  port: 587
+  security: "tls"                # or port 465 with "ssl"
+  username: "relay@example.org"
+  password: "the-app-password"
+  dkim_selector: "dkim"
+  allowed_senders:
+    domains: ["example.org"]     # the domains ticked in step 2
+  rate_limits: []
+```
+
+Set `allowed_senders` to the domains ticked in step 2, so email from any other domain isn't routed to
+a server that will refuse it (see [Restricting the senders a provider takes](#restricting-the-senders-a-provider-takes)).
+
+The envelope sender a service uses is passed on to mailcow as it is, so it has to be a real mailbox or
+alias on one of those domains, and should match the From domain for DMARC alignment.
+
+If **Enforce TLS outgoing** is turned on for the mailbox, email to receiving servers without TLS won't
+be delivered.

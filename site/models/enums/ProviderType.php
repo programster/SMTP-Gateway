@@ -19,6 +19,7 @@ enum ProviderType : string
     case MAILJET = 'mailjet';
     case MAILERSEND = 'mailersend';
     case MAILTRAP = 'mailtrap';
+    case SMTP2GO = 'smtp2go';
 
     // An SMTP server of your own, e.g. mailcow or Postfix (or Mailpit, while developing).
     case CUSTOM = 'custom';
@@ -39,6 +40,7 @@ enum ProviderType : string
             ProviderType::MAILJET => true,
             ProviderType::MAILERSEND => true,
             ProviderType::MAILTRAP => true,
+            ProviderType::SMTP2GO => false,
             ProviderType::CUSTOM => false,
         };
     }
@@ -58,6 +60,7 @@ enum ProviderType : string
             ProviderType::MAILJET => 'Mailjet',
             ProviderType::MAILERSEND => 'MailerSend',
             ProviderType::MAILTRAP => 'Mailtrap',
+            ProviderType::SMTP2GO => 'SMTP2GO',
             ProviderType::CUSTOM => 'Your own SMTP server',
         };
     }

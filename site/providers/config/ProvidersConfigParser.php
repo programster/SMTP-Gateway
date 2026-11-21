@@ -292,6 +292,7 @@ final class ProvidersConfigParser
                 ProviderType::MAILJET => self::parseMailjetSettings($data, $where, $previous),
                 ProviderType::MAILERSEND => self::parseMailerSendSettings($data, $where, $previous),
                 ProviderType::MAILTRAP => self::parseMailtrapSettings($data, $where, $previous),
+                ProviderType::SMTP2GO => self::parseSmtp2GoSettings($data, $where, $previous),
                 ProviderType::CUSTOM => self::parseSmtpSettings($data, $where, $previous),
             };
 
@@ -457,6 +458,25 @@ final class ProvidersConfigParser
             self::readValue($data, 'smtp_token', true, true, $previous),
             self::readValue($data, 'api_token', false, true, $previous),
             self::readValue($data, 'webhook_secret', false, true, $previous),
+        );
+    }
+
+
+    /**
+     * @throws InvalidInputException
+     */
+    private static function parseSmtp2GoSettings(
+        array $data,
+        string $where,
+        PreviousSettings $previous
+    ) : Smtp2GoSettings
+    {
+        self::assertKnownKeys($data, [...self::COMMON_KEYS, 'smtp_username', 'smtp_password', 'api_key'], $where);
+
+        return new Smtp2GoSettings(
+            self::readValue($data, 'smtp_username', true, false, $previous),
+            self::readValue($data, 'smtp_password', true, true, $previous),
+            self::readValue($data, 'api_key', false, true, $previous),
         );
     }
 

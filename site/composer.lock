@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "28c0178fb658914bb4a770f6676a79b2",
+    "content-hash": "dd595c1c20d855cf96ec4bb0bbfaf205",
     "packages": [
         {
             "name": "brick/math",
@@ -1549,20 +1549,23 @@
         },
         {
             "name": "programster/abstract-view",
-            "version": "1.1.1",
+            "version": "2.0.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/programster/package-abstract-view.git",
-                "reference": "01bd9f8a9c5160ed5cc43784dbf2c51bc8bce906"
+                "reference": "ef0d5e240d99152ea1fb4a120477b0c50c0f0e06"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/programster/package-abstract-view/zipball/01bd9f8a9c5160ed5cc43784dbf2c51bc8bce906",
-                "reference": "01bd9f8a9c5160ed5cc43784dbf2c51bc8bce906",
+                "url": "https://api.github.com/repos/programster/package-abstract-view/zipball/ef0d5e240d99152ea1fb4a120477b0c50c0f0e06",
+                "reference": "ef0d5e240d99152ea1fb4a120477b0c50c0f0e06",
                 "shasum": ""
             },
             "require": {
-                "php": ">=8.0.0"
+                "php": "^8.2"
+            },
+            "require-dev": {
+                "phpstan/phpstan": "^2.3"
             },
             "type": "library",
             "autoload": {
@@ -1589,9 +1592,9 @@
             ],
             "support": {
                 "issues": "https://github.com/programster/package-abstract-view/issues",
-                "source": "https://github.com/programster/package-abstract-view/tree/1.1.1"
+                "source": "https://github.com/programster/package-abstract-view/tree/2.0.0"
             },
-            "time": "2025-02-04T12:38:21+00:00"
+            "time": "2026-11-21T14:51:05+00:00"
         },
         {
             "name": "programster/autoloader",
@@ -3891,5 +3894,5 @@
         "ext-gd": "1",
         "ext-zip": "1"
     },
-    "plugin-api-version": "2.6.0"
+    "plugin-api-version": "2.9.0"
 }

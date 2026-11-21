@@ -12,7 +12,7 @@
         "lbuchs/webauthn": "^2.2",
         "league/commonmark": "^2.7",
         "phpmailer/phpmailer": "^6.9",
-        "programster/abstract-view": "^1.1.1",
+        "programster/abstract-view": "^2.0",
         "programster/autoloader": "^1.0.3",
         "programster/collections": "^4.0",
         "programster/core-libs": "^4.0",

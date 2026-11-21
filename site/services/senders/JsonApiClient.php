@@ -2,7 +2,8 @@
 
 /*
  * Reads from a provider's JSON web API, for the sender checks (sending itself goes through each provider's SMTP
- * relay). It only ever makes GET requests, so it can't change anything in the provider's account.
+ * relay). It only makes GET requests, or POST requests to the view-only endpoints in ReadOnlyPostEndpoint, so it can't
+ * change anything in the provider's account.
  */
 
 declare(strict_types = 1);
@@ -10,6 +11,7 @@ declare(strict_types = 1);
 use Psr\Http\Client\ClientExceptionInterface;
 use Psr\Http\Client\ClientInterface;
 use Psr\Http\Message\RequestFactoryInterface;
+use Psr\Http\Message\RequestInterface;
 
 
 final readonly class JsonApiClient
@@ -92,9 +94,53 @@ final readonly class JsonApiClient
      */
     public function fetchJson(string $path) : array
     {
-        $request = $this->m_requests
-            ->createRequest('GET', $this->m_baseUrl . $path)
-            ->withHeader('Accept', 'application/json');
+        $request = $this->m_requests->createRequest('GET', $this->m_baseUrl . $path);
+        return $this->sendForJson($request, $path);
+    }
+
+
+    /**
+     * Fetch something from an API that needs POST even to read, with an empty JSON object as the request's body.
+     *
+     * @param ReadOnlyPostEndpoint $endpoint - the view-only endpoint.
+     *
+     * @return array - the decoded JSON response.
+     *
+     * @throws ProviderPermissionException - if the API key isn't allowed to read it.
+     *
+     * @throws ProviderNotFoundException - if it doesn't exist.
+     *
+     * @throws ProviderLookupException - if the API couldn't be reached, rejected the API key, or didn't answer with
+     * JSON.
+     */
+    public function fetchJsonUsingPost(ReadOnlyPostEndpoint $endpoint) : array
+    {
+        $path = $endpoint->value;
+        $request = $this->m_requests->createRequest('POST', $this->m_baseUrl . $path);
+        $request->getBody()->write('{}');
+        return $this->sendForJson($request->withHeader('Content-Type', 'application/json'), $path);
+    }
+
+
+    /**
+     * Send a request with the authenticating headers, and read its JSON response.
+     *
+     * @param RequestInterface $request - the request.
+     *
+     * @param string $path - its path, for error messages.
+     *
+     * @return array - the decoded JSON response.
+     *
+     * @throws ProviderPermissionException - if the API key isn't allowed to read it.
+     *
+     * @throws ProviderNotFoundException - if it doesn't exist.
+     *
+     * @throws ProviderLookupException - if the API couldn't be reached, rejected the API key, or didn't answer with
+     * JSON.
+     */
+    private function sendForJson(RequestInterface $request, string $path) : array
+    {
+        $request = $request->withHeader('Accept', 'application/json');
 
         foreach ($this->m_headers as $name => $value)
         {
@@ -117,7 +163,7 @@ final readonly class JsonApiClient
         {
             throw new ProviderLookupException("{$this->m_label} rejected the API key (it may have been deleted).");
         }
-        elseif ($status === 403)
+        elseif (self::isPermissionDenied($status, $data))
         {
             throw new ProviderPermissionException("The API key isn't allowed to read {$path}.");
         }
@@ -131,5 +177,24 @@ final readonly class JsonApiClient
         }
 
         return $data;
+    }
+
+
+    /**
+     * Check whether a response says the API key isn't allowed to do this: an HTTP 403, or the HTTP 400 with an
+     * ENDPOINT_PERMISSION_DENIED error code that SMTP2GO's API reference shows.
+     *
+     * @param int $status - the HTTP status.
+     *
+     * @param mixed $data - the decoded response, which can be anything if it wasn't the expected JSON.
+     *
+     * @return bool
+     */
+    private static function isPermissionDenied(int $status, mixed $data) : bool
+    {
+        $details = is_array($data) ? ($data['data'] ?? $data) : [];
+        $code = is_array($details) ? ($details['error_code'] ?? '') : '';
+        $isDeniedEndpoint = ($status === 400 && is_string($code) && str_contains($code, 'ENDPOINT_PERMISSION_DENIED'));
+        return ($status === 403 || $isDeniedEndpoint);
     }
 }
