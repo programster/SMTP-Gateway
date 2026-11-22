@@ -26,26 +26,18 @@ final class PasswordGenerator
     public static function generate(PasswordPolicy $policy) : string
     {
         $length = max(self::DEFAULT_LENGTH, $policy->getMinLength());
-        $characters = [self::pick(self::CAPITALS), self::pick(self::NUMBERS), self::pick(self::SYMBOLS)];
+        $randomizer = new \Random\Randomizer();
 
-        while (count($characters) < $length)
-        {
-            $characters[] = self::pick(self::LOWER . self::CAPITALS . self::NUMBERS);
-        }
+        $required = [
+            $randomizer->getBytesFromString(self::CAPITALS, 1),
+            $randomizer->getBytesFromString(self::NUMBERS, 1),
+            $randomizer->getBytesFromString(self::SYMBOLS, 1),
+        ];
 
-        // Shuffle them (Fisher-Yates, with a secure random source), so the capital, number and symbol can be anywhere.
-        for ($i = count($characters) - 1; $i > 0; $i--)
-        {
-            $j = random_int(0, $i);
-            [$characters[$i], $characters[$j]] = [$characters[$j], $characters[$i]];
-        }
+        $alphabet = self::LOWER . self::CAPITALS . self::NUMBERS;
+        $rest = $randomizer->getBytesFromString($alphabet, $length - count($required));
 
-        return implode('', $characters);
-    }
-
-
-    private static function pick(string $alphabet) : string
-    {
-        return $alphabet[random_int(0, strlen($alphabet) - 1)];
+        // Shuffled, so the capital, number and symbol can be anywhere.
+        return implode('', $randomizer->shuffleArray([...$required, ...str_split($rest)]));
     }
 }

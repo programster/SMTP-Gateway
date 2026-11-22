@@ -2,14 +2,16 @@
 
 declare(strict_types = 1);
 
+use Programster\Http\HttpCode;
+
 
 class ViewErrorPage extends Programster\AbstractView\AbstractView
 {
-    private readonly int $m_status;
+    private readonly HttpCode $m_status;
     private readonly string $m_message;
 
 
-    public function __construct(int $status, string $message)
+    public function __construct(HttpCode $status, string $message)
     {
         $this->m_status = $status;
         $this->m_message = $message;
@@ -19,9 +21,9 @@ class ViewErrorPage extends Programster\AbstractView\AbstractView
     protected function renderContent() : void
     {
         $title = match ($this->m_status) {
-            404 => 'Page not found',
-            403 => 'Not allowed',
-            400 => 'Something was wrong with that request',
+            HttpCode::NOT_FOUND => 'Page not found',
+            HttpCode::FORBIDDEN => 'Not allowed',
+            HttpCode::BAD_REQUEST => 'Something was wrong with that request',
             default => 'Something went wrong',
         };
 ?>

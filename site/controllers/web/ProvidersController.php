@@ -9,6 +9,7 @@
 
 declare(strict_types = 1);
 
+use Programster\Http\HttpCode;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Interfaces\RouteCollectorProxyInterface;
@@ -83,7 +84,7 @@ class ProvidersController extends AbstractController
                 $limits = self::readRateLimitsOrNone($getField);
                 $senders = ProviderSenderRows::createUsingForm($getField);
                 $page = ViewProviderFormPage::createForAdding($values, $limits, $senders, $version, $e->getMessage());
-                return self::renderPage($response, 'Add a provider', $page, 400);
+                return self::renderPage($response, 'Add a provider', $page, HttpCode::BAD_REQUEST);
             };
 
             $result = self::respondNotSaved($request, $response, $e, $renderForm);
@@ -138,7 +139,7 @@ class ProvidersController extends AbstractController
                 $senders = ProviderSenderRows::createUsingForm($getField);
                 $error = $e->getMessage();
                 $page = ViewProviderFormPage::createForEditing($provider, $values, $limits, $senders, $version, $error);
-                return self::renderPage($response, "Edit {$provider->getName()}", $page, 400);
+                return self::renderPage($response, "Edit {$provider->getName()}", $page, HttpCode::BAD_REQUEST);
             };
 
             $result = self::respondNotSaved($request, $response, $e, $renderForm);
@@ -286,7 +287,7 @@ class ProvidersController extends AbstractController
 
     public function show(Request $request, Response $response) : Response
     {
-        return self::renderProvidersPage($response, '', '', '', 200);
+        return self::renderProvidersPage($response, '', '', '', HttpCode::OK);
     }
 
 
@@ -329,7 +330,8 @@ class ProvidersController extends AbstractController
         }
         catch (InvalidInputException | ConflictException | ConfigurationException $e)
         {
-            $result = self::renderProvidersPage($response, $yaml, $version, $e->getMessage(), 400, $scope);
+            $error = $e->getMessage();
+            $result = self::renderProvidersPage($response, $yaml, $version, $error, HttpCode::BAD_REQUEST, $scope);
         }
 
         return $result;
@@ -419,7 +421,7 @@ class ProvidersController extends AbstractController
      *
      * @param string $error - why saving failed, or an empty string.
      *
-     * @param int $status - the HTTP status code.
+     * @param HttpCode $status - the HTTP status code.
      *
      * @param ProvidersEditScope $scope - what a failed save was saving, so the editor carries on editing it.
      *
@@ -430,7 +432,7 @@ class ProvidersController extends AbstractController
         string $yaml,
         string $version,
         string $error,
-        int $status,
+        HttpCode $status,
         ProvidersEditScope $scope = ProvidersEditScope::SECTION
     ) : Response
     {
@@ -543,7 +545,7 @@ class ProvidersController extends AbstractController
         if (self::wantsJson($request))
         {
             $isConflict = ($error instanceof ConflictException);
-            $status = $isConflict ? 409 : 400;
+            $status = $isConflict ? HttpCode::CONFLICT : HttpCode::BAD_REQUEST;
             $code = $isConflict ? ErrorCodeEnum::CONFLICT : ErrorCodeEnum::INVALID_INPUT;
             $body = (new ApiException($status, $code, $error->getMessage()))->toArray();
             $result = self::json($response, $body, $status);

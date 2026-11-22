@@ -8,13 +8,16 @@
 
 declare(strict_types = 1);
 
+use Programster\PgsqlLib\PgsqlLib;
+use Programster\PgsqlLib\UuidVersion;
+
 require_once __DIR__ . '/TestSuite.php';
 
 $suite = new TestSuite('Provider senders');
 
 $entry = function (string $name, ?array $allowedSenders = null, bool $enabled = true) : array {
     $data = [
-        'id' => Uuid::generateV4(),
+        'id' => PgsqlLib::generateUuid(UuidVersion::V4),
         'name' => $name,
         'type' => 'custom',
         'enabled' => $enabled,

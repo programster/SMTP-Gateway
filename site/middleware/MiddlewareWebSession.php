@@ -12,6 +12,7 @@
 
 declare(strict_types = 1);
 
+use Programster\Http\HttpCode;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
@@ -51,32 +52,32 @@ class MiddlewareWebSession implements \Psr\Http\Server\MiddlewareInterface
         if ($isSafeMethod === false && WebSession::isValidCsrfToken($token) === false)
         {
             $msg = 'Your session has expired, or the form was sent from somewhere else. Please go back and try again.';
-            throw new ApiException(403, ErrorCodeEnum::INVALID_CREDENTIALS, $msg);
+            throw new ApiException(HttpCode::FORBIDDEN, ErrorCodeEnum::INVALID_CREDENTIALS, $msg);
         }
 
         if ($isPublic === false && WebSession::isLoggedIn() === false)
         {
-            $response = (new \Slim\Psr7\Response(303))->withHeader('Location', '/login');
+            $response = (new \Slim\Psr7\Response(HttpCode::SEE_OTHER->value))->withHeader('Location', '/login');
         }
         elseif ($isPublic === false && self::mustChangePassword($routeName))
         {
             if (str_contains($request->getHeaderLine('Accept'), 'application/json'))
             {
                 $msg = 'Your password has to be changed first, under "My account".';
-                throw new ApiException(403, ErrorCodeEnum::PASSWORD_CHANGE_REQUIRED, $msg);
+                throw new ApiException(HttpCode::FORBIDDEN, ErrorCodeEnum::PASSWORD_CHANGE_REQUIRED, $msg);
             }
 
-            $response = (new \Slim\Psr7\Response(303))->withHeader('Location', '/account');
+            $response = (new \Slim\Psr7\Response(HttpCode::SEE_OTHER->value))->withHeader('Location', '/account');
         }
         elseif ($isPublic === false && self::mustSetUpSecondFactor($routeName))
         {
             if (str_contains($request->getHeaderLine('Accept'), 'application/json'))
             {
                 $msg = 'Two-factor authentication is required. Set it up under "My account" first.';
-                throw new ApiException(403, ErrorCodeEnum::MFA_SETUP_REQUIRED, $msg);
+                throw new ApiException(HttpCode::FORBIDDEN, ErrorCodeEnum::MFA_SETUP_REQUIRED, $msg);
             }
 
-            $response = (new \Slim\Psr7\Response(303))->withHeader('Location', '/account');
+            $response = (new \Slim\Psr7\Response(HttpCode::SEE_OTHER->value))->withHeader('Location', '/account');
         }
         else
         {

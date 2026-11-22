@@ -41,10 +41,10 @@ readonly class QueuedDemand
      */
     public static function countAhead(string $messageId, Priority $priority, RateLimitScope $scope) : QueuedDemand
     {
-        $row = DB::fetchRows(
+        $row = pg_fetch_all(ServiceFactory::getDb()->query(
             'SELECT count(*) AS "emails", coalesce(sum("recipient_count"), 0) AS "recipients" FROM "email_message"'
             . ' WHERE ' . self::getAheadSql($messageId, $priority) . " AND {$scope->getSqlCondition()}"
-        )[0];
+        ))[0];
 
         return new QueuedDemand((int)$row['emails'], (int)$row['recipients']);
     }
@@ -72,10 +72,10 @@ readonly class QueuedDemand
         Priority $priority
     ) : QueuedDemand
     {
-        $rows = DB::fetchRows(
+        $rows = pg_fetch_all(ServiceFactory::getDb()->query(
             'SELECT "email_token_id", count(*) AS "emails", coalesce(sum("recipient_count"), 0) AS "recipients"'
             . ' FROM "email_message" WHERE ' . self::getAheadSql($messageId, $priority) . ' GROUP BY "email_token_id"'
-        );
+        ));
 
         $emails = 0;
         $recipients = 0;
@@ -114,7 +114,7 @@ readonly class QueuedDemand
      */
     private static function getAheadSql(string $messageId, Priority $priority) : string
     {
-        $id = DB::escape($messageId);
+        $id = ServiceFactory::getDb()->escapeValue($messageId);
         $value = $priority->getValue();
 
         return

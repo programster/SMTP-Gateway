@@ -123,7 +123,9 @@ final class CloudflareNetworks
         {
             $found = [];
 
-            foreach (DB::fetchRows('SELECT "network"::text AS "network" FROM "cloudflare_network"') as $row)
+            $query = 'SELECT "network"::text AS "network" FROM "cloudflare_network"';
+
+            foreach (pg_fetch_all(ServiceFactory::getDb()->query($query)) as $row)
             {
                 $found[] = new IpNetwork($row['network']);
             }
@@ -138,7 +140,7 @@ final class CloudflareNetworks
     public static function loadStatus() : CloudflareNetworksStatus
     {
         $query = 'SELECT count(*) AS "count", max("fetched_at") AS "fetched_at" FROM "cloudflare_network"';
-        $row = DB::fetchRows($query)[0];
+        $row = pg_fetch_all(ServiceFactory::getDb()->query($query))[0];
         return new CloudflareNetworksStatus((int)$row['count'], (string)$row['fetched_at']);
     }
 

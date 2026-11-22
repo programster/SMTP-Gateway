@@ -11,6 +11,7 @@
 declare(strict_types = 1);
 
 use PHPMailer\PHPMailer\PHPMailer;
+use Programster\Http\HttpCode;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Interfaces\RouteCollectorProxyInterface;
@@ -75,7 +76,7 @@ class ApiSendController extends AbstractController
             throw ApiException::createFromRejection($e);
         }
 
-        $status = ($result->getOutcome() === SubmissionOutcome::SENT) ? 201 : 202;
+        $status = ($result->getOutcome() === SubmissionOutcome::SENT) ? HttpCode::CREATED : HttpCode::ACCEPTED;
         $output = ['id' => $result->getMessageId(), 'status' => $result->getOutcome()->value];
         return self::json($response, $output, $status);
     }

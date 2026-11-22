@@ -121,10 +121,10 @@ final class ProviderRateLimitWarning
 
         $query =
             'SELECT ' . implode(', ', $columns) . ' FROM "email_attempt"'
-            . ' WHERE "provider" = ' . DB::escape($providerName) . " AND \"outcome\" = 'sent'"
+            . ' WHERE "provider" = ' . ServiceFactory::getDb()->escapeValue($providerName) . " AND \"outcome\" = 'sent'"
             . " AND \"dispatched_at\" > now() - make_interval(secs => {$longest})";
 
-        $row = DB::fetchRows($query)[0];
+        $row = pg_fetch_all(ServiceFactory::getDb()->query($query))[0];
         $windows = [];
 
         foreach (self::WINDOWS as $label => $seconds)

@@ -47,5 +47,4 @@ readonly class SenderCheckGroup
 
     # Accessors
     public function getHeading() : string { return $this->m_heading; }
-    public function getChecks() : SenderCheckCollection { return clone $this->m_checks; }
 }

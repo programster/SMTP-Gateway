@@ -36,12 +36,6 @@ final readonly class LogPage
     }
 
 
-    public static function createFirst() : LogPage
-    {
-        return new LogPage(LogSort::NEWEST_FIRST, LogPageSize::FIFTY, 1);
-    }
-
-
     public function withNumber(int $number) : LogPage
     {
         return new LogPage($this->m_sort, $this->m_size, $number);

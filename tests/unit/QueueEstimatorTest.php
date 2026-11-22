@@ -24,7 +24,7 @@ $policy = new EmailTokenPolicy(
 
 $created = EmailTokenRepository::create('estimator test', $policy);
 $key = new AuthenticatedEmailToken($created->getEmailToken(), $policy, new IpAddress('127.0.0.1'), MessageSource::SMTP);
-$emailTokenId = DB::escape($created->getEmailToken()->getId());
+$emailTokenId = ServiceFactory::getDb()->escapeValue($created->getEmailToken()->getId());
 $senders = new EmailAddressCollection(new EmailAddress('a@b.test'));
 
 /**
@@ -33,12 +33,12 @@ $senders = new EmailAddressCollection(new EmailAddress('a@b.test'));
 $insertEmail = function (string $status, bool $isDispatched) use ($emailTokenId) : string {
     $dispatchedAt = $isDispatched ? 'now()' : 'NULL';
 
-    return DB::fetchValue(
+    return pg_fetch_result(ServiceFactory::getDb()->query(
         'INSERT INTO "email_message" ("id", "email_token_id", "source", "client_ip", "envelope_sender", "recipients",'
         . ' "recipient_count", "size_bytes", "status", "priority", "dispatched_at") VALUES (uuidv7(),'
         . " {$emailTokenId}, 'smtp', '127.0.0.1', 'a@b.test', '[\"x@y.test\", \"y@y.test\", \"z@y.test\"]', 3, 10,"
         . " '{$status}', 1, {$dispatchedAt}) RETURNING \"id\""
-    );
+    ), 0, 0);
 };
 
 // It's being sent: it counts towards the limit of 3 recipients a minute, but mustn't hold itself up.
@@ -53,7 +53,7 @@ $isWaiting = ($estimate > 50 && $estimate <= 60);
 $suite->check('one still queued behind a full limit waits for it', $isWaiting, (string)$estimate);
 
 $cancelSql = "UPDATE \"email_message\" SET \"status\" = 'cancelled' WHERE \"email_token_id\" = {$emailTokenId}";
-DB::fetchValue("{$cancelSql} RETURNING 1");
+pg_fetch_result(ServiceFactory::getDb()->query("{$cancelSql} RETURNING 1"), 0, 0);
 EmailTokenRepository::revoke($created->getEmailToken());
 
 $suite->finish();

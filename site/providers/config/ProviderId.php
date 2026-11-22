@@ -8,6 +8,9 @@
 
 declare(strict_types = 1);
 
+use Programster\PgsqlLib\PgsqlLib;
+use Programster\PgsqlLib\UuidVersion;
+
 
 final readonly class ProviderId
 {
@@ -20,7 +23,7 @@ final readonly class ProviderId
      */
     public function __construct(string $value)
     {
-        if (!Uuid::isValid($value))
+        if (!PgsqlLib::isValidUuid($value))
         {
             $example = '0b7f1c2e-5a3d-4e8f-9b6a-2c4d6e8f0a1b';
             $msg = "\"{$value}\" isn't a valid provider id. It must be a UUID, e.g. {$example}.";
@@ -37,7 +40,7 @@ final readonly class ProviderId
      */
     public static function createNew() : ProviderId
     {
-        return new ProviderId(Uuid::generateV4());
+        return new ProviderId(PgsqlLib::generateUuid(UuidVersion::V4));
     }
 
 

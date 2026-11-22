@@ -147,17 +147,6 @@ readonly class ProvidersConfig
 
 
     /**
-     * Check whether there's a provider with an id (enabled or not).
-     * @param ProviderId $id - the id.
-     * @return bool
-     */
-    public function hasProviderWithId(ProviderId $id) : bool
-    {
-        return $this->getIds()->includes($id);
-    }
-
-
-    /**
      * Get every provider's id, in order.
      * @return ProviderIdCollection
      */

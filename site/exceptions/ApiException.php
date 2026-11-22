@@ -7,21 +7,23 @@
 
 declare(strict_types = 1);
 
+use Programster\Http\HttpCode;
+
 
 class ApiException extends Exception
 {
-    private readonly int $m_httpStatus;
+    private readonly HttpCode $m_httpStatus;
     private readonly ErrorCodeEnum $m_errorCode;
 
 
     /**
-     * @param int $httpStatus - the HTTP status code, e.g. 400.
+     * @param HttpCode $httpStatus - the HTTP status code.
      *
      * @param ErrorCodeEnum $errorCode - the application's code for the error.
      *
      * @param string $message - the message, which is shown to the client.
      */
-    public function __construct(int $httpStatus, ErrorCodeEnum $errorCode, string $message)
+    public function __construct(HttpCode $httpStatus, ErrorCodeEnum $errorCode, string $message)
     {
         parent::__construct($message);
         $this->m_httpStatus = $httpStatus;
@@ -40,12 +42,12 @@ class ApiException extends Exception
     {
         $status = match ($rejection->getReason()) {
             // A revoked email token is a 401, as a revoked API key is, as the credentials no longer work.
-            RejectionReason::INVALID_CREDENTIALS, RejectionReason::REVOKED_EMAIL_TOKEN => 401,
-            RejectionReason::MESSAGE_TOO_LARGE => 413,
-            RejectionReason::INVALID_MESSAGE => 400,
-            RejectionReason::TOO_MANY_RECIPIENTS => 400,
-            RejectionReason::PROVIDER_REJECTED => 502,
-            default => 403,
+            RejectionReason::INVALID_CREDENTIALS, RejectionReason::REVOKED_EMAIL_TOKEN => HttpCode::UNAUTHORIZED,
+            RejectionReason::MESSAGE_TOO_LARGE => HttpCode::PAYLOAD_TOO_LARGE,
+            RejectionReason::INVALID_MESSAGE => HttpCode::BAD_REQUEST,
+            RejectionReason::TOO_MANY_RECIPIENTS => HttpCode::BAD_REQUEST,
+            RejectionReason::PROVIDER_REJECTED => HttpCode::BAD_GATEWAY,
+            default => HttpCode::FORBIDDEN,
         };
 
         $code = ErrorCodeEnum::createFromRejectionReason($rejection->getReason());
@@ -65,6 +67,6 @@ class ApiException extends Exception
 
 
     # Accessors
-    public function getHttpStatus() : int { return $this->m_httpStatus; }
+    public function getHttpStatus() : HttpCode { return $this->m_httpStatus; }
     public function getErrorCode() : ErrorCodeEnum { return $this->m_errorCode; }
 }

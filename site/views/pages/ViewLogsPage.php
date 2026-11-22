@@ -90,11 +90,11 @@ class ViewLogsPage extends Programster\AbstractView\AbstractView
                 <summary aria-labelledby="level-label level-summary"><span id="level-summary"
                     data-role="level-summary"><?= Html::e($this->describeChosenLevels()) ?></span></summary>
                 <div class="multi-select-menu">
-                    <?php foreach (LogLevel::cases() as $level): ?>
+                    <?php foreach (LogLevelCollection::createAllFromLeastSevere() as $level): ?>
                         <label class="multi-select-option"><input type="checkbox" name="level[]"
-                            value="<?= $level->value ?>" data-label="<?= Html::e($level->getLabel()) ?>"<?=
+                            value="<?= $level->value ?>" data-label="<?= Html::e(ucfirst($level->value)) ?>"<?=
                             $levels->contains($level) ? ' checked' : '' ?>> <span class="level-dot"
-                            data-level="<?= $level->value ?>"></span> <?= Html::e($level->getLabel()) ?></label>
+                            data-level="<?= $level->value ?>"></span> <?= Html::e(ucfirst($level->value)) ?></label>
                     <?php endforeach; ?>
                     <p class="hint">Shift-click to select a range.</p>
                 </div>
@@ -241,11 +241,11 @@ class ViewLogsPage extends Programster\AbstractView\AbstractView
     {
         $labels = [];
 
-        foreach (LogLevel::cases() as $level)
+        foreach (LogLevelCollection::createAllFromLeastSevere() as $level)
         {
             if ($this->m_filter->getLevels()->contains($level))
             {
-                $labels[] = $level->getLabel();
+                $labels[] = ucfirst($level->value);
             }
         }
 

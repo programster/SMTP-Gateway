@@ -9,6 +9,7 @@
 
 declare(strict_types = 1);
 
+use Programster\Http\HttpCode;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Interfaces\RouteCollectorProxyInterface;
@@ -94,14 +95,14 @@ class AuthController extends AbstractController
                 ServiceFactory::getLogger(LogCategory::ACCESS)->warning('Failed web login', $context);
                 self::slowDown();
                 $page = self::createLoginPage('Invalid email address or password.');
-                $result = self::renderPage($response, 'Log in', $page, 401);
+                $result = self::renderPage($response, 'Log in', $page, HttpCode::UNAUTHORIZED);
             }
             elseif ($user->getStatus()->canLogIn() === false)
             {
                 $context = ['user_id' => $user->getId(), 'client_ip' => $clientIp];
                 ServiceFactory::getLogger(LogCategory::ACCESS)->warning('Blocked account tried to log in', $context);
                 $page = self::createLoginPage(self::BLOCKED_MESSAGE);
-                $result = self::renderPage($response, 'Log in', $page, 403);
+                $result = self::renderPage($response, 'Log in', $page, HttpCode::FORBIDDEN);
             }
             else
             {
@@ -110,7 +111,8 @@ class AuthController extends AbstractController
         }
         catch (LoginThrottledException $e)
         {
-            $result = self::renderPage($response, 'Log in', self::createLoginPage($e->getMessage()), 429);
+            $page = self::createLoginPage($e->getMessage());
+            $result = self::renderPage($response, 'Log in', $page, HttpCode::TOO_MANY_REQUESTS);
         }
 
         return $result;
@@ -153,7 +155,8 @@ class AuthController extends AbstractController
         }
         catch (InvalidInputException | ConfigurationException $e)
         {
-            $result = self::renderPage($response, 'Log in', self::createLoginPage($e->getMessage()), 401);
+            $page = self::createLoginPage($e->getMessage());
+            $result = self::renderPage($response, 'Log in', $page, HttpCode::UNAUTHORIZED);
         }
         catch (NotFoundException)
         {
@@ -161,7 +164,7 @@ class AuthController extends AbstractController
             $logger = ServiceFactory::getLogger(LogCategory::ACCESS);
             $logger->warning('Google login for an email address with no account', $context);
             $error = 'There\'s no account for your Google account\'s email address. Ask an administrator for one.';
-            $result = self::renderPage($response, 'Log in', self::createLoginPage($error), 403);
+            $result = self::renderPage($response, 'Log in', self::createLoginPage($error), HttpCode::FORBIDDEN);
         }
 
         return $result;
@@ -213,7 +216,8 @@ class AuthController extends AbstractController
         }
         catch (NotFoundException $e)
         {
-            $result = self::renderPage($response, 'Reset your password', new ViewErrorPage(400, $e->getMessage()), 400);
+            $page = new ViewErrorPage(HttpCode::BAD_REQUEST, $e->getMessage());
+            $result = self::renderPage($response, 'Reset your password', $page, HttpCode::BAD_REQUEST);
         }
 
         // The link holds the token, so it mustn't be passed on to anywhere else in a Referer header.
@@ -247,12 +251,13 @@ class AuthController extends AbstractController
             catch (InvalidInputException $e)
             {
                 $page = new ViewResetPasswordPage($token, $user->getEmail(), $e->getMessage());
-                $result = self::renderPage($response, 'Choose a new password', $page, 400);
+                $result = self::renderPage($response, 'Choose a new password', $page, HttpCode::BAD_REQUEST);
             }
         }
         catch (NotFoundException $e)
         {
-            $result = self::renderPage($response, 'Reset your password', new ViewErrorPage(400, $e->getMessage()), 400);
+            $page = new ViewErrorPage(HttpCode::BAD_REQUEST, $e->getMessage());
+            $result = self::renderPage($response, 'Reset your password', $page, HttpCode::BAD_REQUEST);
         }
 
         return $result->withHeader('Referrer-Policy', 'no-referrer');
@@ -268,7 +273,7 @@ class AuthController extends AbstractController
         }
         else
         {
-            $result = self::renderSecondFactor($response, WebSession::getPendingUser(), false, '', 200);
+            $result = self::renderSecondFactor($response, WebSession::getPendingUser(), false, '', HttpCode::OK);
         }
 
         return $result;
@@ -295,12 +300,12 @@ class AuthController extends AbstractController
             {
                 self::slowDown();
                 $error = "That code isn't right, or has already been used.";
-                $result = self::renderSecondFactor($response, $user, false, $error, 401);
+                $result = self::renderSecondFactor($response, $user, false, $error, HttpCode::UNAUTHORIZED);
             }
         }
         catch (LoginThrottledException $e)
         {
-            $result = self::renderSecondFactor($response, $user, false, $e->getMessage(), 429);
+            $result = self::renderSecondFactor($response, $user, false, $e->getMessage(), HttpCode::TOO_MANY_REQUESTS);
         }
 
         return $result;
@@ -352,12 +357,12 @@ class AuthController extends AbstractController
             {
                 self::slowDown();
                 $error = "That backup code isn't right, or has already been used.";
-                $result = self::renderSecondFactor($response, $user, true, $error, 401);
+                $result = self::renderSecondFactor($response, $user, true, $error, HttpCode::UNAUTHORIZED);
             }
         }
         catch (LoginThrottledException $e)
         {
-            $result = self::renderSecondFactor($response, $user, true, $e->getMessage(), 429);
+            $result = self::renderSecondFactor($response, $user, true, $e->getMessage(), HttpCode::TOO_MANY_REQUESTS);
         }
 
         return $result;
@@ -378,7 +383,8 @@ class AuthController extends AbstractController
         if (SecurityKeyService::verifyLogin($user, self::getHostname($request), self::getJsonBody($request)) === false)
         {
             self::slowDown();
-            throw new ApiException(401, ErrorCodeEnum::INVALID_CREDENTIALS, "The security key couldn't be verified.");
+            $message = "The security key couldn't be verified.";
+            throw new ApiException(HttpCode::UNAUTHORIZED, ErrorCodeEnum::INVALID_CREDENTIALS, $message);
         }
 
         $next = $this->completeLogin($request, $user, LoginMethod::SECURITY_KEY);
@@ -443,7 +449,7 @@ class AuthController extends AbstractController
      *
      * @param string $error - why it was refused, or an empty string.
      *
-     * @param int $status - the HTTP status.
+     * @param HttpCode $status - the HTTP status.
      *
      * @return Response
      */
@@ -452,7 +458,7 @@ class AuthController extends AbstractController
         AdminUser $user,
         bool $isBackupCodeOpen,
         string $error,
-        int $status
+        HttpCode $status
     ) : Response
     {
         $hasSecurityKeys = count(SecurityKeyService::loadCredentials($user)) > 0;

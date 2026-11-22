@@ -8,6 +8,8 @@
 
 declare(strict_types = 1);
 
+use Programster\PgsqlLib\PgsqlLib;
+
 require_once __DIR__ . '/TestSuite.php';
 
 $suite = new TestSuite('Provider restriction');
@@ -17,7 +19,7 @@ $primaryId = new ProviderId('5c2f0e7a-1d3b-4a6c-9e8f-0a1b2c3d4e01');
 $secondaryId = new ProviderId('5c2f0e7a-1d3b-4a6c-9e8f-0a1b2c3d4e02');
 
 // Provider ids.
-$suite->check('a new id is a UUID', Uuid::isValid(ProviderId::createNew()->getValue()));
+$suite->check('a new id is a UUID', PgsqlLib::isValidUuid(ProviderId::createNew()->getValue()));
 $suite->check('and each is different', !ProviderId::createNew()->equals(ProviderId::createNew()));
 $upper = new ProviderId('5C2F0E7A-1D3B-4A6C-9E8F-0A1B2C3D4E01');
 $suite->check('an id is kept in lowercase, so it equals the same id', $upper->equals($primaryId), (string)$upper);
@@ -51,7 +53,7 @@ $parse = function (ProviderMode $mode, ProviderDefinitionCollection $current, ar
 $none = new ProviderDefinitionCollection();
 $given = $parse(ProviderMode::OVERFLOW, $none, $entry('a', (string)$primaryId), $entry('b'));
 $suite->check('an id given is kept', $given->getProviders()[0]->getId()->equals($primaryId));
-$suite->check('one left out is made', Uuid::isValid($given->getProviders()[1]->getId()->getValue()));
+$suite->check('one left out is made', PgsqlLib::isValidUuid($given->getProviders()[1]->getId()->getValue()));
 $again = $parse(ProviderMode::OVERFLOW, $given->getProviders(), $entry('a'), $entry('b'), $entry('c'));
 $isKept = $again->getProviders()[1]->getId()->equals($given->getProviders()[1]->getId());
 $suite->check('one left out keeps the current id of the provider with its name', $isKept);

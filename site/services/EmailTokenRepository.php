@@ -8,7 +8,6 @@
 
 declare(strict_types = 1);
 
-use Programster\PgsqlLib\Exceptions\ExceptionQueryError;
 use Programster\PgsqlLib\Query;
 use Programster\PgsqlObjects\CacheMode;
 use Programster\PgsqlObjects\OrmTransaction;
@@ -79,20 +78,14 @@ final class EmailTokenRepository
         $name = self::validateName($name);
         $id = (string)$emailToken->getId();
 
-        $escapedId = DB::escape($id);
-
-        // Locks the token's row, and fails if it has been revoked, so that nothing below happens.
-        $requireNotRevoked = DB::generateRequireRowQuery(
-            "UPDATE \"email_token\" SET \"name\" = \"name\" WHERE \"id\" = {$escapedId} AND \"revoked_at\" IS NULL"
-        );
-
         $updateToken = new Query(
-            'UPDATE "email_token" SET "name" = $1, "priority" = $2, "restricts_providers" = $3 WHERE "id" = $4',
+            'UPDATE "email_token" SET "name" = $1, "priority" = $2, "restricts_providers" = $3'
+            . ' WHERE "id" = $4 AND "revoked_at" IS NULL',
             [$name, $policy->getPriority()->getValue(), self::isProviderRestricted($policy), $id]
         );
 
         // The token's row, and its policy's rows, are changed together, or not at all.
-        $transaction = new OrmTransaction(ServiceFactory::getDb(), [$requireNotRevoked, $updateToken]);
+        $transaction = new OrmTransaction(ServiceFactory::getDb(), [$updateToken]);
 
         $tables = [
             'email_token_network',
@@ -107,15 +100,12 @@ final class EmailTokenRepository
         }
 
         self::addPolicyToTransaction($transaction, $id, $policy);
+        $results = $transaction->commit();
 
-        try
+        // If it was revoked just now, its policy's rows were replaced, which has no effect, as it can't be used.
+        if (pg_affected_rows($results[0]) !== 1)
         {
-            $transaction->commit();
-        }
-        catch (ExceptionQueryError $exception)
-        {
-            $revoked = new ConflictException('This email token has been revoked, so it can\'t be changed.');
-            throw DB::isNoRowError($exception) ? $revoked : $exception;
+            throw new ConflictException('This email token has been revoked, so it can\'t be changed.');
         }
     }
 
@@ -160,7 +150,8 @@ final class EmailTokenRepository
     public static function loadAll(bool $includeRevoked = true) : EmailTokenCollection
     {
         $where = $includeRevoked ? '' : 'WHERE "revoked_at" IS NULL';
-        $rows = DB::fetchRows("SELECT \"id\" FROM \"email_token\" {$where} ORDER BY \"created_at\" DESC");
+        $query = "SELECT \"id\" FROM \"email_token\" {$where} ORDER BY \"created_at\" DESC";
+        $rows = pg_fetch_all(ServiceFactory::getDb()->query($query));
         $tokens = [];
 
         foreach ($rows as $row)
@@ -237,13 +228,14 @@ final class EmailTokenRepository
      */
     public static function loadRateLimits(string $emailTokenId) : RateLimitSet
     {
-        $id = DB::escape($emailTokenId);
+        $wherePairs = ['email_token_id' => $emailTokenId];
         $limits = [];
 
-        foreach (DB::fetchRows("SELECT * FROM \"email_token_rate_limit\" WHERE \"email_token_id\" = {$id}") as $row)
+        foreach (EmailTokenRateLimitTable::getInstance()->loadWhereAnd($wherePairs, CacheMode::IGNORE_CACHE) as $limit)
         {
-            $unit = RateLimitUnit::from($row['unit']);
-            $limits[] = new RateLimit($unit, (int)$row['maximum'], (int)$row['period_seconds']);
+            /* @var $limit EmailTokenRateLimit */
+            $unit = RateLimitUnit::from($limit->getUnit());
+            $limits[] = new RateLimit($unit, $limit->getMaximum(), $limit->getPeriodSeconds());
         }
 
         return new RateLimitSet(...$limits);
@@ -260,15 +252,18 @@ final class EmailTokenRepository
      */
     public static function loadProviderRestriction(string $emailTokenId) : ProviderRestrictionInterface
     {
-        $id = DB::escape($emailTokenId);
-        $restricts = DB::fetchRows("SELECT \"restricts_providers\" FROM \"email_token\" WHERE \"id\" = {$id}");
+        $id = ServiceFactory::getDb()->escapeValue($emailTokenId);
+        $restrictsQuery = "SELECT \"restricts_providers\" FROM \"email_token\" WHERE \"id\" = {$id}";
+        $restricts = pg_fetch_all(ServiceFactory::getDb()->query($restrictsQuery));
         $isRestricted = (count($restricts) === 1 && $restricts[0]['restricts_providers'] === 't');
-        $links = DB::fetchRows("SELECT \"provider_id\" FROM \"email_token_provider\" WHERE \"email_token_id\" = {$id}");
+        $wherePairs = ['email_token_id' => $emailTokenId];
+        $links = EmailTokenProviderTable::getInstance()->loadWhereAnd($wherePairs, CacheMode::IGNORE_CACHE);
         $providerIds = [];
 
-        foreach ($links as $row)
+        foreach ($links as $link)
         {
-            $providerIds[] = new ProviderId($row['provider_id']);
+            /* @var $link EmailTokenProvider */
+            $providerIds[] = new ProviderId($link->getProviderId());
         }
 
         return match (true) {
@@ -293,7 +288,7 @@ final class EmailTokenRepository
 
         $providerIdsByToken = [];
 
-        foreach (DB::fetchRows($query) as $row)
+        foreach (pg_fetch_all(ServiceFactory::getDb()->query($query)) as $row)
         {
             $providerIdsByToken[$row['id']][] = new ProviderId($row['provider_id']);
         }
@@ -321,9 +316,10 @@ final class EmailTokenRepository
      */
     public static function removeLinksToOtherProviders(ProviderIdCollection $remaining) : EmailTokenCollection
     {
-        $ids = array_map([DB::class, 'escape'], $remaining->toStrings());
+        $ids = ServiceFactory::getDb()->escapeValues($remaining->toStrings());
         $notIn = (count($ids) === 0) ? '' : ' WHERE "provider_id" NOT IN (' . implode(', ', $ids) . ')';
-        $rows = DB::fetchRows("DELETE FROM \"email_token_provider\"{$notIn} RETURNING \"email_token_id\"");
+        $query = "DELETE FROM \"email_token_provider\"{$notIn} RETURNING \"email_token_id\"";
+        $rows = pg_fetch_all(ServiceFactory::getDb()->query($query));
         $emailTokens = [];
 
         foreach (array_unique(array_column($rows, 'email_token_id')) as $emailTokenId)
@@ -352,7 +348,7 @@ final class EmailTokenRepository
      */
     public static function revoke(EmailToken $emailToken) : int
     {
-        $id = DB::escape($emailToken->getId());
+        $id = ServiceFactory::getDb()->escapeValue($emailToken->getId());
 
         // While the retention settings are invalid, nothing is deleted, so the content is kept.
         try
@@ -413,7 +409,7 @@ final class EmailTokenRepository
         $emailTokens = [];
         $query = 'SELECT "id" FROM "email_token" WHERE "last_used_at" IS NOT NULL ORDER BY "last_used_at" DESC LIMIT ';
 
-        foreach (DB::fetchRows($query . $limit) as $row)
+        foreach (pg_fetch_all(ServiceFactory::getDb()->query($query . $limit)) as $row)
         {
             $emailTokens[] = self::load($row['id']);
         }

@@ -93,12 +93,12 @@ readonly class LogFilter
 
         if ($this->m_search !== '' && $this->m_syntax->isRegex())
         {
-            $conditions[] = '"message" ~* ' . DB::escape($this->getPostgresPattern());
+            $conditions[] = '"message" ~* ' . ServiceFactory::getDb()->escapeValue($this->getPostgresPattern());
         }
         elseif ($this->m_search !== '')
         {
             $escapedLike = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $this->m_search);
-            $conditions[] = '"message" ILIKE ' . DB::escape('%' . $escapedLike . '%');
+            $conditions[] = '"message" ILIKE ' . ServiceFactory::getDb()->escapeValue('%' . $escapedLike . '%');
         }
 
         if (count($this->m_levels) > 0)
@@ -107,7 +107,7 @@ readonly class LogFilter
 
             foreach ($this->m_levels as $level)
             {
-                $escaped[] = DB::escape($level->value);
+                $escaped[] = ServiceFactory::getDb()->escapeValue($level->value);
             }
 
             $conditions[] = '"level" IN (' . implode(', ', $escaped) . ')';
@@ -119,7 +119,7 @@ readonly class LogFilter
 
             foreach ($this->m_categories as $category)
             {
-                $escaped[] = DB::escape($category->value);
+                $escaped[] = ServiceFactory::getDb()->escapeValue($category->value);
             }
 
             $conditions[] = '"context"->>\'category\' IN (' . implode(', ', $escaped) . ')';
@@ -178,8 +178,6 @@ readonly class LogFilter
 
 
     # Accessors
-    public function getFrom() : string { return $this->m_from; }
-    public function getTo() : string { return $this->m_to; }
     public function getSearch() : string { return $this->m_search; }
     public function getSyntax() : MessageSearchSyntax { return $this->m_syntax; }
     public function getLevels() : LogLevelCollection { return $this->m_levels; }

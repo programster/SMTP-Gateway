@@ -9,6 +9,10 @@
 
 declare(strict_types = 1);
 
+use Programster\CoreLibs\Core;
+use Programster\CoreLibs\Enums\DataSizeUnitEnum;
+use Programster\CoreLibs\Enums\MemoryTypeEnum;
+
 
 final readonly class ServerResources
 {
@@ -54,14 +58,15 @@ final readonly class ServerResources
      */
     public static function createUsingSystemFiles() : ServerResources
     {
-        $meminfo = self::readFile('/proc/meminfo');
-
-        if (preg_match('/^MemTotal:\s+([0-9]+) kB$/m', $meminfo, $matches) !== 1)
+        try
         {
-            throw new RuntimeException('The server\'s memory couldn\'t be read from /proc/meminfo.');
+            $totalMemoryBytes = (int)Core::getMemory(MemoryTypeEnum::TOTAL, DataSizeUnitEnum::BYTES);
+        }
+        catch (Exception $exception)
+        {
+            throw new RuntimeException('The server\'s memory couldn\'t be read.', 0, $exception);
         }
 
-        $totalMemoryBytes = (int)$matches[1] * 1024;
         $limitFile = '/sys/fs/cgroup/memory.max';
         $limit = is_readable($limitFile) ? trim(self::readFile($limitFile)) : 'max';
         $containerMemoryLimitBytes = ctype_digit($limit) ? (int)$limit : 0;

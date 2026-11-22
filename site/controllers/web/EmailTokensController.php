@@ -6,6 +6,7 @@
 
 declare(strict_types = 1);
 
+use Programster\Http\HttpCode;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Interfaces\RouteCollectorProxyInterface;
@@ -79,7 +80,7 @@ class EmailTokensController extends AbstractController
             $values = is_array($body) ? array_filter($body, 'is_string') : [];
             $siteUrl = self::getSiteUrl($request);
             $page = new ViewNewEmailTokenPage($values, $e->getMessage(), $siteUrl, self::loadProviders());
-            $result = self::renderPage($response, 'New email token', $page, 400);
+            $result = self::renderPage($response, 'New email token', $page, HttpCode::BAD_REQUEST);
         }
 
         return $result;
@@ -165,7 +166,7 @@ class EmailTokensController extends AbstractController
             $body = $request->getParsedBody();
             $values = is_array($body) ? array_filter($body, 'is_string') : [];
             $page = new ViewEditEmailTokenPage($emailToken, $values, $e->getMessage(), self::loadProviders());
-            $result = self::renderPage($response, "Edit {$emailToken->getName()}", $page, 400);
+            $result = self::renderPage($response, "Edit {$emailToken->getName()}", $page, HttpCode::BAD_REQUEST);
         }
         catch (ConflictException $e)
         {

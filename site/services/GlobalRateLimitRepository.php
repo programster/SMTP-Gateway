@@ -16,10 +16,11 @@ final class GlobalRateLimitRepository
     {
         $limits = [];
 
-        foreach (DB::fetchRows('SELECT "unit", "maximum", "period_seconds" FROM "global_rate_limit"') as $row)
+        foreach (GlobalRateLimitTable::getInstance()->loadAll(CacheMode::IGNORE_CACHE) as $limit)
         {
-            $unit = RateLimitUnit::from($row['unit']);
-            $limits[] = new RateLimit($unit, (int)$row['maximum'], (int)$row['period_seconds']);
+            /* @var $limit GlobalRateLimit */
+            $unit = RateLimitUnit::from($limit->getUnit());
+            $limits[] = new RateLimit($unit, $limit->getMaximum(), $limit->getPeriodSeconds());
         }
 
         return new RateLimitSet(...$limits);

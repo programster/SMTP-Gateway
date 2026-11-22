@@ -9,6 +9,7 @@
 
 declare(strict_types = 1);
 
+use Programster\Http\HttpCode;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Interfaces\RouteCollectorProxyInterface;
@@ -42,7 +43,7 @@ class AccountController extends AbstractController
 
     public function show(Request $request, Response $response) : Response
     {
-        return $this->renderAccount($response, '', 200);
+        return $this->renderAccount($response, '', HttpCode::OK);
     }
 
 
@@ -67,7 +68,7 @@ class AccountController extends AbstractController
         }
         catch (InvalidInputException $e)
         {
-            $result = $this->renderAccount($response, $e->getMessage(), 400);
+            $result = $this->renderAccount($response, $e->getMessage(), HttpCode::BAD_REQUEST);
         }
 
         return $result;
@@ -78,7 +79,7 @@ class AccountController extends AbstractController
     {
         $secret = TotpService::generateSecret();
         WebSession::setPendingTotpSecret($secret);
-        return $this->renderTotpSetup($response, $secret, '', 200);
+        return $this->renderTotpSetup($response, $secret, '', HttpCode::OK);
     }
 
 
@@ -89,16 +90,16 @@ class AccountController extends AbstractController
 
         try
         {
-            TotpService::enable($user, $secret, self::getFormField($request, 'code'));
+            $enabledUser = TotpService::enable($user, $secret, self::getFormField($request, 'code'));
             WebSession::clearPendingTotpSecret();
             $logger = ServiceFactory::getLogger(LogCategory::ACCESS);
             $logger->notice('Authenticator app set up', ['user_id' => $user->getId()]);
             WebSession::flash('Your authenticator app is set up. You will need a code from it each time you log in.');
-            $result = self::redirect($response, self::issueBackupCodesIfNone($user, '/account'));
+            $result = self::redirect($response, self::issueBackupCodesIfNone($enabledUser, '/account'));
         }
         catch (InvalidInputException $e)
         {
-            $result = $this->renderTotpSetup($response, $secret, $e->getMessage(), 400);
+            $result = $this->renderTotpSetup($response, $secret, $e->getMessage(), HttpCode::BAD_REQUEST);
         }
 
         return $result;
@@ -122,7 +123,7 @@ class AccountController extends AbstractController
         }
         catch (InvalidInputException $e)
         {
-            $result = $this->renderAccount($response, $e->getMessage(), 400);
+            $result = $this->renderAccount($response, $e->getMessage(), HttpCode::BAD_REQUEST);
         }
 
         return $result;
@@ -150,7 +151,7 @@ class AccountController extends AbstractController
 
         WebSession::flash("The security key \"{$credential->getName()}\" was registered.");
         $body = ['id' => $credential->getId(), 'redirect' => self::issueBackupCodesIfNone($user, '/account')];
-        return self::json($response, $body, 201);
+        return self::json($response, $body, HttpCode::CREATED);
     }
 
 
@@ -199,7 +200,7 @@ class AccountController extends AbstractController
         }
         catch (InvalidInputException $e)
         {
-            $result = $this->renderAccount($response, $e->getMessage(), 400);
+            $result = $this->renderAccount($response, $e->getMessage(), HttpCode::BAD_REQUEST);
         }
 
         return $result;
@@ -223,7 +224,7 @@ class AccountController extends AbstractController
         }
         catch (InvalidInputException $e)
         {
-            $result = $this->renderAccount($response, $e->getMessage(), 400);
+            $result = $this->renderAccount($response, $e->getMessage(), HttpCode::BAD_REQUEST);
         }
 
         return $result;
@@ -295,7 +296,7 @@ class AccountController extends AbstractController
     }
 
 
-    private function renderAccount(Response $response, string $error, int $status) : Response
+    private function renderAccount(Response $response, string $error, HttpCode $status) : Response
     {
         $user = WebSession::getUser();
         $isMfaRequired = Settings::get()->isMfaRequired();
@@ -305,7 +306,7 @@ class AccountController extends AbstractController
     }
 
 
-    private function renderTotpSetup(Response $response, string $secret, string $error, int $status) : Response
+    private function renderTotpSetup(Response $response, string $secret, string $error, HttpCode $status) : Response
     {
         $uri = TotpService::getProvisioningUri(WebSession::getUser(), $secret);
         $page = new ViewTotpSetupPage(TotpService::getQrCodeDataUri($uri), $secret, $error);

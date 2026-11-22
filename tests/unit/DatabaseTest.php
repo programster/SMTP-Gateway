@@ -15,7 +15,7 @@ $suite = new TestSuite('Database');
  * Get this process's database session's ID.
  */
 $getSessionId = function () : int {
-    return (int)DB::fetchValue('SELECT pg_backend_pid()');
+    return (int)pg_fetch_result(ServiceFactory::getDb()->query('SELECT pg_backend_pid()'), 0, 0);
 };
 
 // Forking first, as a process must never fork with a connection open (see ServiceFactory::getDb()).
@@ -24,7 +24,7 @@ $childPid = pcntl_fork();
 
 if ($childPid === 0)
 {
-    exit((DB::fetchValue('SELECT 1') === '1') ? 0 : 1);
+    exit((pg_fetch_result(ServiceFactory::getDb()->query('SELECT 1'), 0, 0) === '1') ? 0 : 1);
 }
 
 pcntl_waitpid($childPid, $status);

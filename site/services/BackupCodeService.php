@@ -69,10 +69,10 @@ final class BackupCodeService
 
         if (BackupCode::isValid($code))
         {
-            $userId = DB::escape($user->getId());
+            $userId = ServiceFactory::getDb()->escapeValue($user->getId());
             $query = "SELECT \"id\", \"code_hash\" FROM \"admin_backup_code\" WHERE \"admin_user_id\" = {$userId}";
 
-            foreach (DB::fetchRows($query . ' AND "used_at" IS NULL') as $row)
+            foreach (pg_fetch_all(ServiceFactory::getDb()->query($query . ' AND "used_at" IS NULL')) as $row)
             {
                 if ($matchingId === '' && password_verify($code, $row['code_hash']))
                 {
@@ -101,12 +101,12 @@ final class BackupCodeService
      */
     public static function loadStatus(AdminUser $user) : BackupCodeStatus
     {
-        $userId = DB::escape($user->getId());
+        $userId = ServiceFactory::getDb()->escapeValue($user->getId());
 
-        $rows = DB::fetchRows(
+        $rows = pg_fetch_all(ServiceFactory::getDb()->query(
             'SELECT count(*) FILTER (WHERE "used_at" IS NULL) AS "unused", min("created_at") AS "generated_at"'
             . " FROM \"admin_backup_code\" WHERE \"admin_user_id\" = {$userId}"
-        );
+        ));
 
         return new BackupCodeStatus((int)$rows[0]['unused'], (string)($rows[0]['generated_at'] ?? ''));
     }

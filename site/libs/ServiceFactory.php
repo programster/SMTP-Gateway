@@ -8,6 +8,7 @@
 
 declare(strict_types = 1);
 
+use Programster\Log\AddedContextLogger;
 use Programster\Log\CachingLoggerFactory;
 use Programster\Log\FailoverLogger;
 use Programster\Log\JsonFileLogger;
@@ -125,12 +126,12 @@ class ServiceFactory
      */
     public static function getLogger(LogCategory $category) : \Psr\Log\LoggerInterface
     {
-        return new CategorisedLogger(self::getUncategorisedLogger(), $category);
+        return new AddedContextLogger(self::getUncategorisedLogger(), ['category' => $category->value]);
     }
 
 
     /**
-     * The logger every CategorisedLogger writes with: see getLogger().
+     * The logger that every logger from getLogger() passes its entries on to.
      * @return \Psr\Log\LoggerInterface
      */
     private static function getUncategorisedLogger() : \Psr\Log\LoggerInterface

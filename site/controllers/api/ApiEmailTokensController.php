@@ -7,6 +7,7 @@
 
 declare(strict_types = 1);
 
+use Programster\Http\HttpCode;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Interfaces\RouteCollectorProxyInterface;
@@ -51,7 +52,7 @@ class ApiEmailTokensController extends AbstractController
         }
         catch (InvalidInputException $e)
         {
-            throw new ApiException(400, ErrorCodeEnum::INVALID_INPUT, $e->getMessage());
+            throw new ApiException(HttpCode::BAD_REQUEST, ErrorCodeEnum::INVALID_INPUT, $e->getMessage());
         }
 
         $apiKey = $request->getAttribute('api_key');
@@ -67,7 +68,7 @@ class ApiEmailTokensController extends AbstractController
             'token' => $created->getToken()->getPlaintext(),
         ];
 
-        return self::json($response, $output, 201);
+        return self::json($response, $output, HttpCode::CREATED);
     }
 
 

@@ -93,9 +93,7 @@ readonly class ActivityCounts
     public function getLast7Days() : int { return $this->m_last7Days; }
     public function getQueuedNow() : int { return $this->m_queuedNow; }
     public function getFailedLast24Hours() : int { return $this->m_failedLast24Hours; }
-    public function getRejectedLastHour() : int { return $this->m_rejectedLastHour; }
     public function getRejectedLast24Hours() : int { return $this->m_rejectedLast24Hours; }
-    public function getRejectedLast7Days() : int { return $this->m_rejectedLast7Days; }
     public function getDeliveredLast7Days() : int { return $this->m_deliveredLast7Days; }
     public function getBouncedLast7Days() : int { return $this->m_bouncedLast7Days; }
     public function getOpenedLast7Days() : int { return $this->m_openedLast7Days; }

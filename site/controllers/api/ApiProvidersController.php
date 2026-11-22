@@ -12,6 +12,7 @@
 
 declare(strict_types = 1);
 
+use Programster\Http\HttpCode;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Interfaces\RouteCollectorProxyInterface;
@@ -55,7 +56,7 @@ class ApiProvidersController extends AbstractController
         if ($version === '')
         {
             $msg = 'An If-Match header with the current version (the ETag from GET /providers) is required.';
-            throw new ApiException(428, ErrorCodeEnum::MISSING_VERSION, $msg);
+            throw new ApiException(HttpCode::PRECONDITION_REQUIRED, ErrorCodeEnum::MISSING_VERSION, $msg);
         }
 
         try
@@ -71,11 +72,11 @@ class ApiProvidersController extends AbstractController
         }
         catch (InvalidInputException $e)
         {
-            throw new ApiException(400, ErrorCodeEnum::INVALID_INPUT, $e->getMessage());
+            throw new ApiException(HttpCode::BAD_REQUEST, ErrorCodeEnum::INVALID_INPUT, $e->getMessage());
         }
         catch (ConflictException $e)
         {
-            throw new ApiException(412, ErrorCodeEnum::CONFLICT, $e->getMessage());
+            throw new ApiException(HttpCode::PRECONDITION_FAILED, ErrorCodeEnum::CONFLICT, $e->getMessage());
         }
 
         $token = $request->getAttribute('api_key');
@@ -116,7 +117,7 @@ class ApiProvidersController extends AbstractController
         }
         catch (ProvidersNotConfiguredException $e)
         {
-            throw new ApiException(404, ErrorCodeEnum::PROVIDERS_NOT_CONFIGURED, $e->getMessage());
+            throw new ApiException(HttpCode::NOT_FOUND, ErrorCodeEnum::PROVIDERS_NOT_CONFIGURED, $e->getMessage());
         }
 
         $response->getBody()->write($yaml);

@@ -10,9 +10,6 @@ declare(strict_types = 1);
 
 class LoginThrottledException extends Exception
 {
-    private readonly int $m_minutesLeft;
-
-
     /**
      * @param int $minutesLeft - how many minutes until the address can try again, at least 1.
      */
@@ -20,10 +17,5 @@ class LoginThrottledException extends Exception
     {
         $minutes = ($minutesLeft === 1) ? '1 minute' : "{$minutesLeft} minutes";
         parent::__construct("Too many failed attempts to log in from your address. Try again in {$minutes}.");
-        $this->m_minutesLeft = $minutesLeft;
     }
-
-
-    # Accessors
-    public function getMinutesLeft() : int { return $this->m_minutesLeft; }
 }

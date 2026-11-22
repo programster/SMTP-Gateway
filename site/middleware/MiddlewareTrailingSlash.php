@@ -1,8 +1,9 @@
 <?php
 
+use Programster\Http\HttpCode;
+use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
-use Psr\Http\Message\ResponseInterface;
 
 class MiddlewareTrailingSlash implements \Psr\Http\Server\MiddlewareInterface
 {
@@ -19,8 +20,8 @@ class MiddlewareTrailingSlash implements \Psr\Http\Server\MiddlewareInterface
 
             if ($request->getMethod() == 'GET')
             {
-                $response = new \Slim\Psr7\Response();
-                $response = $response->withHeader('Location', (string)$uri)->withStatus(307);
+                $response = new \Slim\Psr7\Response(HttpCode::TEMPORARY_REDIRECT->value);
+                $response = $response->withHeader('Location', (string)$uri);
             }
             else
             {

@@ -36,13 +36,15 @@ readonly class RateLimitScope
 
     public static function forEmailToken(string $emailTokenId) : RateLimitScope
     {
-        return new RateLimitScope('"email_message"', '"email_token_id" = ' . DB::escape($emailTokenId));
+        $condition = '"email_token_id" = ' . ServiceFactory::getDb()->escapeValue($emailTokenId);
+        return new RateLimitScope('"email_message"', $condition);
     }
 
 
     public static function forProvider(string $providerName) : RateLimitScope
     {
-        return new RateLimitScope('"email_attempt"', '"provider" = ' . DB::escape($providerName));
+        $condition = '"provider" = ' . ServiceFactory::getDb()->escapeValue($providerName);
+        return new RateLimitScope('"email_attempt"', $condition);
     }
 
 

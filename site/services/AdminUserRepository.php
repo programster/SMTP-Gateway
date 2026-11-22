@@ -8,6 +8,7 @@
 
 declare(strict_types = 1);
 
+use Programster\PgsqlLib\PgsqlLib;
 use Programster\PgsqlLib\Query;
 use Programster\PgsqlObjects\CacheMode;
 use Programster\PgsqlObjects\OrmTransaction;
@@ -88,18 +89,23 @@ final class AdminUserRepository
             throw new InvalidInputException("There is already an account for {$address}.");
         }
 
-        $id = (string)AdminUserTable::getInstance()->generateId();
-
-        $insert = DB::generateInsertQuery('admin_user', [
-            'id' => $id,
+        $user = AdminUser::createFromArray([
             'email' => $address,
             'password_hash' => password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT),
+            'totp_secret' => null,
+            'totp_last_used_step' => null,
             'created_at' => Time::now(),
+            'session_version' => 0,
+            'last_login_at' => null,
+            'last_login_ip' => null,
             'must_change_password' => false,
+            'status' => AccountStatus::ACTIVE->value,
+            'status_changed_at' => null,
+            'mfa_grace_until' => null,
         ]);
 
-        ServiceFactory::getTransaction()->append($insert);
-        return $id;
+        ServiceFactory::getTransaction()->save($user);
+        return (string)$user->getId();
     }
 
 
@@ -125,22 +131,22 @@ final class AdminUserRepository
      */
     public static function loadByEmail(string $email) : AdminUser
     {
-        $escaped = DB::escape(mb_strtolower(trim($email)));
-        $rows = DB::fetchRows("SELECT \"id\" FROM \"admin_user\" WHERE \"email\" = {$escaped}");
+        $wherePairs = ['email' => mb_strtolower(trim($email))];
+        $users = AdminUserTable::getInstance()->loadWhereAnd($wherePairs, CacheMode::IGNORE_CACHE);
 
-        if (count($rows) === 0)
+        if (count($users) === 0)
         {
             throw new NotFoundException("There is no account for \"{$email}\".");
         }
 
-        return self::load($rows[0]['id']);
+        return $users[0];
     }
 
 
     public static function isEmailTaken(EmailAddress $email) : bool
     {
-        $escaped = DB::escape(self::normalise($email));
-        return DB::fetchValue("SELECT count(*) FROM \"admin_user\" WHERE \"email\" = {$escaped}") !== '0';
+        $query = 'SELECT count(*) FROM "admin_user" WHERE "email" = $1';
+        return pg_fetch_result(ServiceFactory::getDb()->query($query, [self::normalise($email)]), 0, 0) !== '0';
     }
 
 
@@ -151,7 +157,7 @@ final class AdminUserRepository
     {
         try
         {
-            if (Uuid::isValid($id) === false)
+            if (PgsqlLib::isValidUuid($id) === false)
             {
                 throw new NotFoundException("There is no account with the ID \"{$id}\".");
             }
@@ -190,8 +196,8 @@ final class AdminUserRepository
             throw new InvalidInputException("There's already an account for \"{$normalised}\".");
         }
 
-        $user->update(['email' => $normalised]);
-        return $user;
+        // Only this column is written, so a stale $user can't undo a change made since, such as a logout.
+        return AdminUserTable::getInstance()->updateById($user->getId(), ['email' => $normalised]);
     }
 
 
@@ -221,7 +227,7 @@ final class AdminUserRepository
             . ' ORDER BY "last_login_at" DESC LIMIT ';
 
 
-        foreach (DB::fetchRows($query . $limit) as $row)
+        foreach (pg_fetch_all(ServiceFactory::getDb()->query($query . $limit)) as $row)
         {
             $users[] = self::load($row['id']);
         }
@@ -265,7 +271,10 @@ final class AdminUserRepository
 
         if ($isValid && password_needs_rehash($user->getPasswordHash(), PASSWORD_DEFAULT))
         {
-            $user->update(['password_hash' => password_hash($password, PASSWORD_DEFAULT)]);
+            // Only if the hash is unchanged, so this can't undo a password change made since $user was loaded.
+            $query = 'UPDATE "admin_user" SET "password_hash" = $1 WHERE "id" = $2 AND "password_hash" = $3';
+            $newHash = password_hash($password, PASSWORD_DEFAULT);
+            ServiceFactory::getDb()->query($query, [$newHash, $user->getId(), $user->getPasswordHash()]);
         }
 
         return $isValid;
@@ -291,40 +300,33 @@ final class AdminUserRepository
 
 
     /**
-     * Add a password change to the transaction being built: it logs the account out everywhere, cancels its reset
-     * links, and ends any grace period, so a reset link can't be combined with one to get past the second factor.
+     * Use a password reset link to change its account's password, in one statement, so it's all or nothing. Used at
+     * the same moment, the second use waits for the first, then finds the link used. Like any password change, it logs
+     * the account out everywhere, cancels its other links, and ends any grace period.
      *
-     * @param AdminUser $user - the account.
+     * @param string $tokenHash - the hash of the link's token.
      *
      * @param string $newPassword - the new password, which must meet the rules set under Settings > Security.
      *
-     * @param bool $mustChange - whether it has to choose another when it next logs in.
-     *
-     * @return void
+     * @return bool - whether the link was still valid, so the password was changed.
      *
      * @throws InvalidInputException - if the new password doesn't meet the rules.
      */
-    public static function addPasswordChangeToTransaction(
-        AdminUser $user,
-        string $newPassword,
-        bool $mustChange
-    ) : void
+    public static function changePasswordUsingResetLink(string $tokenHash, string $newPassword) : bool
     {
-        $hash = self::hashPassword($newPassword);
-        $id = (string)$user->getId();
+        $query =
+            'WITH "claimed" AS (UPDATE "password_reset_token" SET "used_at" = now()'
+            . ' WHERE "token_hash" = $1 AND "used_at" IS NULL AND "expires_at" > now() RETURNING "admin_user_id"),'
+            . ' "changed" AS (UPDATE "admin_user" SET "password_hash" = $2,'
+            . ' "session_version" = "session_version" + 1, "must_change_password" = false, "mfa_grace_until" = NULL'
+            . ' FROM "claimed" WHERE "admin_user"."id" = "claimed"."admin_user_id" RETURNING "admin_user"."id"),'
+            . ' "others" AS (UPDATE "password_reset_token" SET "used_at" = now()'
+            . ' WHERE "admin_user_id" IN (SELECT "admin_user_id" FROM "claimed")'
+            . ' AND "used_at" IS NULL AND "token_hash" <> $1)'
+            . ' SELECT "id" FROM "changed"';
 
-        $updateAccount = new Query(
-            'UPDATE "admin_user" SET "password_hash" = $1, "session_version" = "session_version" + 1,'
-            . ' "must_change_password" = $2, "mfa_grace_until" = NULL WHERE "id" = $3',
-            [$hash, $mustChange, $id]
-        );
-
-        $cancelLinks = new Query(
-            'UPDATE "password_reset_token" SET "used_at" = now() WHERE "admin_user_id" = $1 AND "used_at" IS NULL',
-            [$id]
-        );
-
-        ServiceFactory::getTransaction()->append($updateAccount, $cancelLinks);
+        $result = ServiceFactory::getDb()->query($query, [$tokenHash, self::hashPassword($newPassword)]);
+        return pg_num_rows($result) > 0;
     }
 
 
@@ -400,7 +402,7 @@ final class AdminUserRepository
     {
         self::assertNotArchived($user);
         self::assertNotLastActive($user);
-        $id = DB::escape($user->getId());
+        $id = ServiceFactory::getDb()->escapeValue($user->getId());
 
         $blockAccount =
             "UPDATE \"admin_user\" SET \"status\" = 'blocked', \"status_changed_at\" = now(),"
@@ -428,7 +430,7 @@ final class AdminUserRepository
     public static function unblock(AdminUser $user) : AdminUser
     {
         self::assertNotArchived($user);
-        $id = DB::escape($user->getId());
+        $id = ServiceFactory::getDb()->escapeValue($user->getId());
         $query = "UPDATE \"admin_user\" SET \"status\" = 'active', \"status_changed_at\" = now() WHERE \"id\" = {$id}";
         ServiceFactory::getDb()->query($query);
         return self::load($user->getId());
@@ -451,10 +453,11 @@ final class AdminUserRepository
     {
         self::assertNotArchived($user);
         self::assertNotLastActive($user);
-        $id = DB::escape($user->getId());
-        $email = DB::escape($user->getEmail());
-        $placeholder = DB::escape('user ' . $user->getId());
-        $unusablePassword = DB::escape(password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT));
+        $id = ServiceFactory::getDb()->escapeValue($user->getId());
+        $email = ServiceFactory::getDb()->escapeValue($user->getEmail());
+        $placeholder = ServiceFactory::getDb()->escapeValue('user ' . $user->getId());
+        $unusableHash = password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT);
+        $unusablePassword = ServiceFactory::getDb()->escapeValue($unusableHash);
 
         // The service's own emails to the account, matched in any case.
         $isToAccount =
@@ -604,17 +607,23 @@ final class AdminUserRepository
      */
     private static function replacePassword(AdminUser $user, string $newPassword, bool $mustChange) : AdminUser
     {
-        try
-        {
-            self::addPasswordChangeToTransaction($user, $newPassword, $mustChange);
-            ServiceFactory::getTransaction()->commit();
-        }
-        catch (Throwable $exception)
-        {
-            ServiceFactory::discardTransaction();
-            throw $exception;
-        }
+        $hash = self::hashPassword($newPassword);
+        $id = (string)$user->getId();
 
+        // A grace period ends here, so a reset link can't be combined with one to get past the second factor.
+        $updateAccount = new Query(
+            'UPDATE "admin_user" SET "password_hash" = $1, "session_version" = "session_version" + 1,'
+            . ' "must_change_password" = $2, "mfa_grace_until" = NULL WHERE "id" = $3',
+            [$hash, $mustChange, $id]
+        );
+
+        $cancelLinks = new Query(
+            'UPDATE "password_reset_token" SET "used_at" = now() WHERE "admin_user_id" = $1 AND "used_at" IS NULL',
+            [$id]
+        );
+
+        $transaction = new OrmTransaction(ServiceFactory::getDb(), [$updateAccount, $cancelLinks]);
+        $transaction->commit();
         return self::load($user->getId());
     }
 
@@ -628,7 +637,9 @@ final class AdminUserRepository
     {
         $users = [];
 
-        foreach (DB::fetchRows('SELECT "id" FROM "admin_user" WHERE ' . $condition) as $row)
+        $query = 'SELECT "id" FROM "admin_user" WHERE ' . $condition;
+
+        foreach (pg_fetch_all(ServiceFactory::getDb()->query($query)) as $row)
         {
             $users[] = self::load($row['id']);
         }
@@ -658,10 +669,10 @@ final class AdminUserRepository
      */
     private static function assertNotLastActive(AdminUser $user) : void
     {
-        $others = DB::escape($user->getId());
+        $others = ServiceFactory::getDb()->escapeValue($user->getId());
         $query = "SELECT count(*) FROM \"admin_user\" WHERE \"status\" = 'active' AND \"id\" <> {$others}";
 
-        if ((int)DB::fetchValue($query) === 0)
+        if ((int)pg_fetch_result(ServiceFactory::getDb()->query($query), 0, 0) === 0)
         {
             $msg = 'That\'s the last account that can log in, so it can\'t be blocked or archived.';
             throw new AccountStateException(AccountStateProblem::LAST_ACTIVE_ACCOUNT, $msg);
@@ -682,15 +693,16 @@ final class AdminUserRepository
     {
         self::assertCanRestore($user, $email);
 
-        $user->update([
+        // Only these columns are written, so a stale $user can't undo a change made since, such as a logout.
+        $changes = [
             'status' => AccountStatus::ACTIVE->value,
             'status_changed_at' => Time::now(),
             'email' => self::normalise($email),
             'password_hash' => $passwordHash,
             'must_change_password' => $mustChangePassword,
-        ]);
+        ];
 
-        return self::load($user->getId());
+        return AdminUserTable::getInstance()->updateById($user->getId(), $changes);
     }
 
 

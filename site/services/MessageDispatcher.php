@@ -363,10 +363,10 @@ final class MessageDispatcher
 
             if ($provider !== '')
             {
-                $id = DB::escape($candidate['id']);
-                $escapedProvider = DB::escape($provider);
+                $id = ServiceFactory::getDb()->escapeValue($candidate['id']);
+                $escapedProvider = ServiceFactory::getDb()->escapeValue($provider);
                 $attemptId = PgsqlLib::generateUuid(UuidVersion::V7);
-                $escapedAttemptId = DB::escape($attemptId);
+                $escapedAttemptId = ServiceFactory::getDb()->escapeValue($attemptId);
 
                 $markSending =
                     "UPDATE \"email_message\" SET \"status\" = 'sending', \"dispatched_at\" = now(),"
@@ -618,14 +618,14 @@ final class MessageDispatcher
         bool $isPermanent
     ) : void
     {
-        $id = DB::escape($messageId);
+        $id = ServiceFactory::getDb()->escapeValue($messageId);
 
         $query =
             "SELECT \"tried_providers\", \"retry_round\", \"email_token_id\", \"sender_addresses\""
             . " FROM \"email_message\""
             . " WHERE \"id\" = {$id}";
 
-        $row = DB::fetchRows($query)[0];
+        $row = pg_fetch_all(ServiceFactory::getDb()->query($query))[0];
         $tried = json_decode($row['tried_providers'], true);
         $tried[] = ['provider' => $providerName, 'permanent' => $isPermanent, 'error' => mb_substr($error, 0, 500)];
         $triedNames = array_column($tried, 'provider');
@@ -643,8 +643,8 @@ final class MessageDispatcher
         }
 
         $summary = self::summariseAttempts($tried);
-        $escapedError = DB::escape($summary);
-        $escapedTried = DB::escape(json_encode($tried));
+        $escapedError = ServiceFactory::getDb()->escapeValue($summary);
+        $escapedTried = ServiceFactory::getDb()->escapeValue(json_encode($tried));
         $everyAttemptRejected = (count(array_filter(array_column($tried, 'permanent'))) === count($tried));
         $round = (int)$row['retry_round'] + 1;
 
@@ -691,16 +691,16 @@ final class MessageDispatcher
      */
     private static function waitForOutcome(string $messageId, float $pickupDeadline) : SubmissionOutcome
     {
-        $id = DB::escape($messageId);
+        $id = ServiceFactory::getDb()->escapeValue($messageId);
         $hardDeadline = $pickupDeadline + self::MAX_WAIT_AFTER_PICKUP_SECONDS;
         $outcome = null;
 
         while ($outcome === null)
         {
-            $row = DB::fetchRows(
+            $row = pg_fetch_all(ServiceFactory::getDb()->query(
                 'SELECT "status", "last_error", "retry_round", "dispatched_at" IS NOT NULL AS "was_picked_up",'
                 . " \"next_attempt_at\" <= now() AS \"is_due\" FROM \"email_message\" WHERE \"id\" = {$id}"
-            )[0];
+            ))[0];
 
             $now = microtime(true);
             $wasPickedUp = ($row['was_picked_up'] === 't');
@@ -793,9 +793,9 @@ final class MessageDispatcher
      */
     private static function finishAttempt(string $attemptId, AttemptOutcome $outcome, string $error) : void
     {
-        $id = DB::escape($attemptId);
-        $escapedOutcome = DB::escape($outcome->value);
-        $escapedError = ($error === '') ? 'NULL' : DB::escape(mb_substr($error, 0, 1000));
+        $id = ServiceFactory::getDb()->escapeValue($attemptId);
+        $escapedOutcome = ServiceFactory::getDb()->escapeValue($outcome->value);
+        $escapedError = ($error === '') ? 'NULL' : ServiceFactory::getDb()->escapeValue(mb_substr($error, 0, 1000));
 
         ServiceFactory::getDb()->query(
             "UPDATE \"email_attempt\" SET \"outcome\" = {$escapedOutcome}, \"finished_at\" = now(),"
@@ -806,9 +806,9 @@ final class MessageDispatcher
 
     private static function markSent(string $messageId, string $providerName, string $providerMessageId) : void
     {
-        $id = DB::escape($messageId);
-        $escapedProvider = DB::escape($providerName);
-        $providerId = DB::escape($providerMessageId);
+        $id = ServiceFactory::getDb()->escapeValue($messageId);
+        $escapedProvider = ServiceFactory::getDb()->escapeValue($providerName);
+        $providerId = ServiceFactory::getDb()->escapeValue($providerMessageId);
         $clearContent = self::getClearContentOnFinishSql();
 
         ServiceFactory::getDb()->query(
@@ -823,8 +823,8 @@ final class MessageDispatcher
 
     private static function markFailed(string $messageId, string $error) : void
     {
-        $id = DB::escape($messageId);
-        $escapedError = DB::escape($error);
+        $id = ServiceFactory::getDb()->escapeValue($messageId);
+        $escapedError = ServiceFactory::getDb()->escapeValue($error);
         $clearContent = self::getClearContentOnFinishSql();
 
         ServiceFactory::getDb()->query(
@@ -885,7 +885,7 @@ final class MessageDispatcher
      */
     private static function markAsHavingQueued(string $messageId) : void
     {
-        $id = DB::escape($messageId);
+        $id = ServiceFactory::getDb()->escapeValue($messageId);
         ServiceFactory::getDb()->query("UPDATE \"email_message\" SET \"was_queued\" = true WHERE \"id\" = {$id}");
     }
 
@@ -953,16 +953,27 @@ final class MessageDispatcher
      *
      * @param OrmTransaction $transaction - the transaction.
      *
-     * @param array<string, string|int|bool|null> $row - the email's columns, without its ID.
+     * @param array<string, string|int|bool|null> $row - the email's columns, without its ID or those that start empty.
      *
      * @return string - the email's ID. It doesn't exist until the transaction commits.
      */
     private static function addMessageToTransaction(OrmTransaction $transaction, array $row) : string
     {
-        $id = (string)EmailMessageTable::getInstance()->generateId();
-        $transaction->append(DB::generateInsertQuery('email_message', ['id' => $id] + $row));
+        $emptyColumns = [
+            'sent_at' => null,
+            'provider' => null,
+            'provider_message_id' => null,
+            'last_error' => null,
+            'tried_providers' => '[]',
+            'retry_round' => 0,
+            'attachments_removed_at' => null,
+            'removed_attachment_count' => 0,
+        ];
+
+        $message = EmailMessage::createFromArray($row + $emptyColumns);
+        $transaction->save($message);
         $transaction->append(self::generateWakeWorkersQuery());
-        return $id;
+        return (string)$message->getId();
     }
 
 
@@ -978,13 +989,13 @@ final class MessageDispatcher
 
         // The oldest due email from each token (and from the service itself, whose emails have no token), highest
         // priority first.
-        $candidates = DB::fetchRows(
+        $candidates = pg_fetch_all(ServiceFactory::getDb()->query(
             'SELECT * FROM (SELECT DISTINCT ON ("email_token_id") "id", "email_token_id", "recipient_count",'
             . ' "tried_providers", "sender_addresses", "priority", "created_at" FROM "email_message"'
             . ' WHERE "status" = \'queued\''
             . ' AND "next_attempt_at" <= now() ORDER BY "email_token_id", "created_at") AS "oldest_per_key"'
             . ' ORDER BY "priority" DESC, "created_at"'
-        );
+        ));
 
         // Once an email is held back by the global limits, which every email shares, no lower priority email may use
         // the room it's waiting for. Once one is held back by the providers' limits, no lower priority email may use

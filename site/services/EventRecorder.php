@@ -10,6 +10,8 @@
 
 declare(strict_types = 1);
 
+use Programster\PgsqlLib\PgsqlLib;
+
 
 final class EventRecorder
 {
@@ -31,7 +33,7 @@ final class EventRecorder
         foreach ($events as $event)
         {
             /* @var $event ProviderEvent */
-            if (Uuid::isValid($event->getMessageId()) || $event->getProviderMessageId() !== '')
+            if (PgsqlLib::isValidUuid($event->getMessageId()) || $event->getProviderMessageId() !== '')
             {
                 $recorded += self::recordForMessage($providerName, $event);
             }
@@ -55,20 +57,21 @@ final class EventRecorder
     private static function recordForMessage(string $providerName, ProviderEvent $event) : int
     {
         $values = [
-            DB::escape((string)EmailEventTable::getInstance()->generateId()),
+            ServiceFactory::getDb()->escapeValue((string)EmailEventTable::getInstance()->generateId()),
             '"m"."id"',
-            DB::escape($providerName),
-            'NULLIF(' . DB::escape($event->getProviderEventId()) . ", '')",
-            DB::escape($event->getType()->value),
-            'NULLIF(' . DB::escape(mb_substr($event->getRecipient(), 0, 320)) . ", '')",
-            'NULLIF(' . DB::escape(mb_substr($event->getDetail(), 0, 2000)) . ", '')",
-            DB::escape($event->getOccurredAt()->format(DATE_ATOM)),
+            ServiceFactory::getDb()->escapeValue($providerName),
+            'NULLIF(' . ServiceFactory::getDb()->escapeValue($event->getProviderEventId()) . ", '')",
+            ServiceFactory::getDb()->escapeValue($event->getType()->value),
+            'NULLIF(' . ServiceFactory::getDb()->escapeValue(mb_substr($event->getRecipient(), 0, 320)) . ", '')",
+            'NULLIF(' . ServiceFactory::getDb()->escapeValue(mb_substr($event->getDetail(), 0, 2000)) . ", '')",
+            ServiceFactory::getDb()->escapeValue($event->getOccurredAt()->format(DATE_ATOM)),
         ];
 
-        $matchesEmail = Uuid::isValid($event->getMessageId())
-            ? '"m"."id" = ' . DB::escape($event->getMessageId())
-            : '"m"."provider" = ' . DB::escape($providerName)
-                . ' AND "m"."provider_message_id" = ' . DB::escape($event->getProviderMessageId());
+        $matchesEmail = PgsqlLib::isValidUuid($event->getMessageId())
+            ? '"m"."id" = ' . ServiceFactory::getDb()->escapeValue($event->getMessageId())
+            : '"m"."provider" = ' . ServiceFactory::getDb()->escapeValue($providerName)
+                . ' AND "m"."provider_message_id" = '
+                . ServiceFactory::getDb()->escapeValue($event->getProviderMessageId());
 
         // Selected from the email it's about, so an event for an email that isn't there inserts nothing.
         $result = ServiceFactory::getDb()->query(

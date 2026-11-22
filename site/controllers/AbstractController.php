@@ -7,6 +7,7 @@
 
 declare(strict_types = 1);
 
+use Programster\Http\HttpCode;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Slim\Interfaces\RouteCollectorProxyInterface;
@@ -33,7 +34,7 @@ abstract class AbstractController
      *
      * @param \Programster\AbstractView\AbstractView $page - the page's content.
      *
-     * @param int $status - the HTTP status code.
+     * @param HttpCode $status - the HTTP status code.
      *
      * @return ResponseInterface
      */
@@ -41,11 +42,11 @@ abstract class AbstractController
         ResponseInterface $response,
         string $title,
         \Programster\AbstractView\AbstractView $page,
-        int $status = 200
+        HttpCode $status = HttpCode::OK
     ) : ResponseInterface
     {
         $response->getBody()->write((string)new ViewTemplateHtmlShell($title, $page));
-        return $response->withStatus($status)->withHeader('Content-Type', 'text/html; charset=utf-8');
+        return $response->withStatus($status->value)->withHeader('Content-Type', 'text/html; charset=utf-8');
     }
 
 
@@ -60,7 +61,7 @@ abstract class AbstractController
      */
     protected static function redirect(ResponseInterface $response, string $path) : ResponseInterface
     {
-        return $response->withStatus(303)->withHeader('Location', $path);
+        return $response->withStatus(HttpCode::SEE_OTHER->value)->withHeader('Location', $path);
     }
 
 
@@ -71,14 +72,18 @@ abstract class AbstractController
      *
      * @param mixed $data - what to encode.
      *
-     * @param int $status - the HTTP status code.
+     * @param HttpCode $status - the HTTP status code.
      *
      * @return ResponseInterface
      */
-    protected static function json(ResponseInterface $response, mixed $data, int $status = 200) : ResponseInterface
+    protected static function json(
+        ResponseInterface $response,
+        mixed $data,
+        HttpCode $status = HttpCode::OK
+    ) : ResponseInterface
     {
         $response->getBody()->write(json_encode($data, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR));
-        return $response->withStatus($status)->withHeader('Content-Type', 'application/json');
+        return $response->withStatus($status->value)->withHeader('Content-Type', 'application/json');
     }
 
 
@@ -197,7 +202,8 @@ abstract class AbstractController
 
         if (!is_array($body) || (count($body) > 0 && array_is_list($body)))
         {
-            throw new ApiException(400, ErrorCodeEnum::INVALID_JSON, 'The request body must be a JSON object.');
+            $message = 'The request body must be a JSON object.';
+            throw new ApiException(HttpCode::BAD_REQUEST, ErrorCodeEnum::INVALID_JSON, $message);
         }
 
         return $body;

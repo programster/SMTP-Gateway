@@ -10,6 +10,7 @@
 
 declare(strict_types = 1);
 
+use Programster\CoreLibs\Enums\DataSizeUnitEnum;
 use ZBateson\MailMimeParser\Message;
 
 
@@ -76,16 +77,8 @@ final class AttachmentStripper
         $content = $attachment->getBinaryContentStream();
         $bytes = ($content === null) ? 0 : ($content->getSize() ?? strlen($content->getContents()));
         $label = ($name === null || trim($name) === '') ? '(no name)' : str_replace(["\r", "\n"], ' ', $name);
-        return "- {$label} ({$attachment->getContentType()}, " . self::describeBytes($bytes) . ')';
+        return "- {$label} ({$attachment->getContentType()}, " . DataSizeUnitEnum::formatBytes($bytes) . ')';
     }
 
 
-    private static function describeBytes(int $bytes) : string
-    {
-        return match (true) {
-            $bytes >= 1024 * 1024 => round($bytes / (1024 * 1024), 1) . ' MB',
-            $bytes >= 1024 => round($bytes / 1024, 1) . ' KB',
-            default => "{$bytes} bytes",
-        };
-    }
 }

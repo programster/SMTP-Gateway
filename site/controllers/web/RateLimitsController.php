@@ -6,6 +6,7 @@
 
 declare(strict_types = 1);
 
+use Programster\Http\HttpCode;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Interfaces\RouteCollectorProxyInterface;
@@ -49,7 +50,7 @@ class RateLimitsController extends AbstractController
         catch (InvalidInputException $e)
         {
             $page = new ViewRateLimitsPage(GlobalRateLimitRepository::load(), $e->getMessage());
-            $result = self::renderPage($response, 'Global rate limits', $page, 400);
+            $result = self::renderPage($response, 'Global rate limits', $page, HttpCode::BAD_REQUEST);
         }
 
         return $result;

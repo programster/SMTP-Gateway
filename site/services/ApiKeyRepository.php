@@ -116,7 +116,9 @@ final class ApiKeyRepository
     {
         $apiKeys = [];
 
-        foreach (DB::fetchRows('SELECT "id" FROM "api_key" ORDER BY "created_at" DESC') as $row)
+        $query = 'SELECT "id" FROM "api_key" ORDER BY "created_at" DESC';
+
+        foreach (pg_fetch_all(ServiceFactory::getDb()->query($query)) as $row)
         {
             $apiKeys[] = self::load($row['id']);
         }
@@ -143,7 +145,7 @@ final class ApiKeyRepository
 
     public static function revoke(ApiKey $apiKey) : void
     {
-        $id = DB::escape($apiKey->getId());
+        $id = ServiceFactory::getDb()->escapeValue($apiKey->getId());
         $query = "UPDATE \"api_key\" SET \"revoked_at\" = now() WHERE \"id\" = {$id} AND \"revoked_at\" IS NULL";
         ServiceFactory::getDb()->query($query);
     }
@@ -172,7 +174,7 @@ final class ApiKeyRepository
         $apiKeys = [];
         $query = 'SELECT "id" FROM "api_key" WHERE "last_used_at" IS NOT NULL ORDER BY "last_used_at" DESC LIMIT ';
 
-        foreach (DB::fetchRows($query . $limit) as $row)
+        foreach (pg_fetch_all(ServiceFactory::getDb()->query($query . $limit)) as $row)
         {
             $apiKeys[] = self::load($row['id']);
         }

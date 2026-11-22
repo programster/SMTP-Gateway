@@ -9,6 +9,7 @@
 
 declare(strict_types = 1);
 
+use Programster\Http\HttpCode;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Interfaces\RouteCollectorProxyInterface;
@@ -30,12 +31,12 @@ class WebhookController extends AbstractController
         }
         catch (NotFoundException | ConfigurationException)
         {
-            throw new ApiException(404, ErrorCodeEnum::NOT_FOUND, 'There is no such webhook.');
+            throw new ApiException(HttpCode::NOT_FOUND, ErrorCodeEnum::NOT_FOUND, 'There is no such webhook.');
         }
 
         if (!($provider instanceof ProviderWebhookInterface) || $provider->isWebhookEnabled() === false)
         {
-            throw new ApiException(404, ErrorCodeEnum::NOT_FOUND, 'There is no such webhook.');
+            throw new ApiException(HttpCode::NOT_FOUND, ErrorCodeEnum::NOT_FOUND, 'There is no such webhook.');
         }
 
         try
@@ -49,7 +50,7 @@ class WebhookController extends AbstractController
                 'client_ip' => (string)ClientIpResolver::resolve($request),
             ]);
 
-            throw new ApiException(401, ErrorCodeEnum::INVALID_CREDENTIALS, $e->getMessage());
+            throw new ApiException(HttpCode::UNAUTHORIZED, ErrorCodeEnum::INVALID_CREDENTIALS, $e->getMessage());
         }
 
         $recorded = EventRecorder::record($provider->getName(), $events);

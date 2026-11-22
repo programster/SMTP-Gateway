@@ -38,7 +38,8 @@ $suite->check('HTML body kept', str_contains($result, '<p>Hello <img src="cid:lo
 $suite->check('note added', str_contains($result, 'attachments-removed.txt'));
 $reparsed = \ZBateson\MailMimeParser\Message::from($result, false);
 $note = $reparsed->getAttachmentPart(0)->getContent();
-$isListed = str_contains($note, 'invoice.pdf (application/pdf, 27.3 KB)') && str_contains($note, 'logo.png (image/png');
+$listsPdf = str_contains($note, 'invoice.pdf (application/pdf, 27.3 KiB)');
+$isListed = $listsPdf && str_contains($note, 'logo.png (image/png');
 $suite->check('the note lists both', $isListed, $note);
 $suite->check('the result has one attachment: the note', $reparsed->getAttachmentCount() === 1);
 $suite->check('its HTML can still be read', str_contains((string)$reparsed->getHtmlContent(), 'Hello'));

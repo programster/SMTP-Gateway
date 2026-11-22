@@ -31,7 +31,7 @@ final class ProviderStats
 
         $counts = [];
 
-        foreach (DB::fetchRows($query) as $row)
+        foreach (pg_fetch_all(ServiceFactory::getDb()->query($query)) as $row)
         {
             $counts[$row['provider']] = array_map('intval', array_diff_key($row, ['provider' => true]));
         }

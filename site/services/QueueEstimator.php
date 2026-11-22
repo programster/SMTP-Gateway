@@ -70,9 +70,10 @@ final class QueueEstimator
         // counted it as already sent (and so could make it look minutes away), when it's actually being sent now.
         // This is checked after them, as a worker marks the email claimed in the same transaction that makes it
         // count, so if they counted it, this sees it claimed.
-        $isClaimed = DB::fetchValue(
-            'SELECT "status" <> \'queued\' FROM "email_message" WHERE "id" = ' . DB::escape($messageId)
-        ) === 't';
+        $isClaimed = pg_fetch_result(ServiceFactory::getDb()->query(
+            'SELECT "status" <> \'queued\' FROM "email_message" WHERE "id" = '
+            . ServiceFactory::getDb()->escapeValue($messageId)
+        ), 0, 0) === 't';
 
         return $isClaimed ? 0.0 : max($limitsWait, self::estimateQueueSeconds($aheadOverall));
     }
@@ -90,17 +91,18 @@ final class QueueEstimator
      */
     private static function estimateQueueSeconds(QueuedDemand $queuedAhead) : float
     {
-        $sending = (int)DB::fetchValue('SELECT count(*) FROM "email_message" WHERE "status" = \'sending\'');
+        $sendingQuery = 'SELECT count(*) FROM "email_message" WHERE "status" = \'sending\'';
+        $sending = (int)pg_fetch_result(ServiceFactory::getDb()->query($sendingQuery), 0, 0);
         $ahead = $sending + $queuedAhead->getEmails();
 
         // The median, rather than the mean, so one unusually slow send can't skew it.
-        $medianSeconds = (float)DB::fetchValue(
+        $medianSeconds = (float)pg_fetch_result(ServiceFactory::getDb()->query(
             'SELECT coalesce(percentile_cont(0.5) WITHIN GROUP'
             . ' (ORDER BY extract(epoch FROM ("sent_at" - "dispatched_at"))),'
             . ' ' . self::DEFAULT_SEND_SECONDS . ') FROM (SELECT "sent_at", "dispatched_at" FROM "email_message"'
             . ' WHERE "status" = \'sent\' AND "sent_at" > now() - interval \'10 minutes\''
             . ' ORDER BY "sent_at" DESC LIMIT 100) AS "recent"'
-        );
+        ), 0, 0);
 
         $sendSeconds = min(self::MAX_SEND_SECONDS, max(0.01, $medianSeconds));
         return floor($ahead / Config::get()->getQueueWorkers()) * $sendSeconds;

@@ -22,13 +22,7 @@ final class BackupCode
      */
     public static function generate() : string
     {
-        $code = '';
-
-        for ($i = 0; $i < self::LENGTH; $i++)
-        {
-            $code .= self::ALPHABET[random_int(0, strlen(self::ALPHABET) - 1)];
-        }
-
+        $code = (new \Random\Randomizer())->getBytesFromString(self::ALPHABET, self::LENGTH);
         return substr($code, 0, self::LENGTH / 2) . '-' . substr($code, self::LENGTH / 2);
     }
 

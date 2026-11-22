@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "453b663a05edb30f2a00b2e0dae2483b",
+    "content-hash": "2057847daef14d13ab8f0144b3f8bee2",
     "packages": [
         {
             "name": "brick/math",
@@ -1819,6 +1819,56 @@
                 "source": "https://github.com/programster/package-google-sso/tree/1.0.1"
             },
             "time": "2026-11-13T18:19:47+00:00"
+        },
+        {
+            "name": "programster/http-codes",
+            "version": "2.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/programster/package-http-codes.git",
+                "reference": "e3ce73ba43fa6ec9668410fa1146388277097b97"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/programster/package-http-codes/zipball/e3ce73ba43fa6ec9668410fa1146388277097b97",
+                "reference": "e3ce73ba43fa6ec9668410fa1146388277097b97",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=8.1"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Programster\\Http\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Stuart Page",
+                    "email": "sdpagent@gmail.com"
+                },
+                {
+                    "name": "iRAP Admin",
+                    "email": "it.admin@irap.org"
+                }
+            ],
+            "description": "A package to make HTTP status codes easier.",
+            "homepage": "https://github.com/programster/package-http-codes",
+            "keywords": [
+                "codes",
+                "error",
+                "http",
+                "status"
+            ],
+            "support": {
+                "source": "https://github.com/programster/package-http-codes/tree/2.0.0"
+            },
+            "time": "2021-12-18T10:28:53+00:00"
         },
         {
             "name": "programster/log",

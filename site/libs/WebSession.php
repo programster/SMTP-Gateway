@@ -243,28 +243,6 @@ final class WebSession
 
 
     /**
-     * Get the state a Google login was started with (see GoogleSsoStateStore).
-     * @return string - the state, or an empty string if there isn't one (which no callback will match).
-     */
-    public static function getGoogleSsoState() : string
-    {
-        return (string)($_SESSION[self::GOOGLE_SSO_STATE_KEY] ?? '');
-    }
-
-
-    public static function setGoogleSsoState(string $state) : void
-    {
-        $_SESSION[self::GOOGLE_SSO_STATE_KEY] = $state;
-    }
-
-
-    public static function removeGoogleSsoState() : void
-    {
-        unset($_SESSION[self::GOOGLE_SSO_STATE_KEY]);
-    }
-
-
-    /**
      * Get the CSRF token, which every form and JSON request that changes something must send back.
      *
      * @return string

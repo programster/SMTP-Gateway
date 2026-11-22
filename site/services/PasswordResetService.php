@@ -16,7 +16,6 @@
 
 declare(strict_types = 1);
 
-use Programster\PgsqlLib\Exceptions\ExceptionQueryError;
 use Programster\PgsqlLib\Query;
 
 
@@ -127,10 +126,11 @@ final class PasswordResetService
      */
     public static function loadUserForToken(string $token) : AdminUser
     {
-        $rows = DB::fetchRows(
-            'SELECT "admin_user_id" FROM "password_reset_token" WHERE "token_hash" = ' . DB::escape(self::hash($token))
+        $rows = pg_fetch_all(ServiceFactory::getDb()->query(
+            'SELECT "admin_user_id" FROM "password_reset_token" WHERE "token_hash" = '
+            . ServiceFactory::getDb()->escapeValue(self::hash($token))
             . ' AND "used_at" IS NULL AND "expires_at" > now()'
-        );
+        ));
 
         if (count($rows) === 0)
         {
@@ -158,30 +158,10 @@ final class PasswordResetService
     public static function resetPassword(string $token, string $newPassword) : AdminUser
     {
         $user = self::loadUserForToken($token);
-        $hash = DB::escape(self::hash($token));
 
-        // Claiming the link first locks its row, so if it's used twice at once, the second finds it already used, and
-        // the whole transaction fails.
-        $claimLink = DB::generateRequireRowQuery(
-            "UPDATE \"password_reset_token\" SET \"used_at\" = now() WHERE \"token_hash\" = {$hash}"
-            . ' AND "used_at" IS NULL AND "expires_at" > now()'
-        );
-
-        try
+        if (AdminUserRepository::changePasswordUsingResetLink(self::hash($token), $newPassword) === false)
         {
-            ServiceFactory::getTransaction()->append($claimLink);
-            AdminUserRepository::addPasswordChangeToTransaction($user, $newPassword, false);
-            ServiceFactory::getTransaction()->commit();
-        }
-        catch (ExceptionQueryError $exception)
-        {
-            ServiceFactory::discardTransaction();
-            throw DB::isNoRowError($exception) ? new NotFoundException(self::INVALID_LINK_MESSAGE) : $exception;
-        }
-        catch (Throwable $exception)
-        {
-            ServiceFactory::discardTransaction();
-            throw $exception;
+            throw new NotFoundException(self::INVALID_LINK_MESSAGE);
         }
 
         return AdminUserRepository::load((string)$user->getId());
@@ -236,10 +216,11 @@ final class PasswordResetService
         $seconds = self::MIN_SECONDS_BETWEEN_EMAILS;
 
         $query =
-            'SELECT count(*) FROM "password_reset_token" WHERE "admin_user_id" = ' . DB::escape($user->getId())
+            'SELECT count(*) FROM "password_reset_token" WHERE "admin_user_id" = '
+            . ServiceFactory::getDb()->escapeValue($user->getId())
             . " AND \"created_at\" > now() - make_interval(secs => {$seconds})";
 
-        return DB::fetchValue($query) !== '0';
+        return pg_fetch_result(ServiceFactory::getDb()->query($query), 0, 0) !== '0';
     }
 
 

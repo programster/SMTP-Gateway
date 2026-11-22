@@ -7,6 +7,7 @@
 
 declare(strict_types = 1);
 
+use Programster\PgsqlLib\PgsqlLib;
 use Programster\PgsqlObjects\CacheMode;
 
 
@@ -21,8 +22,9 @@ final class Stats
      */
     public static function getActivity(string $emailTokenId = '') : ActivityCounts
     {
-        $messageFilter = ($emailTokenId === '') ? 'TRUE' : '"email_token_id" = ' . DB::escape($emailTokenId);
-        $eventFilter = ($emailTokenId === '') ? 'TRUE' : '"m"."email_token_id" = ' . DB::escape($emailTokenId);
+        $escapedId = ServiceFactory::getDb()->escapeValue($emailTokenId);
+        $messageFilter = ($emailTokenId === '') ? 'TRUE' : '"email_token_id" = ' . $escapedId;
+        $eventFilter = ($emailTokenId === '') ? 'TRUE' : '"m"."email_token_id" = ' . $escapedId;
         $byService = RejectionOrigin::THIS_SERVICE->getSqlCondition();
         $byProvider = RejectionOrigin::PROVIDER->getSqlCondition();
         $failedAfterQueueing = MessageProgress::FAILED_AFTER_QUEUEING->getSqlCondition();
@@ -72,7 +74,7 @@ final class Stats
             ) AS "e"
             SQL;
 
-        return new ActivityCounts(DB::fetchRows($query)[0]);
+        return new ActivityCounts(pg_fetch_all(ServiceFactory::getDb()->query($query))[0]);
     }
 
 
@@ -85,7 +87,8 @@ final class Stats
      */
     public static function getHourlyVolume(string $emailTokenId = '') : HourlyVolumeCollection
     {
-        $tokenFilter = ($emailTokenId === '') ? '' : ' AND "m"."email_token_id" = ' . DB::escape($emailTokenId);
+        $escapedId = ServiceFactory::getDb()->escapeValue($emailTokenId);
+        $tokenFilter = ($emailTokenId === '') ? '' : ' AND "m"."email_token_id" = ' . $escapedId;
 
         $query = <<<SQL
             SELECT
@@ -106,7 +109,7 @@ final class Stats
 
         $volumes = [];
 
-        foreach (DB::fetchRows($query) as $row)
+        foreach (pg_fetch_all(ServiceFactory::getDb()->query($query)) as $row)
         {
             $hourStart = new DateTimeImmutable($row['hour_start']);
             $volumes[] = new HourlyVolume($hourStart, (int)$row['accepted'], (int)$row['queued']);
@@ -131,7 +134,8 @@ final class Stats
 
         if ($filter->hasEmailToken())
         {
-            $conditions[] = '"m"."email_token_id" = ' . DB::escape($filter->getEmailTokenId());
+            $escapedId = ServiceFactory::getDb()->escapeValue($filter->getEmailTokenId());
+            $conditions[] = '"m"."email_token_id" = ' . $escapedId;
         }
 
         if (count($filter->getStatuses()) > 0)
@@ -140,7 +144,7 @@ final class Stats
 
             foreach ($filter->getStatuses() as $status)
             {
-                $escaped[] = DB::escape($status->value);
+                $escaped[] = ServiceFactory::getDb()->escapeValue($status->value);
             }
 
             $conditions[] = '"m"."status" IN (' . implode(', ', $escaped) . ')';
@@ -153,7 +157,7 @@ final class Stats
 
             foreach ($filter->getEvents() as $type)
             {
-                $types[] = DB::escape($type->value);
+                $types[] = ServiceFactory::getDb()->escapeValue($type->value);
             }
 
             $conditions[] =
@@ -175,7 +179,7 @@ final class Stats
 
         $messages = [];
 
-        foreach (DB::fetchRows($query) as $row)
+        foreach (pg_fetch_all(ServiceFactory::getDb()->query($query)) as $row)
         {
             $messages[] = EmailMessageTable::getInstance()->load($row['id'], CacheMode::IGNORE_CACHE);
         }
@@ -193,12 +197,12 @@ final class Stats
      */
     public static function loadEvents(EmailMessage $message) : EmailEventCollection
     {
-        $id = DB::escape($message->getId());
+        $id = ServiceFactory::getDb()->escapeValue($message->getId());
         $events = [];
 
         $query = "SELECT \"id\" FROM \"email_event\" WHERE \"email_message_id\" = {$id} ORDER BY \"occurred_at\"";
 
-        foreach (DB::fetchRows($query) as $row)
+        foreach (pg_fetch_all(ServiceFactory::getDb()->query($query)) as $row)
         {
             $events[] = EmailEventTable::getInstance()->load($row['id'], CacheMode::IGNORE_CACHE);
         }
@@ -216,7 +220,7 @@ final class Stats
      */
     public static function loadAttempts(EmailMessage $message) : EmailAttemptCollection
     {
-        $id = DB::escape($message->getId());
+        $id = ServiceFactory::getDb()->escapeValue($message->getId());
         $attempts = [];
 
         $query =
@@ -224,7 +228,7 @@ final class Stats
             . " coalesce(\"error\", '') AS \"error\" FROM \"email_attempt\" WHERE \"email_message_id\" = {$id}"
             . ' ORDER BY "dispatched_at"';
 
-        foreach (DB::fetchRows($query) as $row)
+        foreach (pg_fetch_all(ServiceFactory::getDb()->query($query)) as $row)
         {
             $outcome = AttemptOutcome::from($row['outcome']);
 
@@ -263,13 +267,14 @@ final class Stats
     {
         $limit = max(1, min(500, $limit));
         $rejections = [];
-        $tokenCondition = ($emailTokenId === '') ? 'TRUE' : '"email_token_id" = ' . DB::escape($emailTokenId);
+        $escapedId = ServiceFactory::getDb()->escapeValue($emailTokenId);
+        $tokenCondition = ($emailTokenId === '') ? 'TRUE' : '"email_token_id" = ' . $escapedId;
         $windowCondition = $window->getSqlCondition('"created_at"');
         $where = "{$tokenCondition} AND {$origin->getSqlCondition()} AND {$windowCondition}";
 
         $query = "SELECT \"id\" FROM \"rejected_request\" WHERE {$where} ORDER BY \"created_at\" DESC LIMIT {$limit}";
 
-        foreach (DB::fetchRows($query) as $row)
+        foreach (pg_fetch_all(ServiceFactory::getDb()->query($query)) as $row)
         {
             $rejections[] = RejectedRequestTable::getInstance()->load($row['id'], CacheMode::IGNORE_CACHE);
         }
@@ -297,7 +302,7 @@ final class Stats
             "SELECT \"email_token_id\", count(*) AS \"email_count\" FROM \"email_message\" WHERE {$where}"
             . " GROUP BY \"email_token_id\" ORDER BY \"email_count\" DESC, \"email_token_id\" LIMIT {$limit}";
 
-        foreach (DB::fetchRows($query) as $row)
+        foreach (pg_fetch_all(ServiceFactory::getDb()->query($query)) as $row)
         {
             $emailToken = EmailTokenRepository::load($row['email_token_id']);
             $usages[] = new EmailTokenUsage($emailToken, (int)$row['email_count']);
@@ -316,7 +321,7 @@ final class Stats
     {
         try
         {
-            if (Uuid::isValid($id) === false)
+            if (PgsqlLib::isValidUuid($id) === false)
             {
                 throw new NotFoundException("There is no email with the ID \"{$id}\".");
             }

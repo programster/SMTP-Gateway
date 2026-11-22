@@ -6,6 +6,7 @@
 
 declare(strict_types = 1);
 
+use Programster\Http\HttpCode;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Interfaces\RouteCollectorProxyInterface;
@@ -67,7 +68,7 @@ class ApiStatsController extends AbstractController
         }
         catch (InvalidInputException $e)
         {
-            throw new ApiException(400, ErrorCodeEnum::INVALID_INPUT, $e->getMessage());
+            throw new ApiException(HttpCode::BAD_REQUEST, ErrorCodeEnum::INVALID_INPUT, $e->getMessage());
         }
 
         GlobalRateLimitRepository::replace($limits);

@@ -33,7 +33,7 @@ final class MfaGraceService
             throw new InvalidInputException('This account has no second factor, so it doesn\'t need a grace period.');
         }
 
-        $id = DB::escape($user->getId());
+        $id = ServiceFactory::getDb()->escapeValue($user->getId());
         ServiceFactory::getDb()->query(
             "UPDATE \"admin_user\" SET \"mfa_grace_until\" = now() + interval '1 hour' WHERE \"id\" = {$id}"
         );
@@ -49,7 +49,7 @@ final class MfaGraceService
      */
     public static function cancel(AdminUser $user) : void
     {
-        $id = DB::escape($user->getId());
+        $id = ServiceFactory::getDb()->escapeValue($user->getId());
         ServiceFactory::getDb()->query("UPDATE \"admin_user\" SET \"mfa_grace_until\" = NULL WHERE \"id\" = {$id}");
     }
 
@@ -65,10 +65,10 @@ final class MfaGraceService
      */
     public static function redeem(AdminUser $user) : bool
     {
-        $id = DB::escape($user->getId());
+        $id = ServiceFactory::getDb()->escapeValue($user->getId());
 
         // One statement, so it's all or nothing, and the second factors are only removed if a grace period was used.
-        $rows = DB::fetchRows(
+        $rows = pg_fetch_all(ServiceFactory::getDb()->query(
             'WITH "redeemed" AS (UPDATE "admin_user" SET "mfa_grace_until" = NULL, "totp_secret" = NULL,'
             . ' "totp_last_used_step" = NULL, "session_version" = "session_version" + 1'
             . " WHERE \"id\" = {$id} AND \"status\" = 'active' AND \"mfa_grace_until\" > now() RETURNING \"id\"),"
@@ -77,7 +77,7 @@ final class MfaGraceService
             . ' "removed_codes" AS (DELETE FROM "admin_backup_code"'
             . ' WHERE "admin_user_id" IN (SELECT "id" FROM "redeemed"))'
             . ' SELECT "id" FROM "redeemed"'
-        );
+        ));
 
         return count($rows) > 0;
     }

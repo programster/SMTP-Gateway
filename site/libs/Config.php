@@ -199,7 +199,6 @@ readonly class Config
 
 
     # Accessors
-    public function getEnvironment() : string { return $this->m_environment; }
     public function getSmtpServerHostname() : string { return $this->m_smtpServerHostname; }
     public function getMaxMessageBytes() : int { return $this->m_maxMessageBytes; }
     public function getQueueWorkers() : int { return $this->m_queueWorkers; }

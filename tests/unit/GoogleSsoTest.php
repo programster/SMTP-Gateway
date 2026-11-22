@@ -2,8 +2,8 @@
 
 /*
  * Logging in with Google, against programster/google-sso's fake Google, which signs real ID tokens: the state being
- * kept in the web session (GoogleSsoStateStore), refusing unverified email addresses, and reading two-step
- * verification from the "amr" claim.
+ * kept in the web session, refusing unverified email addresses, and reading two-step verification from the "amr"
+ * claim.
  *
  * The fake comes from the package's testing/ folder, which only a source install has, so composer.json installs
  * programster/google-sso from source.
@@ -18,6 +18,7 @@ use Programster\GoogleSso\Exceptions\ExceptionUnverifiedEmail;
 use Programster\GoogleSso\GoogleUserData;
 use Programster\GoogleSso\GoogleSsoClient;
 use Programster\GoogleSso\MfaPolicyEnum;
+use Programster\GoogleSso\NativeSessionCsrfTokenStore;
 use Programster\GoogleSso\Testing\FakeGoogleHttpClient;
 use Programster\GoogleSso\Testing\TestFixtures;
 
@@ -26,8 +27,15 @@ foreach (['TestSigningKey', 'FakeGoogleHttpClient', 'TestFixtures'] as $fixture)
     require_once "/var/www/site/vendor/programster/google-sso/testing/{$fixture}.php";
 }
 
-$suite = new TestSuite('Google SSO');
+// The package's store insists on a started session, which has to be before the suite prints anything. Cookies and
+// cache headers are off, as this runs on the CLI.
+ini_set('session.use_cookies', '0');
+session_cache_limiter('');
+session_save_path(sys_get_temp_dir());
+session_start();
 $_SESSION = [];
+
+$suite = new TestSuite('Google SSO');
 
 /**
  * A client whose fake Google issues an ID token with the usual claims, and any others given.
@@ -42,7 +50,7 @@ $createClient = function (array $extraClaims) : GoogleSsoClient {
         requestFactory: new \GuzzleHttp\Psr7\HttpFactory(),
         responseFactory: new \GuzzleHttp\Psr7\HttpFactory(),
         httpClient: $fakeGoogle,
-        csrfTokenStore: new GoogleSsoStateStore(),
+        csrfTokenStore: new NativeSessionCsrfTokenStore(WebSession::GOOGLE_SSO_STATE_KEY),
         mfaPolicy: MfaPolicyEnum::REPORT
     );
 };
@@ -66,10 +74,10 @@ $logIn = function (array $extraClaims) use ($createClient, $getState) : GoogleUs
 
 $client = $createClient([]);
 $state = $getState($client->createGoogleSsoLoginUrl());
-$suite->check('the state is kept in the web session', WebSession::getGoogleSsoState() === $state);
+$suite->check('the state is kept in the web session', $_SESSION[WebSession::GOOGLE_SSO_STATE_KEY] === $state);
 $user = $client->handleGoogleSsoCallback(['code' => 'code', 'state' => $state]);
 $suite->check('the callback is accepted', $user->getEmail() === 'someone@example.com', $user->getEmail());
-$suite->check('the state is used up', WebSession::getGoogleSsoState() === '');
+$suite->check('the state is used up', !isset($_SESSION[WebSession::GOOGLE_SSO_STATE_KEY]));
 
 $reuseState = function () use ($client, $state) : void {
     $client->handleGoogleSsoCallback(['code' => 'code', 'state' => $state]);

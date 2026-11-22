@@ -8,6 +8,7 @@
 
 declare(strict_types = 1);
 
+use Programster\Http\HttpCode;
 use Psr\Http\Message\ServerRequestInterface;
 
 
@@ -36,7 +37,7 @@ final class BearerAuth
                 "An {$label} is required, as \"Authorization: Bearer <{$label}>\". They're created in the web"
                 . ' interface.';
 
-            throw new ApiException(401, ErrorCodeEnum::MISSING_CREDENTIALS, $msg);
+            throw new ApiException(HttpCode::UNAUTHORIZED, ErrorCodeEnum::MISSING_CREDENTIALS, $msg);
         }
 
         return $matches[1];

@@ -32,7 +32,7 @@ enum RejectionOrigin : string
      */
     public function getSqlCondition() : string
     {
-        $providerRejected = DB::escape(RejectionReason::PROVIDER_REJECTED->value);
+        $providerRejected = ServiceFactory::getDb()->escapeValue(RejectionReason::PROVIDER_REJECTED->value);
 
         return match ($this) {
             RejectionOrigin::ANY => 'TRUE',

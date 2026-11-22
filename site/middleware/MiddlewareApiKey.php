@@ -7,6 +7,7 @@
 
 declare(strict_types = 1);
 
+use Programster\Http\HttpCode;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
@@ -25,16 +26,17 @@ class MiddlewareApiKey implements \Psr\Http\Server\MiddlewareInterface
         catch (InvalidTokenException $e)
         {
             // e.g. an email token given instead, which it says.
-            throw new ApiException(401, ErrorCodeEnum::INVALID_CREDENTIALS, $e->getMessage());
+            throw new ApiException(HttpCode::UNAUTHORIZED, ErrorCodeEnum::INVALID_CREDENTIALS, $e->getMessage());
         }
         catch (NotFoundException)
         {
-            throw new ApiException(401, ErrorCodeEnum::INVALID_CREDENTIALS, 'Invalid API key.');
+            throw new ApiException(HttpCode::UNAUTHORIZED, ErrorCodeEnum::INVALID_CREDENTIALS, 'Invalid API key.');
         }
 
         if ($apiKey->isRevoked())
         {
-            throw new ApiException(401, ErrorCodeEnum::REVOKED_CREDENTIALS, 'This API key has been revoked.');
+            $message = 'This API key has been revoked.';
+            throw new ApiException(HttpCode::UNAUTHORIZED, ErrorCodeEnum::REVOKED_CREDENTIALS, $message);
         }
 
         $clientIp = ClientIpResolver::resolve($request);
@@ -42,7 +44,7 @@ class MiddlewareApiKey implements \Psr\Http\Server\MiddlewareInterface
         if (ApiKeyRepository::loadAllowedNetworks($apiKey)->allows($clientIp) === false)
         {
             $msg = "This API key may not be used from {$clientIp}.";
-            throw new ApiException(403, ErrorCodeEnum::IP_NOT_ALLOWED, $msg);
+            throw new ApiException(HttpCode::FORBIDDEN, ErrorCodeEnum::IP_NOT_ALLOWED, $msg);
         }
 
         ApiKeyRepository::markUsed($apiKey, $clientIp);

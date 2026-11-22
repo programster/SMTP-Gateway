@@ -6,6 +6,7 @@
 
 declare(strict_types = 1);
 
+use Programster\Http\HttpCode;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Interfaces\RouteCollectorProxyInterface;
@@ -62,7 +63,7 @@ class ApiKeysController extends AbstractController
             }
 
             $page = new ViewApiKeysPage(ApiKeyRepository::loadAll(), false, $values, $e->getMessage());
-            $result = self::renderPage($response, 'API keys', $page, 400);
+            $result = self::renderPage($response, 'API keys', $page, HttpCode::BAD_REQUEST);
         }
 
         return $result;

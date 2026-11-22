@@ -8,6 +8,7 @@
 
 declare(strict_types = 1);
 
+use Programster\Http\HttpCode;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Interfaces\RouteCollectorProxyInterface;
@@ -49,7 +50,7 @@ class AdminController extends AbstractController
     public function listUsers(Request $request, Response $response) : Response
     {
         $isShowingArchived = (self::getQueryParam($request, 'archived') === '1');
-        return $this->renderUsers($response, '', NewAccountForm::createEmpty(), 200, $isShowingArchived);
+        return $this->renderUsers($response, '', NewAccountForm::createEmpty(), HttpCode::OK, $isShowingArchived);
     }
 
 
@@ -77,7 +78,7 @@ class AdminController extends AbstractController
         }
         catch (InvalidInputException $e)
         {
-            $result = $this->renderUsers($response, $e->getMessage(), $form, 400, false);
+            $result = $this->renderUsers($response, $e->getMessage(), $form, HttpCode::BAD_REQUEST, false);
         }
 
         return $result;
@@ -94,7 +95,7 @@ class AdminController extends AbstractController
     {
         $user = AdminUserRepository::load((string)$args['id']);
         $email = ($user->getStatus() === AccountStatus::ARCHIVED) ? '' : $user->getEmail();
-        return self::renderUserPage($response, $user, $email, '', 200);
+        return self::renderUserPage($response, $user, $email, '', HttpCode::OK);
     }
 
 
@@ -120,7 +121,7 @@ class AdminController extends AbstractController
         }
         catch (InvalidInputException $e)
         {
-            $result = self::renderUserPage($response, $user, $email, $e->getMessage(), 400);
+            $result = self::renderUserPage($response, $user, $email, $e->getMessage(), HttpCode::BAD_REQUEST);
         }
 
         return $result;
@@ -187,7 +188,7 @@ class AdminController extends AbstractController
         $user = AdminUserRepository::load((string)$args['id']);
 
         $result = ($user->getStatus() === AccountStatus::ARCHIVED)
-            ? self::renderRestorePage($response, $user, NewAccountForm::createEmpty(), '', 200)
+            ? self::renderRestorePage($response, $user, NewAccountForm::createEmpty(), '', HttpCode::OK)
             : self::redirect($response, '/admin/users/' . rawurlencode($user->getId()));
 
         return $result;
@@ -222,7 +223,7 @@ class AdminController extends AbstractController
         }
         catch (InvalidInputException | AccountStateException $e)
         {
-            $result = self::renderRestorePage($response, $user, $form, $e->getMessage(), 400);
+            $result = self::renderRestorePage($response, $user, $form, $e->getMessage(), HttpCode::BAD_REQUEST);
         }
 
         return $result;
@@ -320,7 +321,7 @@ class AdminController extends AbstractController
         catch (InvalidInputException $e)
         {
             $email = ($user->getStatus() === AccountStatus::ARCHIVED) ? '' : $user->getEmail();
-            $result = self::renderUserPage($response, $user, $email, $e->getMessage(), 400);
+            $result = self::renderUserPage($response, $user, $email, $e->getMessage(), HttpCode::BAD_REQUEST);
         }
 
         return $result;
@@ -362,7 +363,7 @@ class AdminController extends AbstractController
         }
 
         $page = new ViewLogsPage($result, $filter, $logPage, $from, $to, Settings::get()->getTimezone(), $error);
-        return self::renderPage($response, 'Logs', $page, ($error === '') ? 200 : 400);
+        return self::renderPage($response, 'Logs', $page, ($error === '') ? HttpCode::OK : HttpCode::BAD_REQUEST);
     }
 
 
@@ -442,7 +443,7 @@ class AdminController extends AbstractController
         }
         catch (InvalidInputException | AccountStateException $e)
         {
-            $status = ($e instanceof AccountStateException) ? 409 : 400;
+            $status = ($e instanceof AccountStateException) ? HttpCode::CONFLICT : HttpCode::BAD_REQUEST;
             $form = NewAccountForm::createEmpty();
             $result = $this->renderUsers($response, $e->getMessage(), $form, $status, $isArchived);
         }
@@ -484,7 +485,7 @@ class AdminController extends AbstractController
         catch (InvalidInputException | ConfigurationException $e)
         {
             $email = ($user->getStatus() === AccountStatus::ARCHIVED) ? '' : $user->getEmail();
-            $result = self::renderUserPage($response, $user, $email, $e->getMessage(), 400);
+            $result = self::renderUserPage($response, $user, $email, $e->getMessage(), HttpCode::BAD_REQUEST);
         }
 
         return $result;
@@ -513,7 +514,7 @@ class AdminController extends AbstractController
         AdminUser $user,
         string $email,
         string $error,
-        int $status
+        HttpCode $status
     ) : Response
     {
         $summary = self::loadSummary($user);
@@ -610,7 +611,7 @@ class AdminController extends AbstractController
      *
      * @param NewAccountForm $form - what to fill the new account form with.
      *
-     * @param int $status - the HTTP status.
+     * @param HttpCode $status - the HTTP status.
      *
      * @param bool $isShowingArchived - whether the Archived tab is the one open.
      *
@@ -620,7 +621,7 @@ class AdminController extends AbstractController
         Response $response,
         string $error,
         NewAccountForm $form,
-        int $status,
+        HttpCode $status,
         bool $isShowingArchived
     ) : Response
     {
@@ -644,7 +645,7 @@ class AdminController extends AbstractController
         AdminUser $user,
         NewAccountForm $form,
         string $error,
-        int $status
+        HttpCode $status
     ) : Response
     {
         $page = new ViewRestoreUserPage($user, $form, $error);
@@ -731,7 +732,7 @@ class AdminController extends AbstractController
      *
      * @param mixed $value - the "level" parameter, as PHP decoded it.
      *
-     * @return LogLevelCollection - in the order of LogLevel's cases, from the least severe.
+     * @return LogLevelCollection - from the least severe to the most.
      */
     private static function readLogLevels(mixed $value) : LogLevelCollection
     {
@@ -739,7 +740,7 @@ class AdminController extends AbstractController
         $names = array_map('trim', array_filter($given, 'is_string'));
         $levels = [];
 
-        foreach (LogLevel::cases() as $level)
+        foreach (LogLevelCollection::createAllFromLeastSevere() as $level)
         {
             if (in_array($level->value, $names, true))
             {

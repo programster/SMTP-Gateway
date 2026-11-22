@@ -247,14 +247,11 @@ final class DocumentationRenderer
      */
     private static function isPageFile(string $file) : bool
     {
-        $isPage = false;
+        $isForFile = function (DocumentationPage $page) use ($file) : bool {
+            return $page->getFile() === $file;
+        };
 
-        foreach (DocumentationPage::cases() as $page)
-        {
-            $isPage = ($isPage || $page->getFile() === $file);
-        }
-
-        return $isPage;
+        return array_any(DocumentationPage::cases(), $isForFile);
     }
 
 
@@ -269,15 +266,11 @@ final class DocumentationRenderer
      */
     private static function getPageForFile(string $file) : DocumentationPage
     {
-        $pages = DocumentationPage::cases();
-        $found = null;
-        $index = 0;
+        $isForFile = function (DocumentationPage $page) use ($file) : bool {
+            return $page->getFile() === $file;
+        };
 
-        while ($found === null && $index < count($pages))
-        {
-            $found = ($pages[$index]->getFile() === $file) ? $pages[$index] : null;
-            $index++;
-        }
+        $found = array_find(DocumentationPage::cases(), $isForFile);
 
         if ($found === null)
         {

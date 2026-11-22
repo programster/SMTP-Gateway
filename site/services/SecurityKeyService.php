@@ -11,10 +11,11 @@
 
 declare(strict_types = 1);
 
-use Programster\PgsqlObjects\CacheMode;
 use lbuchs\WebAuthn\Binary\ByteBuffer;
 use lbuchs\WebAuthn\WebAuthn;
 use lbuchs\WebAuthn\WebAuthnException;
+use Programster\CoreLibs\StringLib;
+use Programster\PgsqlObjects\CacheMode;
 
 
 final class SecurityKeyService
@@ -109,7 +110,7 @@ final class SecurityKeyService
         $credential = AdminWebauthnCredentialTable::getInstance()->insert([
             'admin_user_id' => $user->getId(),
             'name' => $name,
-            'credential_id' => self::base64UrlEncode($data->credentialId),
+            'credential_id' => StringLib::base64UrlEncode($data->credentialId),
             'public_key_pem' => $data->credentialPublicKey,
             'signature_counter' => (int)($data->signatureCounter ?? 0),
             'created_at' => Time::now(),
@@ -186,8 +187,15 @@ final class SecurityKeyService
                     );
 
                     $counter = $webAuthn->getSignatureCounter() ?? $credential->getSignatureCounter();
-                    $credential->update(['signature_counter' => (int)$counter, 'last_used_at' => Time::now()]);
-                    $isValid = true;
+                    $isValid = self::recordUse($credential, (int)$counter);
+
+                    if ($isValid === false)
+                    {
+                        $logger = ServiceFactory::getLogger(LogCategory::ACCESS);
+                        $logger->warning('Security key login refused: counter already used', [
+                            'user_id' => $user->getId(),
+                        ]);
+                    }
                 }
                 catch (WebAuthnException | InvalidInputException $e)
                 {
@@ -203,16 +211,37 @@ final class SecurityKeyService
     }
 
 
+    /**
+     * Record a login with a security key, as long as its signature counter has moved forward, in one statement, so
+     * two requests at the same moment can't both use the same value, or move it backwards. A key that doesn't keep a
+     * counter always reports 0, which is allowed for as long as the stored value is 0 too.
+     *
+     * @param AdminWebauthnCredential $credential - the key that was used.
+     *
+     * @param int $counter - the signature counter it reported.
+     *
+     * @return bool - whether the use was recorded. If not, the login must be refused.
+     */
+    public static function recordUse(AdminWebauthnCredential $credential, int $counter) : bool
+    {
+        $query = 'UPDATE "admin_webauthn_credential" SET "signature_counter" = $1, "last_used_at" = now()'
+            . ' WHERE "id" = $2 AND ("signature_counter" < $1 OR ("signature_counter" = 0 AND $1 = 0))';
+
+        $result = ServiceFactory::getDb()->query($query, [$counter, $credential->getId()]);
+        return pg_affected_rows($result) === 1;
+    }
+
+
     public static function loadCredentials(AdminUser $user) : AdminWebauthnCredentialCollection
     {
-        $id = DB::escape($user->getId());
+        $id = ServiceFactory::getDb()->escapeValue($user->getId());
         $credentials = [];
         $query =
             "SELECT \"id\" FROM \"admin_webauthn_credential\" WHERE \"admin_user_id\" = {$id}"
             . ' ORDER BY "created_at"';
 
 
-        foreach (DB::fetchRows($query) as $row)
+        foreach (pg_fetch_all(ServiceFactory::getDb()->query($query)) as $row)
         {
             $credentials[] = AdminWebauthnCredentialTable::getInstance()->load($row['id'], CacheMode::IGNORE_CACHE);
         }
@@ -275,8 +304,4 @@ final class SecurityKeyService
     }
 
 
-    private static function base64UrlEncode(string $binary) : string
-    {
-        return rtrim(strtr(base64_encode($binary), '+/', '-_'), '=');
-    }
 }

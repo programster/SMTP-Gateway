@@ -9,6 +9,7 @@
 
 declare(strict_types = 1);
 
+use Programster\Http\HttpCode;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Slim\Exception\HttpException;
@@ -32,7 +33,7 @@ final class ErrorHandler
         ServiceFactory::discardTransaction();
         $apiException = self::convertToApiException($exception, $displayErrorDetails);
 
-        if ($apiException->getHttpStatus() >= 500)
+        if ($apiException->getHttpStatus()->value >= 500)
         {
             ServiceFactory::getLogger(LogCategory::SYSTEM)->error('Unhandled error: ' . $exception->getMessage(), [
                 'path' => $request->getUri()->getPath(),
@@ -43,7 +44,7 @@ final class ErrorHandler
             ]);
         }
 
-        $response = new \Slim\Psr7\Response($apiException->getHttpStatus());
+        $response = new \Slim\Psr7\Response($apiException->getHttpStatus()->value);
 
         if (self::wantsJson($request))
         {
@@ -69,24 +70,26 @@ final class ErrorHandler
         }
         elseif ($exception instanceof HttpException)
         {
-            $code = ($exception->getCode() === 404) ? ErrorCodeEnum::NOT_FOUND : ErrorCodeEnum::UNKNOWN;
-            $result = new ApiException($exception->getCode(), $code, $exception->getTitle());
+            $status = HttpCode::from($exception->getCode());
+            $code = ($status === HttpCode::NOT_FOUND) ? ErrorCodeEnum::NOT_FOUND : ErrorCodeEnum::UNKNOWN;
+            $result = new ApiException($status, $code, $exception->getTitle());
         }
         elseif ($exception instanceof NotFoundException)
         {
-            $result = new ApiException(404, ErrorCodeEnum::NOT_FOUND, $exception->getMessage());
+            $result = new ApiException(HttpCode::NOT_FOUND, ErrorCodeEnum::NOT_FOUND, $exception->getMessage());
         }
         elseif ($exception instanceof AccountStateException)
         {
-            $result = new ApiException(409, $exception->getProblem()->getErrorCode(), $exception->getMessage());
+            $errorCode = $exception->getProblem()->getErrorCode();
+            $result = new ApiException(HttpCode::CONFLICT, $errorCode, $exception->getMessage());
         }
         elseif ($exception instanceof ConflictException)
         {
-            $result = new ApiException(409, ErrorCodeEnum::CONFLICT, $exception->getMessage());
+            $result = new ApiException(HttpCode::CONFLICT, ErrorCodeEnum::CONFLICT, $exception->getMessage());
         }
         elseif ($exception instanceof InvalidInputException)
         {
-            $result = new ApiException(400, ErrorCodeEnum::INVALID_INPUT, $exception->getMessage());
+            $result = new ApiException(HttpCode::BAD_REQUEST, ErrorCodeEnum::INVALID_INPUT, $exception->getMessage());
         }
         elseif ($exception instanceof RequestRejectedException)
         {
@@ -95,7 +98,7 @@ final class ErrorHandler
         else
         {
             $message = $displayErrorDetails ? $exception->getMessage() : 'Whoops! something went wrong';
-            $result = new ApiException(500, ErrorCodeEnum::UNKNOWN, $message);
+            $result = new ApiException(HttpCode::INTERNAL_SERVER_ERROR, ErrorCodeEnum::UNKNOWN, $message);
         }
 
         return $result;

@@ -7,6 +7,8 @@
 
 declare(strict_types = 1);
 
+use Programster\PgsqlLib\PgsqlLib;
+
 
 final class LogRepository
 {
@@ -36,8 +38,8 @@ final class LogRepository
 
         try
         {
-            $rows = DB::fetchRows($query);
-            $totalCount = (int)DB::fetchValue($countQuery);
+            $rows = pg_fetch_all(ServiceFactory::getDb()->query($query));
+            $totalCount = (int)pg_fetch_result(ServiceFactory::getDb()->query($countQuery), 0, 0);
         }
         catch (\Programster\PgsqlLib\Exceptions\ExceptionQueryError $e)
         {
@@ -75,13 +77,13 @@ final class LogRepository
     {
         $rows = [];
 
-        if (Uuid::isValid($id))
+        if (PgsqlLib::isValidUuid($id))
         {
             $query =
                 'SELECT "id", "message", "level", "context"::text AS "context", "created_at" FROM "log" WHERE "id" = '
-                . DB::escape($id);
+                . ServiceFactory::getDb()->escapeValue($id);
 
-            $rows = DB::fetchRows($query);
+            $rows = pg_fetch_all(ServiceFactory::getDb()->query($query));
         }
 
         if (count($rows) === 0)

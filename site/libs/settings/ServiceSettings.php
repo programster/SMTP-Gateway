@@ -151,7 +151,6 @@ readonly class ServiceSettings
 
 
     # Accessors
-    public function getGeneral() : GeneralSettings { return $this->m_general; }
     public function getSecurity() : SecuritySettings { return $this->m_security; }
     public function getProxies() : ProxySettings { return $this->m_proxies; }
     public function getSending() : SendingSettings { return $this->m_sending; }

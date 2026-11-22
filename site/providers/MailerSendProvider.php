@@ -14,6 +14,7 @@
 
 declare(strict_types = 1);
 
+use Programster\PgsqlLib\PgsqlLib;
 use Psr\Http\Message\ServerRequestInterface;
 use Ramsey\Uuid\Uuid;
 
@@ -148,7 +149,7 @@ final class MailerSendProvider extends SmtpRelayProvider implements ProviderWebh
 
         foreach (is_array($activity['tags'] ?? null) ? $activity['tags'] : [] as $tag)
         {
-            if ($messageId === '' && is_string($tag) && Uuid::isValid($tag))
+            if ($messageId === '' && is_string($tag) && PgsqlLib::isValidUuid($tag))
             {
                 $messageId = strtolower($tag);
             }

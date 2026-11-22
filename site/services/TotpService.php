@@ -71,11 +71,11 @@ final class TotpService
      *
      * @param string $code - a code from their app.
      *
-     * @return void
+     * @return AdminUser - the account, with TOTP turned on.
      *
      * @throws InvalidInputException - if the code is wrong.
      */
-    public static function enable(AdminUser $user, string $secret, string $code) : void
+    public static function enable(AdminUser $user, string $secret, string $code) : AdminUser
     {
         $step = self::findMatchingStep($secret, $code);
 
@@ -85,12 +85,15 @@ final class TotpService
             throw new InvalidInputException($msg);
         }
 
-        $user->update(['totp_secret' => $secret, 'totp_last_used_step' => $step]);
+        // Only these columns are written, so a stale $user can't undo a change made since, such as a logout.
+        $changes = ['totp_secret' => $secret, 'totp_last_used_step' => $step];
+        return AdminUserTable::getInstance()->updateById($user->getId(), $changes);
     }
 
 
     /**
-     * Check a code from an account's authenticator app, as a second factor. A code is only accepted once.
+     * Check a code from an account's authenticator app, as a second factor. A code is only accepted once, even for
+     * two requests at the same moment, as the database checks and records its step in one statement.
      *
      * @param AdminUser $user - the account. It must have TOTP turned on.
      *
@@ -104,13 +107,19 @@ final class TotpService
 
         if ($user->hasTotp())
         {
-            $step = self::findMatchingStep((string)$user->getTotpSecret(), $code);
-            $lastUsedStep = $user->getTotpLastUsedStep() ?? -1;
+            $secret = (string)$user->getTotpSecret();
+            $step = self::findMatchingStep($secret, $code);
 
-            if ($step !== -1 && $step > $lastUsedStep)
+            if ($step !== -1)
             {
-                $user->update(['totp_last_used_step' => $step]);
-                $isValid = true;
+                // The secret is compared too, so a code for one that's since been removed or replaced is refused.
+                $query = (
+                    'UPDATE "admin_user" SET "totp_last_used_step" = $1 WHERE "id" = $2 AND "totp_secret" = $3'
+                    . ' AND ("totp_last_used_step" IS NULL OR "totp_last_used_step" < $1)'
+                );
+
+                $result = ServiceFactory::getDb()->query($query, [$step, $user->getId(), $secret]);
+                $isValid = (pg_affected_rows($result) === 1);
             }
         }
 
@@ -120,7 +129,9 @@ final class TotpService
 
     public static function disable(AdminUser $user) : void
     {
-        $user->update(['totp_secret' => null, 'totp_last_used_step' => null]);
+        // Only these columns are written, so a stale $user can't undo a change made since, such as a logout.
+        $changes = ['totp_secret' => null, 'totp_last_used_step' => null];
+        AdminUserTable::getInstance()->updateById($user->getId(), $changes);
     }
 
 

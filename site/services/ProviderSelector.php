@@ -188,13 +188,13 @@ final class ProviderSelector
 
         if (count($names) > 0)
         {
-            $escapedNames = implode(', ', array_map([DB::class, 'escape'], $names));
+            $escapedNames = implode(', ', ServiceFactory::getDb()->escapeValues($names));
 
             $query =
                 "SELECT \"provider\" FROM \"email_message\" WHERE \"provider\" IN ({$escapedNames})"
                 . ' AND "dispatched_at" IS NOT NULL ORDER BY "dispatched_at" DESC LIMIT 1';
 
-            $rows = DB::fetchRows($query);
+            $rows = pg_fetch_all(ServiceFactory::getDb()->query($query));
         }
 
         $position = (count($rows) > 0) ? array_search($rows[0]['provider'], $names, true) : false;

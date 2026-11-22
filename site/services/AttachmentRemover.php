@@ -37,10 +37,10 @@ final class AttachmentRemover
 
         while ($isFinished === false)
         {
-            $ids = DB::fetchRows(
+            $ids = pg_fetch_all(ServiceFactory::getDb()->query(
                 "SELECT \"id\" FROM \"email_message\" WHERE {$condition} ORDER BY \"created_at\""
                 . ' LIMIT ' . self::BATCH_SIZE
-            );
+            ));
 
             foreach ($ids as $row)
             {

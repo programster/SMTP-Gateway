@@ -19,6 +19,7 @@ use Programster\GoogleSso\Exceptions\ExceptionMissingCallbackParameter;
 use Programster\GoogleSso\Exceptions\ExceptionUnverifiedEmail;
 use Programster\GoogleSso\GoogleSsoClient;
 use Programster\GoogleSso\MfaPolicyEnum;
+use Programster\GoogleSso\NativeSessionCsrfTokenStore;
 use Psr\Http\Client\ClientExceptionInterface;
 
 
@@ -108,7 +109,7 @@ final class GoogleLoginService
             requestFactory: new \GuzzleHttp\Psr7\HttpFactory(),
             responseFactory: new \GuzzleHttp\Psr7\HttpFactory(),
             httpClient: new \GuzzleHttp\Client(['timeout' => 10]),
-            csrfTokenStore: new GoogleSsoStateStore(),
+            csrfTokenStore: new NativeSessionCsrfTokenStore(WebSession::GOOGLE_SSO_STATE_KEY),
             mfaPolicy: MfaPolicyEnum::REPORT
         );
     }

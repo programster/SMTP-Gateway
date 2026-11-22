@@ -115,9 +115,4 @@ final readonly class ProviderEligibility
 
         return $strings;
     }
-
-
-    # Accessors
-    public function getAllowed() : ProviderRestrictionInterface { return $this->m_allowed; }
-    public function getSenders() : EmailAddressCollection { return $this->m_senders; }
 }

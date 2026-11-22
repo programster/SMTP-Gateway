@@ -59,7 +59,7 @@ final readonly class DatabaseLimits
             . " pg_size_bytes(current_setting('work_mem')) AS work_mem,"
             . " pg_size_bytes(current_setting('maintenance_work_mem')) AS maintenance_work_mem";
 
-        $row = DB::fetchRows($query)[0];
+        $row = pg_fetch_all(ServiceFactory::getDb()->query($query))[0];
 
         return new DatabaseLimits(
             (int)$row['max_connections'],

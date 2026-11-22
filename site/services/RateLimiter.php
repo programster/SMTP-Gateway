@@ -165,7 +165,7 @@ final class RateLimiter
             . " WHERE \"dispatched_at\" > now() - make_interval(secs => {$longestPeriod})"
             . " AND {$scope->getSqlCondition()}";
 
-        $row = DB::fetchRows($query)[0];
+        $row = pg_fetch_all(ServiceFactory::getDb()->query($query))[0];
         $counts = [];
 
         foreach (array_keys($limits->getLimits()->toArray()) as $index)
@@ -203,7 +203,7 @@ final class RateLimiter
             . " AND {$scope->getSqlCondition()}) AS \"sent\""
             . " WHERE \"running_total\" >= {$excess} ORDER BY \"dispatched_at\" LIMIT 1";
 
-        $rows = DB::fetchRows($query);
+        $rows = pg_fetch_all(ServiceFactory::getDb()->query($query));
         return (count($rows) > 0) ? max(0.0, (float)$rows[0]['wait']) : 0.0;
     }
 }

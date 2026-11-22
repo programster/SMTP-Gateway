@@ -43,8 +43,7 @@ final class ProviderStatusRepository
 
     public static function markAvailable(string $providerName) : void
     {
-        $name = DB::escape($providerName);
-        ServiceFactory::getDb()->query("DELETE FROM \"provider_status\" WHERE \"provider\" = {$name}");
+        ProviderStatusTable::getInstance()->deleteWhereAnd(['provider' => $providerName]);
     }
 
 
@@ -55,7 +54,8 @@ final class ProviderStatusRepository
      */
     public static function loadUnavailableNames() : array
     {
-        $rows = DB::fetchRows('SELECT "provider" FROM "provider_status" WHERE "unavailable_until" > now()');
+        $query = 'SELECT "provider" FROM "provider_status" WHERE "unavailable_until" > now()';
+        $rows = pg_fetch_all(ServiceFactory::getDb()->query($query));
         return array_column($rows, 'provider');
     }
 
@@ -73,7 +73,7 @@ final class ProviderStatusRepository
             . ' WHERE "unavailable_until" > now()';
 
 
-        foreach (DB::fetchRows($query) as $row)
+        foreach (pg_fetch_all(ServiceFactory::getDb()->query($query)) as $row)
         {
             $details[$row['provider']] = [
                 'unavailable_until' => $row['unavailable_until'],
@@ -88,9 +88,9 @@ final class ProviderStatusRepository
     // Skip a provider for a while, keeping why.
     private static function pause(string $providerName, string $error, int $seconds) : void
     {
-        $id = DB::escape((string)ProviderStatusTable::getInstance()->generateId());
-        $name = DB::escape($providerName);
-        $escapedError = DB::escape(mb_substr($error, 0, 1000));
+        $id = ServiceFactory::getDb()->escapeValue((string)ProviderStatusTable::getInstance()->generateId());
+        $name = ServiceFactory::getDb()->escapeValue($providerName);
+        $escapedError = ServiceFactory::getDb()->escapeValue(mb_substr($error, 0, 1000));
 
         ServiceFactory::getDb()->query(
             'INSERT INTO "provider_status" ("id", "provider", "unavailable_until", "last_error", "updated_at")'

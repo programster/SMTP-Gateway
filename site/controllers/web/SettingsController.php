@@ -8,6 +8,7 @@
 
 declare(strict_types = 1);
 
+use Programster\Http\HttpCode;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Interfaces\RouteCollectorProxyInterface;
@@ -103,7 +104,7 @@ class SettingsController extends AbstractController
         $isOwnPage = ($found->getPageSection() === $found);
 
         return $isOwnPage
-            ? self::renderSettingsPage($response, $found, '', [], 200)
+            ? self::renderSettingsPage($response, $found, '', [], HttpCode::OK)
             : self::redirect($response, $found->getPagePath());
     }
 
@@ -317,7 +318,8 @@ class SettingsController extends AbstractController
                 }
             }
 
-            $result = self::renderSettingsPage($response, $section, $e->getMessage(), $submitted, 400);
+            $error = $e->getMessage();
+            $result = self::renderSettingsPage($response, $section, $error, $submitted, HttpCode::BAD_REQUEST);
         }
 
         return $result;
@@ -333,7 +335,7 @@ class SettingsController extends AbstractController
      *
      * @param array<string, string> $submitted - what its form sent, to fill it in with again.
      *
-     * @param int $status - the HTTP status code.
+     * @param HttpCode $status - the HTTP status code.
      *
      * @return Response
      */
@@ -359,7 +361,7 @@ class SettingsController extends AbstractController
         SettingsSection $section,
         string $error,
         array $submitted,
-        int $status
+        HttpCode $status
     ) : Response
     {
         $page = new ViewSettingsPage(Settings::get(), $section, $error, $submitted);

@@ -68,13 +68,13 @@ final readonly class LogContextMatch
      */
     public function toSqlCondition() : string
     {
-        $name = DB::escape($this->m_name);
+        $name = ServiceFactory::getDb()->escapeValue($this->m_name);
         $escapedLike = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $this->m_value);
 
         return match (true) {
             $this->m_name === '' => 'TRUE',
             $this->m_value === '' => "jsonb_exists(\"context\", {$name})",
-            default => "(\"context\"->>{$name}) ILIKE " . DB::escape("%{$escapedLike}%"),
+            default => "(\"context\"->>{$name}) ILIKE " . ServiceFactory::getDb()->escapeValue("%{$escapedLike}%"),
         };
     }
 

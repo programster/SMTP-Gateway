@@ -6,6 +6,7 @@
 
 declare(strict_types = 1);
 
+use Programster\Http\HttpCode;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use Slim\Interfaces\RouteCollectorProxyInterface;
@@ -30,18 +31,21 @@ class ApiMessagesController extends AbstractController
 
         if ($emailTokenId !== '' && TokenKind::EMAIL_TOKEN->isId($emailTokenId) === false)
         {
-            throw new ApiException(400, ErrorCodeEnum::INVALID_INPUT, '"emailTokenId" must be an email token ID.');
+            $message = '"emailTokenId" must be an email token ID.';
+            throw new ApiException(HttpCode::BAD_REQUEST, ErrorCodeEnum::INVALID_INPUT, $message);
         }
 
         if ($statusName !== '' && $status === null)
         {
             $valid = implode(', ', array_column(MessageStatus::cases(), 'value'));
-            throw new ApiException(400, ErrorCodeEnum::INVALID_INPUT, "\"status\" must be one of: {$valid}.");
+            $message = "\"status\" must be one of: {$valid}.";
+            throw new ApiException(HttpCode::BAD_REQUEST, ErrorCodeEnum::INVALID_INPUT, $message);
         }
 
         if ($limit !== '' && (ctype_digit($limit) === false || (int)$limit < 1 || (int)$limit > 500))
         {
-            throw new ApiException(400, ErrorCodeEnum::INVALID_INPUT, '"limit" must be from 1 to 500.');
+            $message = '"limit" must be from 1 to 500.';
+            throw new ApiException(HttpCode::BAD_REQUEST, ErrorCodeEnum::INVALID_INPUT, $message);
         }
 
         $filter = MessageFilter::createForEverything();

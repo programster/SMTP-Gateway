@@ -81,7 +81,7 @@ if attachment_days == -1:
     has_body = 'html body' in raw and 'plain body' in raw
     suite.check('the download keeps the body, without the attachments', has_body and len(raw) < 20000, len(raw))
     note = read_note(raw)
-    is_listed = 'invoice.pdf' in note and 'big.bin (application/octet-stream, 14 MB)' in note
+    is_listed = 'invoice.pdf' in note and 'big.bin (application/octet-stream, 14.0 MiB)' in note
     suite.check('a note lists what was removed', is_listed, note)
     page = web.get(f'/messages/{message_id}')
     suite.check('the email\'s page says they were removed', 'Without its 2 attachments' in page)
