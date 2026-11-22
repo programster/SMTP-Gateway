@@ -20,6 +20,11 @@
 
 declare(strict_types = 1);
 
+use Programster\PgsqlLib\Exceptions\ExceptionQueryError;
+use Programster\PgsqlLib\PgsqlLib;
+use Programster\PgsqlLib\UuidVersion;
+use Programster\PgsqlObjects\OrmTransaction;
+
 
 final class MessageDispatcher
 {
@@ -103,18 +108,11 @@ final class MessageDispatcher
             'priority' => $emailToken->getPolicy()->getPriority()->getValue(),
         ];
 
-        $insert = function () use ($row) : EmailMessage {
-            /* @var $message EmailMessage */
-            $message = EmailMessageTable::getInstance()->insert($row);
-
-            self::wakeWorkers();
-            return $message;
-        };
-
-        $message = DB::transaction($insert);
+        $transaction = new OrmTransaction(ServiceFactory::getDb());
+        $messageId = self::addMessageToTransaction($transaction, $row);
+        $transaction->commit();
         $outcome = SubmissionOutcome::QUEUED;
         $waitSeconds = Settings::get()->getSyncWaitSeconds();
-        $messageId = $message->getId();
 
         // The email is queued by now, so if the providers can't be used (e.g. none have been set up yet), the client
         // is told it's queued, rather than that it failed, and it's sent once they can be.
@@ -135,7 +133,7 @@ final class MessageDispatcher
         {
             try
             {
-                $outcome = self::waitForOutcome($message->getId(), microtime(true) + $waitSeconds);
+                $outcome = self::waitForOutcome($messageId, microtime(true) + $waitSeconds);
             }
             catch (ProviderPermanentFailureException $e)
             {
@@ -145,17 +143,17 @@ final class MessageDispatcher
 
         if ($outcome === SubmissionOutcome::QUEUED)
         {
-            self::markAsHavingQueued($message->getId());
+            self::markAsHavingQueued($messageId);
         }
 
-        return new SubmissionResult($message->getId(), $outcome);
+        return new SubmissionResult($messageId, $outcome);
     }
 
 
     /**
-     * Queue one of the service's own emails (e.g. a password reset link), with the system priority, so it goes ahead
-     * of every token's emails. It still counts towards the global and per-provider limits, and waits for them like any
-     * other email. It doesn't wait to be sent.
+     * Add one of the service's own emails (e.g. a password reset link) to the transaction being built, with the system
+     * priority, so it goes ahead of every token's emails. It still counts towards the global and per-provider limits,
+     * and waits for them like any other email. It doesn't wait to be sent.
      *
      * @param EmailAddress $envelopeSender - the envelope sender (the address set on the Settings page).
      *
@@ -165,14 +163,14 @@ final class MessageDispatcher
      *
      * @param string $clientIp - the IP address of whoever caused it to be sent (e.g. asked for the reset).
      *
-     * @return string - the email's ID.
+     * @return void
      */
-    public static function submitFromService(
+    public static function addServiceEmailToTransaction(
         EmailAddress $envelopeSender,
         EmailAddressCollection $recipients,
         RawEmail $email,
         string $clientIp
-    ) : string
+    ) : void
     {
         $recipientStrings = self::toStrings($recipients);
 
@@ -201,15 +199,7 @@ final class MessageDispatcher
             'priority' => Priority::system()->getValue(),
         ];
 
-        $insert = function () use ($row) : EmailMessage {
-            /* @var $message EmailMessage */
-            $message = EmailMessageTable::getInstance()->insert($row);
-
-            self::wakeWorkers();
-            return $message;
-        };
-
-        return DB::transaction($insert)->getId();
+        self::addMessageToTransaction(ServiceFactory::getTransaction(), $row);
     }
 
 
@@ -224,61 +214,16 @@ final class MessageDispatcher
      */
     public static function processNextQueued() : bool
     {
-        $claim = function () : array {
-            self::acquireDispatchLock();
-            $config = ProviderRegistry::getConfig();
-            $globalLimits = GlobalRateLimitRepository::load();
-            $claimed = ['id' => '', 'provider' => '', 'attempt' => ''];
+        self::acquireDispatchLock();
 
-            // The oldest due email from each token (and from the service itself, whose emails have no token), highest
-            // priority first.
-            $candidates = DB::fetchRows(
-                'SELECT * FROM (SELECT DISTINCT ON ("email_token_id") "id", "email_token_id", "recipient_count",'
-                . ' "tried_providers", "sender_addresses", "priority", "created_at" FROM "email_message"'
-                . ' WHERE "status" = \'queued\''
-                . ' AND "next_attempt_at" <= now() ORDER BY "email_token_id", "created_at") AS "oldest_per_key"'
-                . ' ORDER BY "priority" DESC, "created_at"'
-            );
-
-            // Once an email is held back by the global limits, which every email shares, no lower priority email may
-            // use the room it's waiting for. Once one is held back by the providers' limits, no lower priority email
-            // may use the room under those providers (the ones it could use), but may still use any others, as an
-            // email whose token is restricted to particular providers only waits for those. One held back by its own
-            // token's limits doesn't hold anything else up.
-            $globalWaitingPriority = 0;
-            $reservations = [];
-
-            foreach ($candidates as $candidate)
-            {
-                $priority = (int)$candidate['priority'];
-
-                if ($claimed['id'] === '' && $priority >= $globalWaitingPriority)
-                {
-                    $reserved = self::getProvidersReservedAbove($reservations, $priority);
-                    $attempt = self::tryToClaim($candidate, $config, $globalLimits, $reserved);
-
-                    if ($attempt['waiting_for_global_limits'])
-                    {
-                        $globalWaitingPriority = max($globalWaitingPriority, $priority);
-                    }
-
-                    if (count($attempt['reserving_providers']) > 0)
-                    {
-                        $reservations[] = ['priority' => $priority, 'providers' => $attempt['reserving_providers']];
-                    }
-
-                    $claimed = [
-                        'id' => $attempt['id'],
-                        'provider' => $attempt['provider'],
-                        'attempt' => $attempt['attempt'],
-                    ];
-                }
-            }
-
-            return $claimed;
-        };
-
-        $claimed = DB::transaction($claim);
+        try
+        {
+            $claimed = self::claimNextEmail();
+        }
+        finally
+        {
+            self::releaseDispatchLock();
+        }
 
         if ($claimed['id'] !== '')
         {
@@ -420,18 +365,20 @@ final class MessageDispatcher
             {
                 $id = DB::escape($candidate['id']);
                 $escapedProvider = DB::escape($provider);
+                $attemptId = PgsqlLib::generateUuid(UuidVersion::V7);
+                $escapedAttemptId = DB::escape($attemptId);
+
+                $markSending =
+                    "UPDATE \"email_message\" SET \"status\" = 'sending', \"dispatched_at\" = now(),"
+                    . " \"provider\" = {$escapedProvider}, \"attempts\" = \"attempts\" + 1 WHERE \"id\" = {$id}";
+
+                $recordAttempt =
+                    'INSERT INTO "email_attempt" ("id", "email_message_id", "provider", "recipient_count", "outcome")'
+                    . " VALUES ({$escapedAttemptId}, {$id}, {$escapedProvider}, {$recipientCount}, 'sending')";
 
                 // The attempt is recorded now, so it counts towards the provider's limits straight away.
-                ServiceFactory::getDb()->query(
-                    "UPDATE \"email_message\" SET \"status\" = 'sending', \"dispatched_at\" = now(),"
-                    . " \"provider\" = {$escapedProvider}, \"attempts\" = \"attempts\" + 1 WHERE \"id\" = {$id}"
-                );
-
-                $attemptId = DB::fetchValue(
-                    'INSERT INTO "email_attempt" ("id", "email_message_id", "provider", "recipient_count", "outcome")'
-                    . " VALUES (uuidv7(), {$id}, {$escapedProvider}, {$recipientCount}, 'sending') RETURNING \"id\""
-                );
-
+                $transaction = new OrmTransaction(ServiceFactory::getDb(), [$markSending, $recordAttempt]);
+                $transaction->commit();
                 $claimed['id'] = $candidate['id'];
                 $claimed['provider'] = $provider;
                 $claimed['attempt'] = $attemptId;
@@ -1002,19 +949,124 @@ final class MessageDispatcher
 
 
     /**
-     * Wake the queue workers (sent when the current transaction commits, or straight away outside one).
+     * Add a new email's row to a transaction, along with waking the queue workers once it has committed.
+     *
+     * @param OrmTransaction $transaction - the transaction.
+     *
+     * @param array<string, string|int|bool|null> $row - the email's columns, without its ID.
+     *
+     * @return string - the email's ID. It doesn't exist until the transaction commits.
      */
-    private static function wakeWorkers() : void
+    private static function addMessageToTransaction(OrmTransaction $transaction, array $row) : string
     {
-        ServiceFactory::getDb()->query("SELECT pg_notify('" . self::NOTIFY_CHANNEL . "', '')");
+        $id = (string)EmailMessageTable::getInstance()->generateId();
+        $transaction->append(DB::generateInsertQuery('email_message', ['id' => $id] + $row));
+        $transaction->append(self::generateWakeWorkersQuery());
+        return $id;
     }
 
 
     /**
-     * Take the dispatch lock, which is held until the current transaction ends.
+     * Claim the email that should go next, if the rate limits and providers allow one. The dispatch lock must be held.
+     * @return array{id: string, provider: string, attempt: string} - the claim, or empty strings if there isn't one.
+     */
+    private static function claimNextEmail() : array
+    {
+        $config = ProviderRegistry::getConfig();
+        $globalLimits = GlobalRateLimitRepository::load();
+        $claimed = ['id' => '', 'provider' => '', 'attempt' => ''];
+
+        // The oldest due email from each token (and from the service itself, whose emails have no token), highest
+        // priority first.
+        $candidates = DB::fetchRows(
+            'SELECT * FROM (SELECT DISTINCT ON ("email_token_id") "id", "email_token_id", "recipient_count",'
+            . ' "tried_providers", "sender_addresses", "priority", "created_at" FROM "email_message"'
+            . ' WHERE "status" = \'queued\''
+            . ' AND "next_attempt_at" <= now() ORDER BY "email_token_id", "created_at") AS "oldest_per_key"'
+            . ' ORDER BY "priority" DESC, "created_at"'
+        );
+
+        // Once an email is held back by the global limits, which every email shares, no lower priority email may use
+        // the room it's waiting for. Once one is held back by the providers' limits, no lower priority email may use
+        // the room under those providers (the ones it could use), but may still use any others, as an email whose
+        // token is restricted to particular providers only waits for those. One held back by its own token's limits
+        // doesn't hold anything else up.
+        $globalWaitingPriority = 0;
+        $reservations = [];
+
+        foreach ($candidates as $candidate)
+        {
+            $priority = (int)$candidate['priority'];
+
+            if ($claimed['id'] === '' && $priority >= $globalWaitingPriority)
+            {
+                $reserved = self::getProvidersReservedAbove($reservations, $priority);
+                $attempt = self::tryToClaim($candidate, $config, $globalLimits, $reserved);
+
+                if ($attempt['waiting_for_global_limits'])
+                {
+                    $globalWaitingPriority = max($globalWaitingPriority, $priority);
+                }
+
+                if (count($attempt['reserving_providers']) > 0)
+                {
+                    $reservations[] = ['priority' => $priority, 'providers' => $attempt['reserving_providers']];
+                }
+
+                $claimed = [
+                    'id' => $attempt['id'],
+                    'provider' => $attempt['provider'],
+                    'attempt' => $attempt['attempt'],
+                ];
+            }
+        }
+
+        return $claimed;
+    }
+
+
+    /**
+     * Wake the queue workers (sent straight away, as this isn't called within a transaction).
+     */
+    private static function wakeWorkers() : void
+    {
+        ServiceFactory::getDb()->query(self::generateWakeWorkersQuery());
+    }
+
+
+    /**
+     * Generate the query that wakes the queue workers. Inside a transaction, they're only woken once it commits.
+     * @return string
+     */
+    private static function generateWakeWorkersQuery() : string
+    {
+        return "SELECT pg_notify('" . self::NOTIFY_CHANNEL . "', '')";
+    }
+
+
+    /**
+     * Take the dispatch lock, waiting for it if another worker has it. It's held by this connection until it's released
+     * (see releaseDispatchLock()), or the connection ends, so a worker that dies can never leave it held.
      */
     private static function acquireDispatchLock() : void
     {
-        ServiceFactory::getDb()->query('SELECT pg_advisory_xact_lock(' . self::DISPATCH_LOCK_ID . ')');
+        ServiceFactory::getDb()->query('SELECT pg_advisory_lock(' . self::DISPATCH_LOCK_ID . ')');
+    }
+
+
+    /**
+     * Release the dispatch lock. A lost connection has already released it, so that isn't an error here, and any error
+     * from the claim that was happening is the useful one.
+     */
+    private static function releaseDispatchLock() : void
+    {
+        try
+        {
+            ServiceFactory::getDb()->query('SELECT pg_advisory_unlock(' . self::DISPATCH_LOCK_ID . ')');
+        }
+        catch (ExceptionQueryError)
+        {
+            // The connection has gone, which released the lock.
+        }
     }
 }

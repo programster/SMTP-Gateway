@@ -8,8 +8,10 @@
 
 declare(strict_types = 1);
 
+use Programster\PgsqlLib\Exceptions\ExceptionQueryError;
+use Programster\PgsqlLib\Query;
 use Programster\PgsqlObjects\CacheMode;
-use Programster\PgsqlObjects\Transaction;
+use Programster\PgsqlObjects\OrmTransaction;
 
 
 final class EmailTokenRepository
@@ -42,8 +44,8 @@ final class EmailTokenRepository
             'restricts_providers' => self::isProviderRestricted($policy),
         ]);
 
-        // The token and its policy's rows are saved together, in one query, or not at all.
-        $transaction = new Transaction();
+        // The token and its policy's rows are saved together, or not at all.
+        $transaction = new OrmTransaction(ServiceFactory::getDb());
         $transaction->save($emailToken);
         self::addPolicyToTransaction($transaction, (string)$emailToken->getId(), $policy);
         $transaction->commit();
@@ -77,40 +79,44 @@ final class EmailTokenRepository
         $name = self::validateName($name);
         $id = (string)$emailToken->getId();
 
+        $escapedId = DB::escape($id);
+
+        // Locks the token's row, and fails if it has been revoked, so that nothing below happens.
+        $requireNotRevoked = DB::generateRequireRowQuery(
+            "UPDATE \"email_token\" SET \"name\" = \"name\" WHERE \"id\" = {$escapedId} AND \"revoked_at\" IS NULL"
+        );
+
+        $updateToken = new Query(
+            'UPDATE "email_token" SET "name" = $1, "priority" = $2, "restricts_providers" = $3 WHERE "id" = $4',
+            [$name, $policy->getPriority()->getValue(), self::isProviderRestricted($policy), $id]
+        );
+
         // The token's row, and its policy's rows, are changed together, or not at all.
-        $update = function () use ($id, $name, $policy) : void {
-            $db = ServiceFactory::getDb();
+        $transaction = new OrmTransaction(ServiceFactory::getDb(), [$requireNotRevoked, $updateToken]);
 
-            $query =
-                'UPDATE "email_token" SET "name" = $1, "priority" = $2, "restricts_providers" = $3'
-                . ' WHERE "id" = $4 AND "revoked_at" IS NULL';
+        $tables = [
+            'email_token_network',
+            'email_token_address_rule',
+            'email_token_provider',
+            'email_token_rate_limit',
+        ];
 
-            $restrictsProviders = self::isProviderRestricted($policy) ? 't' : 'f';
-            $result = $db->query($query, [$name, $policy->getPriority()->getValue(), $restrictsProviders, $id]);
+        foreach ($tables as $table)
+        {
+            $transaction->append(new Query("DELETE FROM \"{$table}\" WHERE \"email_token_id\" = \$1", [$id]));
+        }
 
-            if (pg_affected_rows($result) !== 1)
-            {
-                throw new ConflictException('This email token has been revoked, so it can\'t be changed.');
-            }
+        self::addPolicyToTransaction($transaction, $id, $policy);
 
-            $tables = [
-                'email_token_network',
-                'email_token_address_rule',
-                'email_token_provider',
-                'email_token_rate_limit',
-            ];
-
-            foreach ($tables as $table)
-            {
-                $db->query("DELETE FROM \"{$table}\" WHERE \"email_token_id\" = $1", [$id]);
-            }
-
-            $transaction = new Transaction();
-            self::addPolicyToTransaction($transaction, $id, $policy);
+        try
+        {
             $transaction->commit();
-        };
-
-        DB::transaction($update);
+        }
+        catch (ExceptionQueryError $exception)
+        {
+            $revoked = new ConflictException('This email token has been revoked, so it can\'t be changed.');
+            throw DB::isNoRowError($exception) ? $revoked : $exception;
+        }
     }
 
 
@@ -358,21 +364,16 @@ final class EmailTokenRepository
             $clearContent = '';
         }
 
-        $revoke = function () use ($id, $clearContent) : int {
-            $revokeQuery =
-                "UPDATE \"email_token\" SET \"revoked_at\" = now() WHERE \"id\" = {$id} AND \"revoked_at\" IS NULL";
+        $revokeToken =
+            "UPDATE \"email_token\" SET \"revoked_at\" = now() WHERE \"id\" = {$id} AND \"revoked_at\" IS NULL";
 
-            ServiceFactory::getDb()->query($revokeQuery);
+        $cancelQueued =
+            "UPDATE \"email_message\" SET \"status\" = 'cancelled'{$clearContent}"
+            . " WHERE \"email_token_id\" = {$id} AND \"status\" = 'queued'";
 
-            $result = ServiceFactory::getDb()->query(
-                "UPDATE \"email_message\" SET \"status\" = 'cancelled'{$clearContent}"
-                . " WHERE \"email_token_id\" = {$id} AND \"status\" = 'queued'"
-            );
-
-            return pg_affected_rows($result);
-        };
-
-        return DB::transaction($revoke);
+        $transaction = new OrmTransaction(ServiceFactory::getDb(), [$revokeToken, $cancelQueued]);
+        $results = $transaction->commit();
+        return pg_affected_rows($results[1]);
     }
 
 
@@ -440,7 +441,7 @@ final class EmailTokenRepository
     /**
      * Add the rows of a token's policy to a transaction, to be saved with the token.
      *
-     * @param Transaction $transaction - the transaction the token is being saved in.
+     * @param OrmTransaction $transaction - the transaction the token is being saved in.
      *
      * @param string $emailTokenId - the token's ID.
      *
@@ -449,7 +450,7 @@ final class EmailTokenRepository
      * @return void
      */
     private static function addPolicyToTransaction(
-        Transaction $transaction,
+        OrmTransaction $transaction,
         string $emailTokenId,
         EmailTokenPolicy $policy
     ) : void

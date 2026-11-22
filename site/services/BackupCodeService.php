@@ -8,6 +8,9 @@
 
 declare(strict_types = 1);
 
+use Programster\PgsqlLib\Query;
+use Programster\PgsqlObjects\OrmTransaction;
+
 
 final class BackupCodeService
 {
@@ -34,20 +37,17 @@ final class BackupCodeService
 
         $codes = array_keys($codes);
         $userId = $user->getId();
+        $queries = [new Query('DELETE FROM "admin_backup_code" WHERE "admin_user_id" = $1', [$userId])];
+        $columns = '"id", "admin_user_id", "code_hash"';
+        $insert = 'INSERT INTO "admin_backup_code" (' . $columns . ') VALUES (gen_random_uuid(), $1, $2)';
 
-        $store = function () use ($codes, $userId) : void {
-            $db = ServiceFactory::getDb();
-            $db->query('DELETE FROM "admin_backup_code" WHERE "admin_user_id" = $1', [$userId]);
-            $columns = '"id", "admin_user_id", "code_hash"';
-            $insert = 'INSERT INTO "admin_backup_code" (' . $columns . ') VALUES (gen_random_uuid(), $1, $2)';
+        foreach ($codes as $code)
+        {
+            $queries[] = new Query($insert, [$userId, password_hash(BackupCode::normalise($code), PASSWORD_DEFAULT)]);
+        }
 
-            foreach ($codes as $code)
-            {
-                $db->query($insert, [$userId, password_hash(BackupCode::normalise($code), PASSWORD_DEFAULT)]);
-            }
-        };
-
-        DB::transaction($store);
+        $transaction = new OrmTransaction(ServiceFactory::getDb(), $queries);
+        $transaction->commit();
         return $codes;
     }
 

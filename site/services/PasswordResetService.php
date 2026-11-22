@@ -16,6 +16,9 @@
 
 declare(strict_types = 1);
 
+use Programster\PgsqlLib\Exceptions\ExceptionQueryError;
+use Programster\PgsqlLib\Query;
+
 
 final class PasswordResetService
 {
@@ -81,19 +84,20 @@ final class PasswordResetService
 
 
     /**
-     * Email a new account a link to choose its own password, which works for INVITATION_LIFETIME_MINUTES (see
-     * AdminUserRepository::createWithoutPassword()). It's the same kind of link as a password reset's.
+     * Add the email inviting a new account to choose its own password to the transaction being built, along with its
+     * link, which works for INVITATION_LIFETIME_MINUTES. It's the same kind of link as a password reset's.
      *
-     * @param AdminUser $user - the account.
+     * @param string $userId - the account's ID.
+     *
+     * @param EmailAddress $email - the account's email address.
      *
      * @param string $clientIp - the IP address of whoever created it.
      *
      * @return void
      *
      * @throws ConfigurationException - if PUBLIC_URL, or the address the service's own emails are sent from, isn't set.
-     * @throws InvalidInputException - if the account's email address isn't valid.
      */
-    public static function sendInvitation(AdminUser $user, string $clientIp) : void
+    public static function addInvitationToTransaction(string $userId, EmailAddress $email, string $clientIp) : void
     {
         $hours = intdiv(self::INVITATION_LIFETIME_MINUTES, 60);
         $siteUrl = Config::get()->getPublicUrl();
@@ -107,7 +111,8 @@ final class PasswordResetService
                 . "If you weren't expecting this, you can ignore this email.\r\n";
         };
 
-        self::sendLink($user, $clientIp, self::INVITATION_LIFETIME_MINUTES, 'Choose your password', $writeText);
+        $minutes = self::INVITATION_LIFETIME_MINUTES;
+        self::addLinkToTransaction($userId, $email, $clientIp, $minutes, 'Choose your password', $writeText);
     }
 
 
@@ -152,26 +157,34 @@ final class PasswordResetService
      */
     public static function resetPassword(string $token, string $newPassword) : AdminUser
     {
+        $user = self::loadUserForToken($token);
         $hash = DB::escape(self::hash($token));
 
-        $reset = function () use ($hash, $newPassword) : AdminUser {
-            // Locked, so the same link can't be used twice at once.
-            $rows = DB::fetchRows(
-                "SELECT \"admin_user_id\" FROM \"password_reset_token\" WHERE \"token_hash\" = {$hash}"
-                . ' AND "used_at" IS NULL AND "expires_at" > now() FOR UPDATE'
-            );
+        // Claiming the link first locks its row, so if it's used twice at once, the second finds it already used, and
+        // the whole transaction fails.
+        $claimLink = DB::generateRequireRowQuery(
+            "UPDATE \"password_reset_token\" SET \"used_at\" = now() WHERE \"token_hash\" = {$hash}"
+            . ' AND "used_at" IS NULL AND "expires_at" > now()'
+        );
 
-            if (count($rows) === 0)
-            {
-                throw new NotFoundException(self::INVALID_LINK_MESSAGE);
-            }
+        try
+        {
+            ServiceFactory::getTransaction()->append($claimLink);
+            AdminUserRepository::addPasswordChangeToTransaction($user, $newPassword, false);
+            ServiceFactory::getTransaction()->commit();
+        }
+        catch (ExceptionQueryError $exception)
+        {
+            ServiceFactory::discardTransaction();
+            throw DB::isNoRowError($exception) ? new NotFoundException(self::INVALID_LINK_MESSAGE) : $exception;
+        }
+        catch (Throwable $exception)
+        {
+            ServiceFactory::discardTransaction();
+            throw $exception;
+        }
 
-            // This marks every link sent to the account as used, this one included.
-            $user = AdminUserRepository::load($rows[0]['admin_user_id']);
-            return AdminUserRepository::changePassword($user, $newPassword);
-        };
-
-        return DB::transaction($reset);
+        return AdminUserRepository::load((string)$user->getId());
     }
 
 
@@ -256,9 +269,8 @@ final class PasswordResetService
 
 
     /**
-     * Create a token for the account, cancelling any it already has, and queue the email with the link to it (with
-     * the system priority, so it goes ahead of everything else). If it can't be queued, the token is deleted, so
-     * another can be asked for straight away.
+     * Create a token for an existing account, cancelling any it already has, and queue the email with the link to it,
+     * together. If the email can't be queued, the token isn't created, so another can be asked for straight away.
      *
      * @param AdminUser $user - the account.
      *
@@ -283,33 +295,65 @@ final class PasswordResetService
         Closure $writeText
     ) : void
     {
-        $token = bin2hex(random_bytes(32));
-        $userId = DB::escape($user->getId());
-        $hash = DB::escape(self::hash($token));
-        $link = Config::get()->getPublicUrl() . '/reset-password/' . $token;
-        $db = ServiceFactory::getDb();
-
-        $db->query(
-            "UPDATE \"password_reset_token\" SET \"used_at\" = now() WHERE \"admin_user_id\" = {$userId}"
-            . ' AND "used_at" IS NULL'
-        );
-
-        $db->query(
-            'INSERT INTO "password_reset_token" ("id", "admin_user_id", "token_hash", "client_ip", "expires_at")'
-            . " VALUES (uuidv7(), {$userId}, {$hash}, " . DB::escape($clientIp) . ','
-            . " now() + make_interval(mins => {$minutes}))"
-        );
-
         try
         {
-            SystemMailer::queue(new EmailAddress($user->getEmail()), $subject, $writeText($link), $clientIp);
+            $email = new EmailAddress($user->getEmail());
+            self::addLinkToTransaction((string)$user->getId(), $email, $clientIp, $minutes, $subject, $writeText);
+            ServiceFactory::getTransaction()->commit();
         }
-        catch (ConfigurationException | InvalidInputException $e)
+        catch (Throwable $exception)
         {
-            // It couldn't even be queued, so let another be asked for straight away.
-            $db->query("DELETE FROM \"password_reset_token\" WHERE \"token_hash\" = {$hash}");
-            throw $e;
+            ServiceFactory::discardTransaction();
+            throw $exception;
         }
+    }
+
+
+    /**
+     * Add a new token for an account to the transaction being built, cancelling any it already has, along with the
+     * email with the link to it (which has the system priority, so it goes ahead of everything else).
+     *
+     * @param string $userId - the account's ID.
+     *
+     * @param EmailAddress $email - where to send the link.
+     *
+     * @param string $clientIp - the IP address of whoever asked for it.
+     *
+     * @param int $minutes - how long the link works for.
+     *
+     * @param string $subject - the email's subject.
+     *
+     * @param Closure(string): string $writeText - writes the email's text, given the link.
+     *
+     * @return void
+     *
+     * @throws ConfigurationException - if PUBLIC_URL, or the address the service's own emails are sent from, isn't set.
+     */
+    private static function addLinkToTransaction(
+        string $userId,
+        EmailAddress $email,
+        string $clientIp,
+        int $minutes,
+        string $subject,
+        Closure $writeText
+    ) : void
+    {
+        $token = bin2hex(random_bytes(32));
+        $link = Config::get()->getPublicUrl() . '/reset-password/' . $token;
+
+        $cancelOthers = new Query(
+            'UPDATE "password_reset_token" SET "used_at" = now() WHERE "admin_user_id" = $1 AND "used_at" IS NULL',
+            [$userId]
+        );
+
+        $insertToken = new Query(
+            'INSERT INTO "password_reset_token" ("id", "admin_user_id", "token_hash", "client_ip", "expires_at")'
+            . " VALUES (uuidv7(), \$1, \$2, \$3, now() + make_interval(mins => {$minutes}))",
+            [$userId, self::hash($token), $clientIp]
+        );
+
+        ServiceFactory::getTransaction()->append($cancelOthers, $insertToken);
+        SystemMailer::addToTransaction($email, $subject, $writeText($link), $clientIp);
     }
 
 

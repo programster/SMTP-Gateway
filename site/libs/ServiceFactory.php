@@ -1,9 +1,9 @@
 <?php
 
 /*
- * The one place that creates the service's shared objects: the database connections, and the logger. Each is
- * created the first time it's asked for, kept in a static variable, and the same instance is returned every time
- * after that. Nothing else in the codebase opens a database connection.
+ * The one place that creates the service's shared objects: the database connections, the logger, and the transaction
+ * being built. Each is created the first time it's asked for, kept in a static variable, and the same instance is
+ * returned every time after that. Nothing else in the codebase opens a database connection.
  */
 
 declare(strict_types = 1);
@@ -13,10 +13,53 @@ use Programster\Log\FailoverLogger;
 use Programster\Log\JsonFileLogger;
 use Programster\PgsqlLib\PgSqlConnection;
 use Programster\PgsqlLogger\PgSqlLogger;
+use Programster\PgsqlObjects\OrmTransaction;
 
 
 class ServiceFactory
 {
+    private static ?OrmTransaction $s_transaction = null;
+    private static int $s_transactionPid = 0;
+
+
+    /**
+     * Get the transaction being built, for work spread across several services to add to, and for whoever started
+     * that work to commit. A new one is created if there isn't one, or the last has already run. A forked process
+     * never shares its parent's.
+     *
+     * Whoever starts the work must commit it, or call discardTransaction() if it fails, as anything left in here would
+     * otherwise be committed by the next piece of work in a long-running process.
+     *
+     * @return OrmTransaction
+     */
+    public static function getTransaction() : OrmTransaction
+    {
+        $needsNew = (
+               self::$s_transaction === null
+            || self::$s_transaction->hasRun()
+            || self::$s_transactionPid !== getmypid()
+        );
+
+        if ($needsNew)
+        {
+            self::$s_transaction = new OrmTransaction(self::getDb());
+            self::$s_transactionPid = getmypid();
+        }
+
+        return self::$s_transaction;
+    }
+
+
+    /**
+     * Throw away the transaction being built, and everything added to it. Nothing has been sent to the database.
+     * @return void
+     */
+    public static function discardTransaction() : void
+    {
+        self::$s_transaction = null;
+    }
+
+
     /**
      * Get the connection to the database, which every table, repository and query uses. It's created the first
      * time it's asked for, and the same instance is returned every time after that.

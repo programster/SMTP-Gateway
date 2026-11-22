@@ -67,26 +67,18 @@ final class MfaGraceService
     {
         $id = DB::escape($user->getId());
 
-        $redeem = function () use ($id) : bool {
-            $rows = DB::fetchRows(
-                'UPDATE "admin_user" SET "mfa_grace_until" = NULL, "totp_secret" = NULL, "totp_last_used_step" = NULL,'
-                . ' "session_version" = "session_version" + 1'
-                . " WHERE \"id\" = {$id} AND \"status\" = 'active' AND \"mfa_grace_until\" > now() RETURNING \"id\""
-            );
+        // One statement, so it's all or nothing, and the second factors are only removed if a grace period was used.
+        $rows = DB::fetchRows(
+            'WITH "redeemed" AS (UPDATE "admin_user" SET "mfa_grace_until" = NULL, "totp_secret" = NULL,'
+            . ' "totp_last_used_step" = NULL, "session_version" = "session_version" + 1'
+            . " WHERE \"id\" = {$id} AND \"status\" = 'active' AND \"mfa_grace_until\" > now() RETURNING \"id\"),"
+            . ' "removed_keys" AS (DELETE FROM "admin_webauthn_credential"'
+            . ' WHERE "admin_user_id" IN (SELECT "id" FROM "redeemed")),'
+            . ' "removed_codes" AS (DELETE FROM "admin_backup_code"'
+            . ' WHERE "admin_user_id" IN (SELECT "id" FROM "redeemed"))'
+            . ' SELECT "id" FROM "redeemed"'
+        );
 
-            $isRedeemed = (count($rows) > 0);
-
-            if ($isRedeemed)
-            {
-                foreach (['admin_webauthn_credential', 'admin_backup_code'] as $table)
-                {
-                    ServiceFactory::getDb()->query("DELETE FROM \"{$table}\" WHERE \"admin_user_id\" = {$id}");
-                }
-            }
-
-            return $isRedeemed;
-        };
-
-        return (bool)DB::transaction($redeem);
+        return count($rows) > 0;
     }
 }

@@ -9,6 +9,9 @@
 
 declare(strict_types = 1);
 
+use Programster\PgsqlLib\Query;
+use Programster\PgsqlObjects\OrmTransaction;
+
 
 final class CloudflareNetworks
 {
@@ -143,18 +146,16 @@ final class CloudflareNetworks
     // Put the ranges in place of the ones stored, all at once, so a request never sees only some of them.
     private static function store(IpNetworkCollection $networks) : void
     {
-        $replace = function () use ($networks) : void {
-            $db = ServiceFactory::getDb();
-            $db->query('DELETE FROM "cloudflare_network"');
+        $queries = [new Query('DELETE FROM "cloudflare_network"')];
+        $insert = 'INSERT INTO "cloudflare_network" ("network", "fetched_at") VALUES ($1, now())';
+        $insert .= ' ON CONFLICT DO NOTHING';
 
-            foreach ($networks as $network)
-            {
-                $query = 'INSERT INTO "cloudflare_network" ("network", "fetched_at") VALUES ($1, now())';
-                $query .= ' ON CONFLICT DO NOTHING';
-                $db->query($query, [(string)$network]);
-            }
-        };
+        foreach ($networks as $network)
+        {
+            $queries[] = new Query($insert, [(string)$network]);
+        }
 
-        DB::transaction($replace);
+        $transaction = new OrmTransaction(ServiceFactory::getDb(), $queries);
+        $transaction->commit();
     }
 }

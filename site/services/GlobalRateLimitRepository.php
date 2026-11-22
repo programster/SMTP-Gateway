@@ -7,7 +7,7 @@
 declare(strict_types = 1);
 
 use Programster\PgsqlObjects\CacheMode;
-use Programster\PgsqlObjects\Transaction;
+use Programster\PgsqlObjects\OrmTransaction;
 
 
 final class GlobalRateLimitRepository
@@ -35,9 +35,9 @@ final class GlobalRateLimitRepository
      */
     public static function replace(RateLimitSet $limits) : void
     {
-        // The old limits are deleted and the new ones saved together, in one query, or not at all. The deletes are
-        // added first, as a new limit may have the same period as an old one, which must be unique.
-        $transaction = new Transaction();
+        // The old limits are deleted and the new ones saved together, or not at all. The deletes are added first, as a
+        // new limit may have the same period as an old one, which must be unique.
+        $transaction = new OrmTransaction(ServiceFactory::getDb());
 
         foreach (GlobalRateLimitTable::getInstance()->loadAll(CacheMode::IGNORE_CACHE) as $existing)
         {

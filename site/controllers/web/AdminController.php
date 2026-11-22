@@ -535,22 +535,27 @@ class AdminController extends AbstractController
     {
         $clientIp = (string)ClientIpResolver::resolve($request);
 
-        $createAndInvite = function () use ($email, $clientIp) : AdminUser {
-            $user = AdminUserRepository::createWithoutPassword(new EmailAddress($email));
-            PasswordResetService::sendInvitation($user, $clientIp);
-            return $user;
-        };
-
         try
         {
-            $user = DB::transaction($createAndInvite);
+            $address = new EmailAddress($email);
+            $userId = AdminUserRepository::addAccountWithoutPasswordToTransaction($address);
+            $invitee = new EmailAddress(AdminUserRepository::normalise($address));
+            PasswordResetService::addInvitationToTransaction($userId, $invitee, $clientIp);
+            ServiceFactory::getTransaction()->commit();
         }
         catch (ConfigurationException $e)
         {
+            ServiceFactory::discardTransaction();
             $msg = "The link couldn't be emailed, so the account wasn't created: {$e->getMessage()}";
             throw new InvalidInputException($msg . ' Set it up, or set a password for them instead.');
         }
+        catch (Throwable $e)
+        {
+            ServiceFactory::discardTransaction();
+            throw $e;
+        }
 
+        $user = AdminUserRepository::load($userId);
         self::logAccountCreated($user, AccountPasswordSource::EMAILED_LINK);
 
         return
@@ -658,22 +663,29 @@ class AdminController extends AbstractController
     private static function restoreAndInvite(Request $request, AdminUser $user, string $email) : string
     {
         $clientIp = (string)ClientIpResolver::resolve($request);
-
-        $restoreAndInvite = function () use ($user, $email, $clientIp) : AdminUser {
-            $restored = AdminUserRepository::restoreWithoutPassword($user, new EmailAddress($email));
-            PasswordResetService::sendInvitation($restored, $clientIp);
-            return $restored;
-        };
+        $userId = (string)$user->getId();
 
         try
         {
-            $restored = DB::transaction($restoreAndInvite);
+            $address = new EmailAddress($email);
+            AdminUserRepository::addRestoreWithoutPasswordToTransaction($user, $address);
+            $invitee = new EmailAddress(AdminUserRepository::normalise($address));
+            PasswordResetService::addInvitationToTransaction($userId, $invitee, $clientIp);
+            ServiceFactory::getTransaction()->commit();
         }
         catch (ConfigurationException $e)
         {
+            ServiceFactory::discardTransaction();
             $msg = "The link couldn't be emailed, so the account wasn't restored: {$e->getMessage()}";
             throw new InvalidInputException($msg . ' Set it up, or set a password for them instead.');
         }
+        catch (Throwable $e)
+        {
+            ServiceFactory::discardTransaction();
+            throw $e;
+        }
+
+        $restored = AdminUserRepository::load($userId);
 
         return
             "The account was restored as \"{$restored->getEmail()}\", and emailed a link to choose its password, which"

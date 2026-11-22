@@ -8,7 +8,9 @@
 
 declare(strict_types = 1);
 
+use Programster\PgsqlLib\Query;
 use Programster\PgsqlObjects\CacheMode;
+use Programster\PgsqlObjects\OrmTransaction;
 
 
 final class AdminUserRepository
@@ -67,18 +69,48 @@ final class AdminUserRepository
 
 
     /**
-     * Create an account with a password that nobody knows, for its owner to choose their own with a link (see
-     * PasswordResetService::sendInvitation()). Until then, it can't be logged in to with a password.
+     * Add a new account to the transaction being built, with a password that nobody knows, for its owner to choose
+     * their own with a link (see PasswordResetService::addInvitationToTransaction()). Until then, it can't be logged in
+     * to with a password.
      *
      * @param EmailAddress $email - its email address, which it logs in with, and where the link goes.
      *
-     * @return AdminUser
+     * @return string - the new account's ID. It doesn't exist until the transaction commits.
      *
      * @throws InvalidInputException - if there's already an account with that email address.
      */
-    public static function createWithoutPassword(EmailAddress $email) : AdminUser
+    public static function addAccountWithoutPasswordToTransaction(EmailAddress $email) : string
     {
-        return self::insert($email, password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT), false);
+        $address = self::normalise($email);
+
+        if (self::isEmailTaken($email))
+        {
+            throw new InvalidInputException("There is already an account for {$address}.");
+        }
+
+        $id = (string)AdminUserTable::getInstance()->generateId();
+
+        $insert = DB::generateInsertQuery('admin_user', [
+            'id' => $id,
+            'email' => $address,
+            'password_hash' => password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT),
+            'created_at' => Time::now(),
+            'must_change_password' => false,
+        ]);
+
+        ServiceFactory::getTransaction()->append($insert);
+        return $id;
+    }
+
+
+    /**
+     * Get an email address in the form accounts are stored and matched by: all lower case.
+     * @param EmailAddress $email - the address.
+     * @return string
+     */
+    public static function normalise(EmailAddress $email) : string
+    {
+        return mb_strtolower((string)$email);
     }
 
 
@@ -146,7 +178,7 @@ final class AdminUserRepository
      * @return AdminUser - the account, with its new email address.
      *
      * @throws InvalidInputException - if another account already has that email address.
-     * @throws AccountStateException - if it's archived (see restoreWithPassword() and restoreWithoutPassword()).
+     * @throws AccountStateException - if it's archived (see restoreWithPassword()).
      */
     public static function changeEmail(AdminUser $user, EmailAddress $email) : AdminUser
     {
@@ -259,6 +291,44 @@ final class AdminUserRepository
 
 
     /**
+     * Add a password change to the transaction being built: it logs the account out everywhere, cancels its reset
+     * links, and ends any grace period, so a reset link can't be combined with one to get past the second factor.
+     *
+     * @param AdminUser $user - the account.
+     *
+     * @param string $newPassword - the new password, which must meet the rules set under Settings > Security.
+     *
+     * @param bool $mustChange - whether it has to choose another when it next logs in.
+     *
+     * @return void
+     *
+     * @throws InvalidInputException - if the new password doesn't meet the rules.
+     */
+    public static function addPasswordChangeToTransaction(
+        AdminUser $user,
+        string $newPassword,
+        bool $mustChange
+    ) : void
+    {
+        $hash = self::hashPassword($newPassword);
+        $id = (string)$user->getId();
+
+        $updateAccount = new Query(
+            'UPDATE "admin_user" SET "password_hash" = $1, "session_version" = "session_version" + 1,'
+            . ' "must_change_password" = $2, "mfa_grace_until" = NULL WHERE "id" = $3',
+            [$hash, $mustChange, $id]
+        );
+
+        $cancelLinks = new Query(
+            'UPDATE "password_reset_token" SET "used_at" = now() WHERE "admin_user_id" = $1 AND "used_at" IS NULL',
+            [$id]
+        );
+
+        ServiceFactory::getTransaction()->append($updateAccount, $cancelLinks);
+    }
+
+
+    /**
      * Give an active account a new random password, which it has to change when it next logs in. Like any password
      * change, this logs it out everywhere, and cancels its reset links and any grace period.
      *
@@ -332,21 +402,16 @@ final class AdminUserRepository
         self::assertNotLastActive($user);
         $id = DB::escape($user->getId());
 
-        $block = function () use ($id) : void {
-            $db = ServiceFactory::getDb();
+        $blockAccount =
+            "UPDATE \"admin_user\" SET \"status\" = 'blocked', \"status_changed_at\" = now(),"
+            . " \"mfa_grace_until\" = NULL, \"session_version\" = \"session_version\" + 1 WHERE \"id\" = {$id}";
 
-            $db->query(
-                "UPDATE \"admin_user\" SET \"status\" = 'blocked', \"status_changed_at\" = now(),"
-                . " \"mfa_grace_until\" = NULL, \"session_version\" = \"session_version\" + 1 WHERE \"id\" = {$id}"
-            );
+        $cancelLinks =
+            "UPDATE \"password_reset_token\" SET \"used_at\" = now() WHERE \"admin_user_id\" = {$id}"
+            . ' AND "used_at" IS NULL';
 
-            $db->query(
-                "UPDATE \"password_reset_token\" SET \"used_at\" = now() WHERE \"admin_user_id\" = {$id}"
-                . ' AND "used_at" IS NULL'
-            );
-        };
-
-        DB::transaction($block);
+        $transaction = new OrmTransaction(ServiceFactory::getDb(), [$blockAccount, $cancelLinks]);
+        $transaction->commit();
         return self::load($user->getId());
     }
 
@@ -358,7 +423,7 @@ final class AdminUserRepository
      *
      * @return AdminUser - the account, as it now is.
      *
-     * @throws AccountStateException - if it's archived (see restoreWithPassword() and restoreWithoutPassword()).
+     * @throws AccountStateException - if it's archived (see restoreWithPassword()).
      */
     public static function unblock(AdminUser $user) : AdminUser
     {
@@ -396,39 +461,33 @@ final class AdminUserRepository
             "\"source\" = 'system' AND EXISTS (SELECT 1 FROM jsonb_array_elements_text(\"recipients\") AS \"r\""
             . " WHERE lower(\"r\") = {$email})";
 
-        $archive = function () use ($id, $email, $placeholder, $unusablePassword, $isToAccount) : void {
-            $db = ServiceFactory::getDb();
+        $queries = [
+            "UPDATE \"admin_user\" SET \"status\" = 'archived', \"status_changed_at\" = now(), \"email\" = NULL,"
+            . " \"password_hash\" = {$unusablePassword}, \"totp_secret\" = NULL, \"totp_last_used_step\" = NULL,"
+            . " \"must_change_password\" = false, \"mfa_grace_until\" = NULL,"
+            . " \"session_version\" = \"session_version\" + 1 WHERE \"id\" = {$id}",
+        ];
 
-            $db->query(
-                "UPDATE \"admin_user\" SET \"status\" = 'archived', \"status_changed_at\" = now(), \"email\" = NULL,"
-                . " \"password_hash\" = {$unusablePassword}, \"totp_secret\" = NULL, \"totp_last_used_step\" = NULL,"
-                . " \"must_change_password\" = false, \"mfa_grace_until\" = NULL,"
-                . " \"session_version\" = \"session_version\" + 1 WHERE \"id\" = {$id}"
-            );
+        foreach (['admin_webauthn_credential', 'admin_backup_code', 'password_reset_token'] as $table)
+        {
+            $queries[] = "DELETE FROM \"{$table}\" WHERE \"admin_user_id\" = {$id}";
+        }
 
-            foreach (['admin_webauthn_credential', 'admin_backup_code', 'password_reset_token'] as $table)
-            {
-                $db->query("DELETE FROM \"{$table}\" WHERE \"admin_user_id\" = {$id}");
-            }
+        $queries[] =
+            "UPDATE \"email_message\" SET \"status\" = 'cancelled', \"raw_message_base64\" = NULL"
+            . " WHERE \"status\" = 'queued' AND {$isToAccount}";
 
-            $db->query(
-                "UPDATE \"email_message\" SET \"status\" = 'cancelled', \"raw_message_base64\" = NULL"
-                . " WHERE \"status\" = 'queued' AND {$isToAccount}"
-            );
+        $queries[] =
+            "UPDATE \"email_event\" SET \"recipient\" = {$placeholder} WHERE lower(\"recipient\") = {$email}"
+            . " AND \"email_message_id\" IN (SELECT \"id\" FROM \"email_message\" WHERE {$isToAccount})";
 
-            $db->query(
-                "UPDATE \"email_event\" SET \"recipient\" = {$placeholder} WHERE lower(\"recipient\") = {$email}"
-                . " AND \"email_message_id\" IN (SELECT \"id\" FROM \"email_message\" WHERE {$isToAccount})"
-            );
+        $queries[] =
+            "UPDATE \"email_message\" SET \"recipients\" = (SELECT jsonb_agg(CASE WHEN lower(\"r\") = {$email}"
+            . " THEN {$placeholder} ELSE \"r\" END) FROM jsonb_array_elements_text(\"recipients\") AS \"r\")"
+            . " WHERE {$isToAccount}";
 
-            $db->query(
-                "UPDATE \"email_message\" SET \"recipients\" = (SELECT jsonb_agg(CASE WHEN lower(\"r\") = {$email}"
-                . " THEN {$placeholder} ELSE \"r\" END) FROM jsonb_array_elements_text(\"recipients\") AS \"r\")"
-                . " WHERE {$isToAccount}"
-            );
-        };
-
-        DB::transaction($archive);
+        $transaction = new OrmTransaction(ServiceFactory::getDb(), $queries);
+        $transaction->commit();
         return self::load($user->getId());
     }
 
@@ -461,21 +520,36 @@ final class AdminUserRepository
 
 
     /**
-     * Restore an archived account with a password nobody knows, for its owner to choose their own with a link (see
-     * PasswordResetService::sendInvitation()). It keeps its ID (so its logs are still its own).
+     * Add restoring an archived account to the transaction being built, with a password nobody knows, for its owner to
+     * choose their own with a link (see PasswordResetService::addInvitationToTransaction()). It keeps its ID (so its
+     * logs are still its own).
      *
      * @param AdminUser $user - the archived account.
      *
      * @param EmailAddress $email - its email address, which archiving removed.
      *
-     * @return AdminUser - the account, as it now is.
+     * @return void
      *
      * @throws AccountStateException - if it isn't archived.
      * @throws InvalidInputException - if the address is taken.
      */
-    public static function restoreWithoutPassword(AdminUser $user, EmailAddress $email) : AdminUser
+    public static function addRestoreWithoutPasswordToTransaction(AdminUser $user, EmailAddress $email) : void
     {
-        return self::restore($user, $email, password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT), false);
+        self::assertCanRestore($user, $email);
+
+        $restore = new Query(
+            'UPDATE "admin_user" SET "status" = $1, "status_changed_at" = $2, "email" = $3, "password_hash" = $4,'
+            . ' "must_change_password" = false WHERE "id" = $5',
+            [
+                AccountStatus::ACTIVE->value,
+                Time::now(),
+                self::normalise($email),
+                password_hash(bin2hex(random_bytes(32)), PASSWORD_DEFAULT),
+                (string)$user->getId(),
+            ]
+        );
+
+        ServiceFactory::getTransaction()->append($restore);
     }
 
 
@@ -530,22 +604,17 @@ final class AdminUserRepository
      */
     private static function replacePassword(AdminUser $user, string $newPassword, bool $mustChange) : AdminUser
     {
-        $hash = self::hashPassword($newPassword);
-        $id = DB::escape($user->getId());
+        try
+        {
+            self::addPasswordChangeToTransaction($user, $newPassword, $mustChange);
+            ServiceFactory::getTransaction()->commit();
+        }
+        catch (Throwable $exception)
+        {
+            ServiceFactory::discardTransaction();
+            throw $exception;
+        }
 
-        $change = function () use ($user, $hash, $id, $mustChange) : void {
-            $changes = ['password_hash' => $hash, 'session_version' => $user->getSessionVersion() + 1];
-
-            // A grace period ends here, so a reset link can't be combined with one to get past the second factor.
-            $user->update($changes + ['must_change_password' => $mustChange, 'mfa_grace_until' => null]);
-
-            ServiceFactory::getDb()->query(
-                "UPDATE \"password_reset_token\" SET \"used_at\" = now() WHERE \"admin_user_id\" = {$id}"
-                . ' AND "used_at" IS NULL'
-            );
-        };
-
-        DB::transaction($change);
         return self::load($user->getId());
     }
 
@@ -611,16 +680,7 @@ final class AdminUserRepository
         bool $mustChangePassword
     ) : AdminUser
     {
-        if ($user->getStatus() !== AccountStatus::ARCHIVED)
-        {
-            $msg = 'Only an archived account can be restored.';
-            throw new AccountStateException(AccountStateProblem::NOT_ARCHIVED, $msg);
-        }
-
-        if (self::isEmailTaken($email))
-        {
-            throw new InvalidInputException("There is already an account for {$email}.");
-        }
+        self::assertCanRestore($user, $email);
 
         $user->update([
             'status' => AccountStatus::ACTIVE->value,
@@ -631,6 +691,25 @@ final class AdminUserRepository
         ]);
 
         return self::load($user->getId());
+    }
+
+
+    /**
+     * @throws AccountStateException - if the account isn't archived.
+     * @throws InvalidInputException - if the email address is taken.
+     */
+    private static function assertCanRestore(AdminUser $user, EmailAddress $email) : void
+    {
+        if ($user->getStatus() !== AccountStatus::ARCHIVED)
+        {
+            $msg = 'Only an archived account can be restored.';
+            throw new AccountStateException(AccountStateProblem::NOT_ARCHIVED, $msg);
+        }
+
+        if (self::isEmailTaken($email))
+        {
+            throw new InvalidInputException("There is already an account for {$email}.");
+        }
     }
 
 
@@ -659,15 +738,6 @@ final class AdminUserRepository
         ]);
 
         return $user;
-    }
-
-
-    /**
-     * Get an email address in the form accounts are stored and matched by: all lower case.
-     */
-    private static function normalise(EmailAddress $email) : string
-    {
-        return mb_strtolower((string)$email);
     }
 
 

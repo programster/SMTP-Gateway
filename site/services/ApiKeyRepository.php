@@ -7,7 +7,7 @@
 declare(strict_types = 1);
 
 use Programster\PgsqlObjects\CacheMode;
-use Programster\PgsqlObjects\Transaction;
+use Programster\PgsqlObjects\OrmTransaction;
 
 
 final class ApiKeyRepository
@@ -38,8 +38,8 @@ final class ApiKeyRepository
             'revoked_at' => null,
         ]);
 
-        // The key and its networks are saved together, in one query, or not at all.
-        $transaction = new Transaction();
+        // The key and its networks are saved together, or not at all.
+        $transaction = new OrmTransaction(ServiceFactory::getDb());
         $transaction->save($apiKey);
 
         foreach ($allowedNetworks->getNetworks() as $network)

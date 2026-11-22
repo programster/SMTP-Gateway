@@ -7,43 +7,68 @@
 
 declare(strict_types = 1);
 
+use Programster\PgsqlLib\Exceptions\ExceptionQueryError;
+use Programster\PgsqlLib\Query;
+
 
 class DB
 {
+    // The error code of a query from generateRequireRowQuery() that found no row.
+    private const string NO_ROW_SQLSTATE = 'SG001';
+
+
     /**
-     * Run a callback in a transaction, committing if it returns, and rolling back if it throws.
+     * Generate a query that runs an UPDATE or DELETE and fails if it changed no rows. Put it in a transaction to check
+     * and lock a row before the rest runs: if it fails, nothing in the transaction takes effect.
      *
-     * @param Closure $callback - the work to do. It's given no parameters.
+     * @param string $statement - the UPDATE or DELETE, with every value already escaped (see escape()).
      *
-     * @return mixed - whatever the callback returned.
-     *
-     * @throws Throwable - whatever the callback threw, after rolling back.
+     * @return string - the query. See isNoRowError() for telling its failure apart from any other.
      */
-    public static function transaction(Closure $callback) : mixed
+    public static function generateRequireRowQuery(string $statement) : string
+    {
+        // A random tag, so nothing in the statement can end the quoted block early.
+        $tag = '$guard' . bin2hex(random_bytes(8)) . '$';
+        $state = self::NO_ROW_SQLSTATE;
+        $check = "IF NOT FOUND THEN RAISE EXCEPTION 'No matching row.' USING ERRCODE = '{$state}'; END IF;";
+        return "DO {$tag} BEGIN {$statement}; {$check} END {$tag}";
+    }
+
+
+    /**
+     * Check whether a query failed because a query from generateRequireRowQuery() found no row.
+     * @param ExceptionQueryError $exception - the error.
+     * @return bool
+     */
+    public static function isNoRowError(ExceptionQueryError $exception) : bool
+    {
+        return $exception->getSqlState() === self::NO_ROW_SQLSTATE;
+    }
+
+
+    /**
+     * Generate an insert of one row, with its values sent as parameters, so a large one isn't copied into the SQL.
+     *
+     * @param string $table - the table's name.
+     *
+     * @param array<string, string|int|float|bool|null> $row - the column names and their values.
+     *
+     * @return Query
+     */
+    public static function generateInsertQuery(string $table, array $row) : Query
     {
         $db = ServiceFactory::getDb();
-        $db->query('BEGIN');
+        $columns = implode(', ', $db->escapeIdentifiers(array_keys($row)));
+        $placeholders = [];
 
-        try
+        for ($position = 1; $position <= count($row); $position++)
         {
-            $result = $callback();
-            $db->query('COMMIT');
-        }
-        catch (Throwable $e)
-        {
-            try
-            {
-                $db->query('ROLLBACK');
-            }
-            catch (\Programster\PgsqlLib\Exceptions\ExceptionQueryError)
-            {
-                // The connection may have gone, which also ends the transaction. Report the original error.
-            }
-
-            throw $e;
+            $placeholders[] = '$' . $position;
         }
 
-        return $result;
+        $values = implode(', ', $placeholders);
+        $sql = "INSERT INTO {$db->escapeIdentifier($table)} ({$columns}) VALUES ({$values})";
+        return new Query($sql, array_values($row));
     }
 
 

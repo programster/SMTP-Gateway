@@ -29,6 +29,7 @@ final class ErrorHandler
         bool $logErrorDetails
     ) : ResponseInterface
     {
+        ServiceFactory::discardTransaction();
         $apiException = self::convertToApiException($exception, $displayErrorDetails);
 
         if ($apiException->getHttpStatus() >= 500)

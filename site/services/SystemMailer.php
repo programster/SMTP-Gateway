@@ -3,8 +3,9 @@
 /*
  * Sends the service's own emails (e.g. password reset links), from the address set on the Settings page. They go
  * through the queue like any other email, but with the system priority, so they go ahead of every email token's
- * emails (see MessageDispatcher::submitFromService()). They count towards the global and per-provider rate limits,
- * and are retried if the providers fail, but their content is never kept once sent, as it holds password reset links.
+ * emails (see MessageDispatcher::addServiceEmailToTransaction()). They count towards the global and per-provider rate
+ * limits, and are retried if the providers fail, but their content is never kept once sent, as it holds password reset
+ * links.
  */
 
 declare(strict_types = 1);
@@ -15,7 +16,8 @@ use PHPMailer\PHPMailer\PHPMailer;
 final class SystemMailer
 {
     /**
-     * Queue a plain text email.
+     * Add a plain text email to the transaction being built (see ServiceFactory::getTransaction()), so it's queued if,
+     * and only if, that commits.
      *
      * @param EmailAddress $to - who to send it to.
      *
@@ -25,12 +27,12 @@ final class SystemMailer
      *
      * @param string $clientIp - the IP address of whoever caused it to be sent.
      *
-     * @return string - the email's ID.
+     * @return void
      *
      * @throws ConfigurationException - if no address has been set for the service's own emails (on the Settings page),
      * or the email couldn't be built.
      */
-    public static function queue(EmailAddress $to, string $subject, string $text, string $clientIp) : string
+    public static function addToTransaction(EmailAddress $to, string $subject, string $text, string $clientIp) : void
     {
         $from = Settings::get()->getSending()->getSystemEmailFrom();
         $mailer = new PHPMailer(true);
@@ -52,6 +54,6 @@ final class SystemMailer
 
         $recipients = new EmailAddressCollection($to);
         $raw = new RawEmail($mailer->getSentMIMEMessage());
-        return MessageDispatcher::submitFromService($from, $recipients, $raw, $clientIp);
+        MessageDispatcher::addServiceEmailToTransaction($from, $recipients, $raw, $clientIp);
     }
 }

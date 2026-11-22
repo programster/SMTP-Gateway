@@ -111,6 +111,8 @@ final class SmtpSession
      */
     private function handleCommand(string $line) : void
     {
+        // Each command is a separate piece of work, so nothing left by one that failed can be committed by the next.
+        ServiceFactory::discardTransaction();
         $parts = explode(' ', $line, 2);
         $verb = strtoupper($parts[0]);
         $argument = trim($parts[1] ?? '');

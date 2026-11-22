@@ -33,6 +33,9 @@ function main() : void
 
     while ($isStopping === false)
     {
+        // Each pass is a separate piece of work, so nothing left by one that failed can be committed by the next.
+        ServiceFactory::discardTransaction();
+
         try
         {
             if (time() - $lastRecovery >= 60)
