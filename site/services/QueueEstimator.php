@@ -41,6 +41,7 @@ final class QueueEstimator
      * unavailable, or none of the providers its token is restricted to is enabled).
      *
      * @throws ConfigurationException - if settings.yaml isn't valid.
+     * @throws NotFoundException - if the email no longer exists.
      */
     public static function estimateSecondsUntilAttempt(
         AuthenticatedEmailToken $emailToken,
@@ -70,11 +71,15 @@ final class QueueEstimator
         // counted it as already sent (and so could make it look minutes away), when it's actually being sent now.
         // This is checked after them, as a worker marks the email claimed in the same transaction that makes it
         // count, so if they counted it, this sees it claimed.
-        $isClaimed = pg_fetch_result(ServiceFactory::getDb()->query(
-            'SELECT "status" <> \'queued\' FROM "email_message" WHERE "id" = '
-            . ServiceFactory::getDb()->escapeValue($messageId)
-        ), 0, 0) === 't';
+        $query = 'SELECT "status" <> \'queued\' AS "is_claimed" FROM "email_message" WHERE "id" = $1';
+        $rows = pg_fetch_all(ServiceFactory::getDb()->query($query, [$messageId]));
 
+        if (count($rows) === 0)
+        {
+            throw new NotFoundException("There is no email with the ID {$messageId} to estimate.");
+        }
+
+        $isClaimed = ($rows[0]['is_claimed'] === 't');
         return $isClaimed ? 0.0 : max($limitsWait, self::estimateQueueSeconds($aheadOverall));
     }
 

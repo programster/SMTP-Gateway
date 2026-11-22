@@ -52,6 +52,15 @@ $estimate = QueueEstimator::estimateSecondsUntilAttempt($key, $queuedId, 3, $sen
 $isWaiting = ($estimate > 50 && $estimate <= 60);
 $suite->check('one still queued behind a full limit waits for it', $isWaiting, (string)$estimate);
 
+$deletedId = $insertEmail('queued', false);
+ServiceFactory::getDb()->query('DELETE FROM "email_message" WHERE "id" = $1', [$deletedId]);
+
+$estimateDeleted = function () use ($key, $deletedId, $senders) : void {
+    QueueEstimator::estimateSecondsUntilAttempt($key, $deletedId, 3, $senders);
+};
+
+$suite->checkThrows('an email that no longer exists is an error', NotFoundException::class, $estimateDeleted);
+
 $cancelSql = "UPDATE \"email_message\" SET \"status\" = 'cancelled' WHERE \"email_token_id\" = {$emailTokenId}";
 pg_fetch_result(ServiceFactory::getDb()->query("{$cancelSql} RETURNING 1"), 0, 0);
 EmailTokenRepository::revoke($created->getEmailToken());

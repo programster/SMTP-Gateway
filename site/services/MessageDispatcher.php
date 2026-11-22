@@ -128,6 +128,13 @@ final class MessageDispatcher
         {
             $isWaiting = false;
         }
+        catch (NotFoundException $e)
+        {
+            // It was accepted, so this mustn't reach the client as a failure, which it might retry, sending it twice.
+            $isWaiting = false;
+            $logger = ServiceFactory::getLogger(LogCategory::EMAIL);
+            $logger->error('An email was deleted just after being queued', ['message_id' => $messageId]);
+        }
 
         if ($isWaiting)
         {
