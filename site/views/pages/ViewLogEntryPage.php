@@ -46,7 +46,7 @@ class ViewLogEntryPage extends Programster\AbstractView\AbstractView
         <dt>Time</dt>
         <dd><?= Html::e(Time::formatUnixTimestamp($entry->getCreatedAt())) ?> <span
             class="hint">(<?= Html::e($this->m_timezone->getName()) ?>, <?= Html::e(
-                Time::describeAgo($entry->getCreatedAt())
+                Time::describeAgo((float)$entry->getCreatedAt())
             ) ?>)</span></dd>
         <dt>Level</dt>
         <dd><span class="badge badge-<?= Html::e($entry->getLevel()) ?>"><?= Html::e($entry->getLevel()) ?></span></dd>

@@ -129,7 +129,7 @@ final class PasswordResetService
         $rows = pg_fetch_all(ServiceFactory::getDb()->query(
             'SELECT "admin_user_id" FROM "password_reset_token" WHERE "token_hash" = '
             . ServiceFactory::getDb()->escapeValue(self::hash($token))
-            . ' AND "used_at" IS NULL AND "expires_at" > now()'
+            . ' AND "used_at" IS NULL AND "expires_at" > unix_time()'
         ));
 
         if (count($rows) === 0)
@@ -218,7 +218,7 @@ final class PasswordResetService
         $query =
             'SELECT count(*) FROM "password_reset_token" WHERE "admin_user_id" = '
             . ServiceFactory::getDb()->escapeValue($user->getId())
-            . " AND \"created_at\" > now() - make_interval(secs => {$seconds})";
+            . " AND \"created_at\" > unix_time() - {$seconds}";
 
         return pg_fetch_result(ServiceFactory::getDb()->query($query), 0, 0) !== '0';
     }
@@ -323,13 +323,14 @@ final class PasswordResetService
         $link = Config::get()->getPublicUrl() . '/reset-password/' . $token;
 
         $cancelOthers = new Query(
-            'UPDATE "password_reset_token" SET "used_at" = now() WHERE "admin_user_id" = $1 AND "used_at" IS NULL',
+            'UPDATE "password_reset_token" SET "used_at" = unix_time()'
+            . ' WHERE "admin_user_id" = $1 AND "used_at" IS NULL',
             [$userId]
         );
 
         $insertToken = new Query(
             'INSERT INTO "password_reset_token" ("id", "admin_user_id", "token_hash", "client_ip", "expires_at")'
-            . " VALUES (uuidv7(), \$1, \$2, \$3, now() + make_interval(mins => {$minutes}))",
+            . " VALUES (uuidv7(), \$1, \$2, \$3, unix_time() + {$minutes} * 60)",
             [$userId, self::hash($token), $clientIp]
         );
 

@@ -17,8 +17,8 @@ class EmailEvent extends \Programster\PgsqlObjects\AbstractRecord
     private string $m_eventType;
     private ?string $m_recipient;
     private ?string $m_detail;
-    private string $m_occurredAt;
-    private string $m_createdAt;
+    private int $m_occurredAt;
+    private int $m_createdAt;
 
 
     public function getTableHandler() : TableInterface
@@ -36,8 +36,8 @@ class EmailEvent extends \Programster\PgsqlObjects\AbstractRecord
             'event_type' => function () : string { return $this->m_eventType; },
             'recipient' => function () : ?string { return $this->m_recipient; },
             'detail' => function () : ?string { return $this->m_detail; },
-            'occurred_at' => function () : string { return $this->m_occurredAt; },
-            'created_at' => function () : string { return $this->m_createdAt; },
+            'occurred_at' => function () : int { return $this->m_occurredAt; },
+            'created_at' => function () : int { return $this->m_createdAt; },
         ];
     }
 
@@ -51,8 +51,8 @@ class EmailEvent extends \Programster\PgsqlObjects\AbstractRecord
             'event_type' => function (string $value) : void { $this->m_eventType = $value; },
             'recipient' => function (?string $value) : void { $this->m_recipient = $value; },
             'detail' => function (?string $value) : void { $this->m_detail = $value; },
-            'occurred_at' => function (string $value) : void { $this->m_occurredAt = $value; },
-            'created_at' => function (string $value) : void { $this->m_createdAt = $value; },
+            'occurred_at' => function (int $value) : void { $this->m_occurredAt = $value; },
+            'created_at' => function (int $value) : void { $this->m_createdAt = $value; },
         ];
     }
 
@@ -64,6 +64,6 @@ class EmailEvent extends \Programster\PgsqlObjects\AbstractRecord
     public function getEventType() : string { return $this->m_eventType; }
     public function getRecipient() : ?string { return $this->m_recipient; }
     public function getDetail() : ?string { return $this->m_detail; }
-    public function getOccurredAt() : string { return $this->m_occurredAt; }
-    public function getCreatedAt() : string { return $this->m_createdAt; }
+    public function getOccurredAt() : int { return $this->m_occurredAt; }
+    public function getCreatedAt() : int { return $this->m_createdAt; }
 }

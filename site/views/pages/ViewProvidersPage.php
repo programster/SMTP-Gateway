@@ -17,6 +17,8 @@ class ViewProvidersPage extends Programster\AbstractView\AbstractView
         . ' active token\'s allowed senders will be accepted and trusted through them.';
 
     private readonly ProvidersConfig $m_config;
+    private readonly ProviderActivity $m_activity;
+    private readonly string $m_systemSenderWarning;
     private readonly string $m_yaml;
     private readonly string $m_version;
     private readonly string $m_error;
@@ -25,15 +27,29 @@ class ViewProvidersPage extends Programster\AbstractView\AbstractView
     /**
      * @param ProvidersConfig $config - the current configuration.
      *
+     * @param ProviderActivity $activity - how the providers are being used.
+     *
+     * @param string $systemSenderWarning - a warning that the service's own emails can't be sent (see
+     * SystemSenderWarning), or an empty string.
+     *
      * @param string $yaml - the YAML for the editor (the current configuration, or what failed to save).
      *
      * @param string $version - the version the YAML was based on.
      *
      * @param string $error - why saving failed, or an empty string.
      */
-    public function __construct(ProvidersConfig $config, string $yaml, string $version, string $error)
+    public function __construct(
+        ProvidersConfig $config,
+        ProviderActivity $activity,
+        string $systemSenderWarning,
+        string $yaml,
+        string $version,
+        string $error
+    )
     {
         $this->m_config = $config;
+        $this->m_activity = $activity;
+        $this->m_systemSenderWarning = $systemSenderWarning;
         $this->m_yaml = $yaml;
         $this->m_version = $version;
         $this->m_error = $error;
@@ -42,15 +58,14 @@ class ViewProvidersPage extends Programster\AbstractView\AbstractView
 
     protected function renderContent() : void
     {
-        $counts = ProviderStats::loadRecentCounts();
-        $unavailable = ProviderStatusRepository::loadUnavailableDetails();
-        $links = EmailTokenRepository::loadProviderLinks();
-        $systemSenderWarning = SystemSenderWarning::describe($this->m_config);
+        $counts = $this->m_activity->getRecentCounts();
+        $unavailable = $this->m_activity->getUnavailable();
+        $links = $this->m_activity->getTokenLinks();
         $mode = $this->m_config->getMode();
 ?>
 <h1>Providers</h1>
-<?php if ($systemSenderWarning !== ''): ?>
-    <p class="flash flash-warning" role="status"><?= Html::e($systemSenderWarning) ?></p>
+<?php if ($this->m_systemSenderWarning !== ''): ?>
+    <p class="flash flash-warning" role="status"><?= Html::e($this->m_systemSenderWarning) ?></p>
 <?php endif; ?>
 <p>Every email is sent through one of these, by the queue workers. They're saved in the providers section of
     <code><?= Html::e(SettingsFile::getPath()) ?></code>, and can also be changed through the API.</p>

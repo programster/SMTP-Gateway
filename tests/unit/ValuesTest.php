@@ -145,7 +145,7 @@ $suite->check('a folded header is removed entirely', $isRemoved, $cleaned);
 $suite->check('an encoded subject is decoded', $raw->getSubject() === 'été', $raw->getSubject());
 
 // Times.
-$shown = Time::format('2026-07-01 12:00:00+00');
+$shown = Time::format(gmmktime(12, 0, 0, 7, 1, 2026));
 $isShown = ($shown === '13:00:00 01-07-2026');
 $suite->check('times are shown in TIMEZONE (Europe/London), the time first, then the date', $isShown, $shown);
 $time = new DateTimeImmutable('2026-07-01 13:00:00');

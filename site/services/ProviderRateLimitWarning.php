@@ -111,7 +111,7 @@ final class ProviderRateLimitWarning
 
         foreach (self::WINDOWS as $label => $seconds)
         {
-            $filter = "FILTER (WHERE \"dispatched_at\" > now() - make_interval(secs => {$seconds}))";
+            $filter = "FILTER (WHERE \"dispatched_at\" > unix_time_precise() - {$seconds})";
             $alias = str_replace(' ', '_', $label);
             $columns[] = "count(*) {$filter} AS \"e_{$alias}\"";
             $columns[] = "coalesce(sum(\"recipient_count\") {$filter}, 0) AS \"r_{$alias}\"";
@@ -122,7 +122,7 @@ final class ProviderRateLimitWarning
         $query =
             'SELECT ' . implode(', ', $columns) . ' FROM "email_attempt"'
             . ' WHERE "provider" = ' . ServiceFactory::getDb()->escapeValue($providerName) . " AND \"outcome\" = 'sent'"
-            . " AND \"dispatched_at\" > now() - make_interval(secs => {$longest})";
+            . " AND \"dispatched_at\" > unix_time_precise() - {$longest}";
 
         $row = pg_fetch_all(ServiceFactory::getDb()->query($query))[0];
         $windows = [];

@@ -66,7 +66,7 @@ def read_note(raw: str) -> str:
 
 def backdate_sending(message_id: str, days: int) -> None:
     """Make out an email was sent some days ago."""
-    stack.sql(f"UPDATE email_message SET sent_at = now() - interval '{days} days' WHERE id = '{message_id}'")
+    stack.sql(f"UPDATE email_message SET sent_at = unix_time_precise() - {days} * 86400 WHERE id = '{message_id}'")
 
 
 reply = send(key, create_email('with attachments', is_big=True))

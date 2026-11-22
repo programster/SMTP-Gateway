@@ -148,8 +148,9 @@ suite.check('with the rows\' script', 'src="/js/SettingsPage.js"' in page)
 # from them. Ranges covering every address stand in for Cloudflare's here, so saving doesn't try to fetch them (the
 # test stack may not reach cloudflare.com), and the test client counts as Cloudflare.
 stack.sql(
-    "INSERT INTO cloudflare_network (network, fetched_at) VALUES ('0.0.0.0/1', now()), ('128.0.0.0/1', now()),"
-    " ('::/1', now()), ('8000::/1', now())"
+    "INSERT INTO cloudflare_network (network, fetched_at) VALUES ('0.0.0.0/1', unix_time()),"
+    " ('128.0.0.0/1', unix_time()),"
+    " ('::/1', unix_time()), ('8000::/1', unix_time())"
 )
 
 restricted = bearer(create_api_key(web, 'behind cloudflare', '10.99.99.0/24'))

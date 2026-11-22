@@ -13,6 +13,7 @@ use OTPHP\TOTP;
 use Programster\PgsqlLib\PgsqlLib;
 use Programster\PgsqlLib\UuidVersion;
 use Programster\PgsqlObjects\CacheMode;
+use Programster\PgsqlObjects\Exceptions\ExceptionNoSuchIdException;
 
 $suite = new TestSuite('Account writes');
 $password = 'correct horse battery staple';
@@ -106,5 +107,20 @@ $keyId = $addKey('key-without-a-counter', 0);
 $suite->check('a key without a counter can be used', SecurityKeyService::recordUse($loadKey($keyId), 0));
 $suite->check('more than once', SecurityKeyService::recordUse($loadKey($keyId), 0));
 
+$deleted = AdminUserRepository::load($id);
 ServiceFactory::getDb()->query('DELETE FROM "admin_user" WHERE "id" = $1', [$id]);
+
+$cancelGrace = function () use ($deleted) : void {
+    MfaGraceService::cancel($deleted);
+};
+
+$suite->checkThrows('cancelling a deleted account\'s grace fails', ExceptionNoSuchIdException::class, $cancelGrace);
+
+$request = (new \Slim\Psr7\Factory\ServerRequestFactory())->createServerRequest('POST', '/api/test');
+$noSuchId = new ExceptionNoSuchIdException('There is no AdminUser with id: 1 to update.');
+$errorResponse = (new ErrorHandler())($request, $noSuchId, false, false, false);
+$errorBody = (string)$errorResponse->getBody();
+$suite->check('a row that no longer exists is a 404', $errorResponse->getStatusCode() === 404, $errorBody);
+$suite->check('without naming the class', str_contains($errorBody, 'AdminUser') === false, $errorBody);
+
 $suite->finish();

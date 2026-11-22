@@ -64,7 +64,7 @@ final class EventRecorder
             ServiceFactory::getDb()->escapeValue($event->getType()->value),
             'NULLIF(' . ServiceFactory::getDb()->escapeValue(mb_substr($event->getRecipient(), 0, 320)) . ", '')",
             'NULLIF(' . ServiceFactory::getDb()->escapeValue(mb_substr($event->getDetail(), 0, 2000)) . ", '')",
-            ServiceFactory::getDb()->escapeValue($event->getOccurredAt()->format(DATE_ATOM)),
+            $event->getOccurredAt()->getTimestamp(),
         ];
 
         $matchesEmail = PgsqlLib::isValidUuid($event->getMessageId())

@@ -70,7 +70,7 @@ class ViewEmailTokenPage extends Programster\AbstractView\AbstractView
             if ($emailToken->getLastUsedIp() !== null): ?>, from
             <span class="mono"><?= Html::e($emailToken->getLastUsedIp()) ?></span><?php endif; ?>.
         <?php if ($emailToken->isRevoked()): ?>Revoked
-            <?= Html::e(Time::format((string)$emailToken->getRevokedAt())) ?>.<?php endif; ?>
+            <?= Html::e(Time::format((int)$emailToken->getRevokedAt())) ?>.<?php endif; ?>
     </p>
     <div class="grid-2">
         <?php foreach ($restrictions as $label => $text): ?>

@@ -151,7 +151,7 @@ final class RateLimiter
             /* @var $limit RateLimit */
             $seconds = $limit->getPeriodSeconds();
             $longestPeriod = max($longestPeriod, $seconds);
-            $filter = "FILTER (WHERE \"dispatched_at\" > now() - make_interval(secs => {$seconds}))";
+            $filter = "FILTER (WHERE \"dispatched_at\" > unix_time_precise() - {$seconds})";
             $alias = "\"c{$index}\"";
 
             $columns[] = match ($limit->getUnit()) {
@@ -162,7 +162,7 @@ final class RateLimiter
 
         $query =
             'SELECT ' . implode(', ', $columns) . " FROM {$scope->getTable()}"
-            . " WHERE \"dispatched_at\" > now() - make_interval(secs => {$longestPeriod})"
+            . " WHERE \"dispatched_at\" > unix_time_precise() - {$longestPeriod}"
             . " AND {$scope->getSqlCondition()}";
 
         $row = pg_fetch_all(ServiceFactory::getDb()->query($query))[0];
@@ -196,10 +196,10 @@ final class RateLimiter
         // Add up what was sent, oldest first, and find the send that takes the total past the excess. Once that has
         // dropped out of the window, there's room.
         $query =
-            "SELECT extract(epoch FROM (\"dispatched_at\" + make_interval(secs => {$seconds}) - now())) AS \"wait\""
+            "SELECT \"dispatched_at\" + {$seconds} - unix_time_precise() AS \"wait\""
             . " FROM (SELECT \"dispatched_at\","
             . " sum({$weight}) OVER (ORDER BY \"dispatched_at\", \"id\") AS \"running_total\""
-            . " FROM {$scope->getTable()} WHERE \"dispatched_at\" > now() - make_interval(secs => {$seconds})"
+            . " FROM {$scope->getTable()} WHERE \"dispatched_at\" > unix_time_precise() - {$seconds}"
             . " AND {$scope->getSqlCondition()}) AS \"sent\""
             . " WHERE \"running_total\" >= {$excess} ORDER BY \"dispatched_at\" LIMIT 1";
 

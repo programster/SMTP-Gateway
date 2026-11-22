@@ -32,7 +32,7 @@ def list_attempts(message_id: str) -> list[str]:
 
 
 # Earlier suites' attempts are moved out of the way, so each provider's room starts full.
-stack.sql("UPDATE email_attempt SET dispatched_at = dispatched_at - interval '1 hour'")
+stack.sql("UPDATE email_attempt SET dispatched_at = dispatched_at - 3600")
 rooms = (get_room(stack.PRIMARY_MAILPIT), get_room(stack.SECONDARY_MAILPIT))
 suite.check('rooms start full', rooms == (5, 5), rooms)
 message_id = send_email(key, 'attempt-normal').get_message_id()

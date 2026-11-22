@@ -118,7 +118,7 @@ readonly class QueuedDemand
         $value = $priority->getValue();
 
         return
-            "\"status\" = 'queued' AND \"next_attempt_at\" <= now()"
+            "\"status\" = 'queued' AND \"next_attempt_at\" <= unix_time()"
             . " AND (\"priority\" > {$value} OR (\"priority\" = {$value} AND \"id\" < {$id}))";
     }
 

@@ -86,7 +86,7 @@ final class BackupCodeService
         if ($matchingId !== '')
         {
             // Only one request can use it, even if two arrive at once.
-            $update = 'UPDATE "admin_backup_code" SET "used_at" = now() WHERE "id" = $1 AND "used_at" IS NULL';
+            $update = 'UPDATE "admin_backup_code" SET "used_at" = unix_time() WHERE "id" = $1 AND "used_at" IS NULL';
             $isUsed = pg_num_rows(ServiceFactory::getDb()->query($update . ' RETURNING "id"', [$matchingId])) === 1;
         }
 
@@ -108,7 +108,7 @@ final class BackupCodeService
             . " FROM \"admin_backup_code\" WHERE \"admin_user_id\" = {$userId}"
         ));
 
-        return new BackupCodeStatus((int)$rows[0]['unused'], (string)($rows[0]['generated_at'] ?? ''));
+        return new BackupCodeStatus((int)$rows[0]['unused'], (int)($rows[0]['generated_at'] ?? 0));
     }
 
 

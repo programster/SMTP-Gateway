@@ -112,7 +112,7 @@ class ViewEmailTokensPage extends Programster\AbstractView\AbstractView
         <th>Last used</th></tr></thead>
     <tbody>
     <?php foreach ($this->m_revoked as $emailToken): ?>
-        <?php /* @var $emailToken EmailToken */ $revokedAt = (string)$emailToken->getRevokedAt(); ?>
+        <?php /* @var $emailToken EmailToken */ $revokedAt = (int)$emailToken->getRevokedAt(); ?>
         <tr>
             <td><a href="/email-tokens/<?= Html::e($emailToken->getId()) ?>"><?= Html::e($emailToken->getName())
                 ?></a></td>

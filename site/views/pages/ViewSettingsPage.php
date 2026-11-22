@@ -11,6 +11,7 @@ declare(strict_types = 1);
 class ViewSettingsPage extends Programster\AbstractView\AbstractView
 {
     private readonly ServiceSettings $m_settings;
+    private readonly CloudflareNetworksStatus $m_cloudflareStatus;
     private readonly SettingsSection $m_section;
     private readonly string $m_error;
 
@@ -20,6 +21,8 @@ class ViewSettingsPage extends Programster\AbstractView\AbstractView
 
     /**
      * @param ServiceSettings $settings - the current settings.
+     *
+     * @param CloudflareNetworksStatus $cloudflareStatus - Cloudflare's address ranges that are stored.
      *
      * @param SettingsSection $section - the section to show (or the one that failed to save), whose page is shown,
      * with any other sections shown on it (e.g. the sending settings, on the General page). Not the providers, which
@@ -33,6 +36,7 @@ class ViewSettingsPage extends Programster\AbstractView\AbstractView
      */
     public function __construct(
         ServiceSettings $settings,
+        CloudflareNetworksStatus $cloudflareStatus,
         SettingsSection $section,
         string $error,
         array $submitted
@@ -44,6 +48,7 @@ class ViewSettingsPage extends Programster\AbstractView\AbstractView
         }
 
         $this->m_settings = $settings;
+        $this->m_cloudflareStatus = $cloudflareStatus;
         $this->m_section = $section;
         $this->m_error = $error;
         $this->m_submitted = $submitted;
@@ -251,7 +256,7 @@ class ViewSettingsPage extends Programster\AbstractView\AbstractView
 
         if ($settings->isBehindCloudflare())
         {
-            $this->renderCloudflareStatus(CloudflareNetworks::loadStatus());
+            $this->renderCloudflareStatus($this->m_cloudflareStatus);
         }
     }
 

@@ -10,8 +10,8 @@ declare(strict_types = 1);
 readonly class EmailAttempt
 {
     private string $m_provider;
-    private string $m_dispatchedAt;
-    private string $m_finishedAt;
+    private float $m_dispatchedAt;
+    private ?float $m_finishedAt;
     private AttemptOutcome $m_outcome;
     private string $m_error;
 
@@ -19,9 +19,9 @@ readonly class EmailAttempt
     /**
      * @param string $provider - the provider's name.
      *
-     * @param string $dispatchedAt - when it was handed over (a database timestamp).
+     * @param float $dispatchedAt - when it was handed over (a Unix timestamp).
      *
-     * @param string $finishedAt - when the provider answered, or an empty string while it's still being sent.
+     * @param float|null $finishedAt - when the provider answered, or null while it's still being sent.
      *
      * @param AttemptOutcome $outcome - how it ended.
      *
@@ -29,8 +29,8 @@ readonly class EmailAttempt
      */
     public function __construct(
         string $provider,
-        string $dispatchedAt,
-        string $finishedAt,
+        float $dispatchedAt,
+        ?float $finishedAt,
         AttemptOutcome $outcome,
         string $error
     )
@@ -45,8 +45,8 @@ readonly class EmailAttempt
 
     # Accessors
     public function getProvider() : string { return $this->m_provider; }
-    public function getDispatchedAt() : string { return $this->m_dispatchedAt; }
-    public function getFinishedAt() : string { return $this->m_finishedAt; }
+    public function getDispatchedAt() : float { return $this->m_dispatchedAt; }
+    public function getFinishedAt() : ?float { return $this->m_finishedAt; }
     public function getOutcome() : AttemptOutcome { return $this->m_outcome; }
     public function getError() : string { return $this->m_error; }
 }

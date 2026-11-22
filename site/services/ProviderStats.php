@@ -20,12 +20,12 @@ final class ProviderStats
     {
         $query = <<<SQL
             SELECT "provider",
-                count(*) FILTER (WHERE "dispatched_at" > now() - interval '1 minute') AS "last_minute",
-                count(*) FILTER (WHERE "dispatched_at" > now() - interval '1 hour') AS "last_hour",
+                count(*) FILTER (WHERE "dispatched_at" > unix_time_precise() - 60) AS "last_minute",
+                count(*) FILTER (WHERE "dispatched_at" > unix_time_precise() - 3600) AS "last_hour",
                 count(*) AS "last_24_hours",
                 coalesce(sum("recipient_count"), 0) AS "recipients_last_24_hours"
             FROM "email_attempt"
-            WHERE "dispatched_at" > now() - interval '24 hours'
+            WHERE "dispatched_at" > unix_time_precise() - 86400
             GROUP BY "provider"
             SQL;
 

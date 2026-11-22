@@ -16,8 +16,8 @@ class AdminWebauthnCredential extends \Programster\PgsqlObjects\AbstractRecord
     private string $m_credentialId;
     private string $m_publicKeyPem;
     private int $m_signatureCounter;
-    private string $m_createdAt;
-    private ?string $m_lastUsedAt;
+    private int $m_createdAt;
+    private ?int $m_lastUsedAt;
 
 
     public function getTableHandler() : TableInterface
@@ -34,8 +34,8 @@ class AdminWebauthnCredential extends \Programster\PgsqlObjects\AbstractRecord
             'credential_id' => function () : string { return $this->m_credentialId; },
             'public_key_pem' => function () : string { return $this->m_publicKeyPem; },
             'signature_counter' => function () : int { return $this->m_signatureCounter; },
-            'created_at' => function () : string { return $this->m_createdAt; },
-            'last_used_at' => function () : ?string { return $this->m_lastUsedAt; },
+            'created_at' => function () : int { return $this->m_createdAt; },
+            'last_used_at' => function () : ?int { return $this->m_lastUsedAt; },
         ];
     }
 
@@ -48,8 +48,8 @@ class AdminWebauthnCredential extends \Programster\PgsqlObjects\AbstractRecord
             'credential_id' => function (string $value) : void { $this->m_credentialId = $value; },
             'public_key_pem' => function (string $value) : void { $this->m_publicKeyPem = $value; },
             'signature_counter' => function (int $value) : void { $this->m_signatureCounter = $value; },
-            'created_at' => function (string $value) : void { $this->m_createdAt = $value; },
-            'last_used_at' => function (?string $value) : void { $this->m_lastUsedAt = $value; },
+            'created_at' => function (int $value) : void { $this->m_createdAt = $value; },
+            'last_used_at' => function (?int $value) : void { $this->m_lastUsedAt = $value; },
         ];
     }
 
@@ -60,6 +60,6 @@ class AdminWebauthnCredential extends \Programster\PgsqlObjects\AbstractRecord
     public function getCredentialId() : string { return $this->m_credentialId; }
     public function getPublicKeyPem() : string { return $this->m_publicKeyPem; }
     public function getSignatureCounter() : int { return $this->m_signatureCounter; }
-    public function getCreatedAt() : string { return $this->m_createdAt; }
-    public function getLastUsedAt() : ?string { return $this->m_lastUsedAt; }
+    public function getCreatedAt() : int { return $this->m_createdAt; }
+    public function getLastUsedAt() : ?int { return $this->m_lastUsedAt; }
 }

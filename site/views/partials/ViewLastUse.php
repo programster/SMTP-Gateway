@@ -12,18 +12,18 @@ declare(strict_types = 1);
 
 class ViewLastUse extends Programster\AbstractView\AbstractView
 {
-    private readonly string $m_usedAt;
+    private readonly ?int $m_usedAt;
     private readonly string $m_ip;
 
 
     /**
-     * @param string|null $usedAt - when it was last used, or null if it never has been.
+     * @param int|null $usedAt - when it was last used (a Unix timestamp), or null if it never has been.
      *
      * @param string|null $ip - the IP address it was used from, or null if that isn't known.
      */
-    public function __construct(?string $usedAt, ?string $ip)
+    public function __construct(?int $usedAt, ?string $ip)
     {
-        $this->m_usedAt = (string)$usedAt;
+        $this->m_usedAt = $usedAt;
         $this->m_ip = (string)$ip;
     }
 
@@ -31,7 +31,7 @@ class ViewLastUse extends Programster\AbstractView\AbstractView
     protected function renderContent() : void
     {
 ?>
-<?php if ($this->m_usedAt === ''): ?>
+<?php if ($this->m_usedAt === null): ?>
     <span class="muted">Never</span>
 <?php else: ?>
     <?= Html::e(Time::describeDaysAgo($this->m_usedAt)) ?>

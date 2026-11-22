@@ -293,7 +293,7 @@ latest_codes = re.findall(code_pattern, page)
 suite.check('six of them, saying why', len(latest_codes) == 6 and 'your last backup code' in page, latest_codes)
 
 # So does logging in any other way with none left, e.g. an account that had none before backup codes existed.
-stack.sql(f"UPDATE admin_backup_code SET used_at = now() WHERE admin_user_id = '{erin_id}'")
+stack.sql(f"UPDATE admin_backup_code SET used_at = unix_time() WHERE admin_user_id = '{erin_id}'")
 start_login(erin)
 forget_used_totp_code(erin_email)
 totp_form = {'csrf_token': find_csrf_token(erin.get('/login/second-factor')),
@@ -367,7 +367,7 @@ suite.check('after which the second factor is needed again', give_password().get
             == '/login/second-factor')
 
 admin.post_form(erin_path, grace_path, right_password)
-stack.sql(f"UPDATE admin_user SET mfa_grace_until = now() - interval '1 minute' WHERE id = '{erin_id}'")
+stack.sql(f"UPDATE admin_user SET mfa_grace_until = unix_time() - 60 WHERE id = '{erin_id}'")
 suite.check('an expired one does nothing', give_password().get_header('Location') == '/login/second-factor'
             and has_second_factor())
 
@@ -398,7 +398,7 @@ suite.check('changing the password cancels it', result.returncode == 0 and grace
 
 # An administrator emailing an account a link to choose a new password.
 reset_path = f'{erin_path}/password-reset'
-stack.sql("UPDATE password_reset_token SET created_at = now() - interval '10 minutes' "
+stack.sql("UPDATE password_reset_token SET created_at = unix_time() - 600 "
           f"WHERE admin_user_id = '{erin_id}'")
 admin.post_form(erin_path, f'{erin_path}/block', {})
 response = admin.post_form(erin_path, reset_path, {})

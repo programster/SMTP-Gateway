@@ -38,7 +38,7 @@ final class AttachmentRemover
         while ($isFinished === false)
         {
             $ids = pg_fetch_all(ServiceFactory::getDb()->query(
-                "SELECT \"id\" FROM \"email_message\" WHERE {$condition} ORDER BY \"created_at\""
+                "SELECT \"id\" FROM \"email_message\" WHERE {$condition} ORDER BY \"created_at\", \"id\""
                 . ' LIMIT ' . self::BATCH_SIZE
             ));
 
@@ -114,7 +114,7 @@ final class AttachmentRemover
             unset($stripped);
 
             $db->query(
-                "UPDATE \"email_message\" SET \"attachments_removed_at\" = now(), {$setSql}"
+                "UPDATE \"email_message\" SET \"attachments_removed_at\" = unix_time(), {$setSql}"
                 . ' WHERE "id" = $1 AND "attachments_removed_at" IS NULL',
                 $params
             );

@@ -16,7 +16,7 @@ class RejectedRequest extends \Programster\PgsqlObjects\AbstractRecord
     private string $m_clientIp;
     private string $m_reason;
     private string $m_detail;
-    private string $m_createdAt;
+    private int $m_createdAt;
 
 
     public function getTableHandler() : TableInterface
@@ -33,7 +33,7 @@ class RejectedRequest extends \Programster\PgsqlObjects\AbstractRecord
             'client_ip' => function () : string { return $this->m_clientIp; },
             'reason' => function () : string { return $this->m_reason; },
             'detail' => function () : string { return $this->m_detail; },
-            'created_at' => function () : string { return $this->m_createdAt; },
+            'created_at' => function () : int { return $this->m_createdAt; },
         ];
     }
 
@@ -46,7 +46,7 @@ class RejectedRequest extends \Programster\PgsqlObjects\AbstractRecord
             'client_ip' => function (string $value) : void { $this->m_clientIp = $value; },
             'reason' => function (string $value) : void { $this->m_reason = $value; },
             'detail' => function (string $value) : void { $this->m_detail = $value; },
-            'created_at' => function (string $value) : void { $this->m_createdAt = $value; },
+            'created_at' => function (int $value) : void { $this->m_createdAt = $value; },
         ];
     }
 
@@ -57,5 +57,5 @@ class RejectedRequest extends \Programster\PgsqlObjects\AbstractRecord
     public function getClientIp() : string { return $this->m_clientIp; }
     public function getReason() : string { return $this->m_reason; }
     public function getDetail() : string { return $this->m_detail; }
-    public function getCreatedAt() : string { return $this->m_createdAt; }
+    public function getCreatedAt() : int { return $this->m_createdAt; }
 }

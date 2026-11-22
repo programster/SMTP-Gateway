@@ -31,7 +31,7 @@ $senders = new EmailAddressCollection(new EmailAddress('a@b.test'));
  * Add an email to 3 recipients, sent with the key, and get its ID.
  */
 $insertEmail = function (string $status, bool $isDispatched) use ($emailTokenId) : string {
-    $dispatchedAt = $isDispatched ? 'now()' : 'NULL';
+    $dispatchedAt = $isDispatched ? 'unix_time_precise()' : 'NULL';
 
     return pg_fetch_result(ServiceFactory::getDb()->query(
         'INSERT INTO "email_message" ("id", "email_token_id", "source", "client_ip", "envelope_sender", "recipients",'

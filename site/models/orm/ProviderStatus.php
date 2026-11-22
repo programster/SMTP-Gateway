@@ -12,9 +12,9 @@ use Programster\PgsqlObjects\TableInterface;
 class ProviderStatus extends \Programster\PgsqlObjects\AbstractRecord
 {
     private string $m_provider;
-    private string $m_unavailableUntil;
+    private int $m_unavailableUntil;
     private string $m_lastError;
-    private string $m_updatedAt;
+    private int $m_updatedAt;
 
 
     public function getTableHandler() : TableInterface
@@ -27,9 +27,9 @@ class ProviderStatus extends \Programster\PgsqlObjects\AbstractRecord
     {
         return [
             'provider' => function () : string { return $this->m_provider; },
-            'unavailable_until' => function () : string { return $this->m_unavailableUntil; },
+            'unavailable_until' => function () : int { return $this->m_unavailableUntil; },
             'last_error' => function () : string { return $this->m_lastError; },
-            'updated_at' => function () : string { return $this->m_updatedAt; },
+            'updated_at' => function () : int { return $this->m_updatedAt; },
         ];
     }
 
@@ -38,16 +38,16 @@ class ProviderStatus extends \Programster\PgsqlObjects\AbstractRecord
     {
         return [
             'provider' => function (string $value) : void { $this->m_provider = $value; },
-            'unavailable_until' => function (string $value) : void { $this->m_unavailableUntil = $value; },
+            'unavailable_until' => function (int $value) : void { $this->m_unavailableUntil = $value; },
             'last_error' => function (string $value) : void { $this->m_lastError = $value; },
-            'updated_at' => function (string $value) : void { $this->m_updatedAt = $value; },
+            'updated_at' => function (int $value) : void { $this->m_updatedAt = $value; },
         ];
     }
 
 
     # Accessors
     public function getProvider() : string { return $this->m_provider; }
-    public function getUnavailableUntil() : string { return $this->m_unavailableUntil; }
+    public function getUnavailableUntil() : int { return $this->m_unavailableUntil; }
     public function getLastError() : string { return $this->m_lastError; }
-    public function getUpdatedAt() : string { return $this->m_updatedAt; }
+    public function getUpdatedAt() : int { return $this->m_updatedAt; }
 }

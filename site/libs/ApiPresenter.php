@@ -90,13 +90,11 @@ final class ApiPresenter
 
     public static function presentAttempt(EmailAttempt $attempt) : array
     {
-        $finishedAt = $attempt->getFinishedAt();
-
         return [
             'provider' => $attempt->getProvider(),
             'outcome' => $attempt->getOutcome()->value,
             'dispatchedAt' => Time::toIso($attempt->getDispatchedAt()),
-            'finishedAt' => ($finishedAt === '') ? null : Time::toIso($finishedAt),
+            'finishedAt' => self::presentOptionalTime($attempt->getFinishedAt()),
             'error' => ($attempt->getError() === '') ? null : $attempt->getError(),
         ];
     }
@@ -166,7 +164,7 @@ final class ApiPresenter
     /**
      * A time that may not have happened yet (e.g. when a token was revoked), as ISO 8601, or null.
      */
-    private static function presentOptionalTime(?string $databaseTime) : ?string
+    private static function presentOptionalTime(int|float|null $databaseTime) : ?string
     {
         return ($databaseTime === null) ? null : Time::toIso($databaseTime);
     }

@@ -209,7 +209,7 @@ final class AdminUserRepository
      */
     public static function recordLogin(AdminUser $user, IpAddress $clientIp) : void
     {
-        $query = 'UPDATE "admin_user" SET "last_login_at" = now(), "last_login_ip" = $1 WHERE "id" = $2';
+        $query = 'UPDATE "admin_user" SET "last_login_at" = unix_time(), "last_login_ip" = $1 WHERE "id" = $2';
         ServiceFactory::getDb()->query($query, [(string)$clientIp, $user->getId()]);
     }
 
@@ -224,7 +224,7 @@ final class AdminUserRepository
         $users = [];
         $query =
             'SELECT "id" FROM "admin_user" WHERE "last_login_at" IS NOT NULL AND "status" <> \'archived\''
-            . ' ORDER BY "last_login_at" DESC LIMIT ';
+            . ' ORDER BY "last_login_at" DESC, "id" DESC LIMIT ';
 
 
         foreach (pg_fetch_all(ServiceFactory::getDb()->query($query . $limit)) as $row)
@@ -242,7 +242,25 @@ final class AdminUserRepository
      */
     public static function loadLive() : AdminUserCollection
     {
-        return self::loadWhere('"status" <> \'archived\' ORDER BY "email"');
+        $statuses = [];
+
+        foreach (AccountStatus::cases() as $status)
+        {
+            if ($status !== AccountStatus::ARCHIVED)
+            {
+                $statuses[] = $status->value;
+            }
+        }
+
+        $users = AdminUserTable::getInstance()->loadWhereAnd(['status' => $statuses], CacheMode::IGNORE_CACHE);
+
+        $compareByEmail = function (AdminUser $a, AdminUser $b) : int {
+            $order = strcmp($a->getEmail(), $b->getEmail());
+            return ($order !== 0) ? $order : strcmp((string)$a->getId(), (string)$b->getId());
+        };
+
+        usort($users, $compareByEmail);
+        return new AdminUserCollection(...$users);
     }
 
 
@@ -252,7 +270,17 @@ final class AdminUserRepository
      */
     public static function loadArchived() : AdminUserCollection
     {
-        return self::loadWhere('"status" = \'archived\' ORDER BY "status_changed_at" DESC');
+        $wherePairs = ['status' => AccountStatus::ARCHIVED->value];
+        $users = AdminUserTable::getInstance()->loadWhereAnd($wherePairs, CacheMode::IGNORE_CACHE);
+
+        // One with no time goes first, as NULLs do in a descending sort in PostgreSQL.
+        $compareNewestFirst = function (AdminUser $a, AdminUser $b) : int {
+            $order = ($b->getStatusChangedAt() ?? PHP_INT_MAX) <=> ($a->getStatusChangedAt() ?? PHP_INT_MAX);
+            return ($order !== 0) ? $order : strcmp((string)$b->getId(), (string)$a->getId());
+        };
+
+        usort($users, $compareNewestFirst);
+        return new AdminUserCollection(...$users);
     }
 
 
@@ -315,12 +343,13 @@ final class AdminUserRepository
     public static function changePasswordUsingResetLink(string $tokenHash, string $newPassword) : bool
     {
         $query =
-            'WITH "claimed" AS (UPDATE "password_reset_token" SET "used_at" = now()'
-            . ' WHERE "token_hash" = $1 AND "used_at" IS NULL AND "expires_at" > now() RETURNING "admin_user_id"),'
+            'WITH "claimed" AS (UPDATE "password_reset_token" SET "used_at" = unix_time()'
+            . ' WHERE "token_hash" = $1 AND "used_at" IS NULL AND "expires_at" > unix_time()'
+            . ' RETURNING "admin_user_id"),'
             . ' "changed" AS (UPDATE "admin_user" SET "password_hash" = $2,'
             . ' "session_version" = "session_version" + 1, "must_change_password" = false, "mfa_grace_until" = NULL'
             . ' FROM "claimed" WHERE "admin_user"."id" = "claimed"."admin_user_id" RETURNING "admin_user"."id"),'
-            . ' "others" AS (UPDATE "password_reset_token" SET "used_at" = now()'
+            . ' "others" AS (UPDATE "password_reset_token" SET "used_at" = unix_time()'
             . ' WHERE "admin_user_id" IN (SELECT "admin_user_id" FROM "claimed")'
             . ' AND "used_at" IS NULL AND "token_hash" <> $1)'
             . ' SELECT "id" FROM "changed"';
@@ -405,11 +434,11 @@ final class AdminUserRepository
         $id = ServiceFactory::getDb()->escapeValue($user->getId());
 
         $blockAccount =
-            "UPDATE \"admin_user\" SET \"status\" = 'blocked', \"status_changed_at\" = now(),"
+            "UPDATE \"admin_user\" SET \"status\" = 'blocked', \"status_changed_at\" = unix_time(),"
             . " \"mfa_grace_until\" = NULL, \"session_version\" = \"session_version\" + 1 WHERE \"id\" = {$id}";
 
         $cancelLinks =
-            "UPDATE \"password_reset_token\" SET \"used_at\" = now() WHERE \"admin_user_id\" = {$id}"
+            "UPDATE \"password_reset_token\" SET \"used_at\" = unix_time() WHERE \"admin_user_id\" = {$id}"
             . ' AND "used_at" IS NULL';
 
         $transaction = new OrmTransaction(ServiceFactory::getDb(), [$blockAccount, $cancelLinks]);
@@ -431,7 +460,11 @@ final class AdminUserRepository
     {
         self::assertNotArchived($user);
         $id = ServiceFactory::getDb()->escapeValue($user->getId());
-        $query = "UPDATE \"admin_user\" SET \"status\" = 'active', \"status_changed_at\" = now() WHERE \"id\" = {$id}";
+
+        $query =
+            "UPDATE \"admin_user\" SET \"status\" = 'active', \"status_changed_at\" = unix_time()"
+            . " WHERE \"id\" = {$id}";
+
         ServiceFactory::getDb()->query($query);
         return self::load($user->getId());
     }
@@ -465,7 +498,7 @@ final class AdminUserRepository
             . " WHERE lower(\"r\") = {$email})";
 
         $queries = [
-            "UPDATE \"admin_user\" SET \"status\" = 'archived', \"status_changed_at\" = now(), \"email\" = NULL,"
+            "UPDATE \"admin_user\" SET \"status\" = 'archived', \"status_changed_at\" = unix_time(), \"email\" = NULL,"
             . " \"password_hash\" = {$unusablePassword}, \"totp_secret\" = NULL, \"totp_last_used_step\" = NULL,"
             . " \"must_change_password\" = false, \"mfa_grace_until\" = NULL,"
             . " \"session_version\" = \"session_version\" + 1 WHERE \"id\" = {$id}",
@@ -618,33 +651,14 @@ final class AdminUserRepository
         );
 
         $cancelLinks = new Query(
-            'UPDATE "password_reset_token" SET "used_at" = now() WHERE "admin_user_id" = $1 AND "used_at" IS NULL',
+            'UPDATE "password_reset_token" SET "used_at" = unix_time()'
+            . ' WHERE "admin_user_id" = $1 AND "used_at" IS NULL',
             [$id]
         );
 
         $transaction = new OrmTransaction(ServiceFactory::getDb(), [$updateAccount, $cancelLinks]);
         $transaction->commit();
         return self::load($user->getId());
-    }
-
-
-    /**
-     * Load the accounts matching a condition.
-     * @param string $condition - the WHERE condition, and any ORDER BY, already escaped.
-     * @return AdminUserCollection
-     */
-    private static function loadWhere(string $condition) : AdminUserCollection
-    {
-        $users = [];
-
-        $query = 'SELECT "id" FROM "admin_user" WHERE ' . $condition;
-
-        foreach (pg_fetch_all(ServiceFactory::getDb()->query($query)) as $row)
-        {
-            $users[] = self::load($row['id']);
-        }
-
-        return new AdminUserCollection(...$users);
     }
 
 

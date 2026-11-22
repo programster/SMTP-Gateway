@@ -51,13 +51,13 @@ suite.check('and the refusal is logged, once', logged == '1', logged)
 
 # It's per address: another address's failures don't stop this one logging in, to any account.
 reset()
-stack.sql("INSERT INTO \"login_throttle\" VALUES ('198.51.100.7', 99, now())")
+stack.sql("INSERT INTO \"login_throttle\" VALUES ('198.51.100.7', 99, unix_time())")
 suite.check('another address\'s failures don\'t lock the account', try_password(stack.ADMIN_PASSWORD) == 303)
 
 # Once the window's over, the address can try again.
 reset()
 statuses = [try_password('wrong-password-1') for _ in range(5)]
-stack.sql('UPDATE "login_throttle" SET "window_started_at" = now() - interval \'16 minutes\'')
+stack.sql('UPDATE "login_throttle" SET "window_started_at" = unix_time() - 960')
 suite.check('once the window\'s over, the address can log in again', try_password(stack.ADMIN_PASSWORD) == 303)
 suite.check('starting a new count', get_failures() == '0', get_failures())
 

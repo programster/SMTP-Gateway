@@ -54,7 +54,7 @@ final class ProviderStatusRepository
      */
     public static function loadUnavailableNames() : array
     {
-        $query = 'SELECT "provider" FROM "provider_status" WHERE "unavailable_until" > now()';
+        $query = 'SELECT "provider" FROM "provider_status" WHERE "unavailable_until" > unix_time()';
         $rows = pg_fetch_all(ServiceFactory::getDb()->query($query));
         return array_column($rows, 'provider');
     }
@@ -70,13 +70,13 @@ final class ProviderStatusRepository
         $details = [];
         $query =
             'SELECT "provider", "unavailable_until", "last_error" FROM "provider_status"'
-            . ' WHERE "unavailable_until" > now()';
+            . ' WHERE "unavailable_until" > unix_time()';
 
 
         foreach (pg_fetch_all(ServiceFactory::getDb()->query($query)) as $row)
         {
             $details[$row['provider']] = [
-                'unavailable_until' => $row['unavailable_until'],
+                'unavailable_until' => (int)$row['unavailable_until'],
                 'last_error' => $row['last_error'],
             ];
         }
@@ -94,9 +94,9 @@ final class ProviderStatusRepository
 
         ServiceFactory::getDb()->query(
             'INSERT INTO "provider_status" ("id", "provider", "unavailable_until", "last_error", "updated_at")'
-            . " VALUES ({$id}, {$name}, now() + make_interval(secs => {$seconds}), {$escapedError}, now())"
+            . " VALUES ({$id}, {$name}, unix_time() + {$seconds}, {$escapedError}, unix_time())"
             . ' ON CONFLICT ("provider") DO UPDATE SET "unavailable_until" = EXCLUDED."unavailable_until",'
-            . ' "last_error" = EXCLUDED."last_error", "updated_at" = now()'
+            . ' "last_error" = EXCLUDED."last_error", "updated_at" = unix_time()'
         );
     }
 }

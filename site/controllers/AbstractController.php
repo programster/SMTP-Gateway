@@ -45,7 +45,9 @@ abstract class AbstractController
         HttpCode $status = HttpCode::OK
     ) : ResponseInterface
     {
-        $response->getBody()->write((string)new ViewTemplateHtmlShell($title, $page));
+        $isLoggedIn = WebSession::isLoggedIn();
+        $flash = WebSession::takeFlash();
+        $response->getBody()->write((string)new ViewTemplateHtmlShell($title, $page, $isLoggedIn, $flash));
         return $response->withStatus($status->value)->withHeader('Content-Type', 'text/html; charset=utf-8');
     }
 

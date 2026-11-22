@@ -103,9 +103,9 @@ final class QueueEstimator
         // The median, rather than the mean, so one unusually slow send can't skew it.
         $medianSeconds = (float)pg_fetch_result(ServiceFactory::getDb()->query(
             'SELECT coalesce(percentile_cont(0.5) WITHIN GROUP'
-            . ' (ORDER BY extract(epoch FROM ("sent_at" - "dispatched_at"))),'
+            . ' (ORDER BY "sent_at" - "dispatched_at"),'
             . ' ' . self::DEFAULT_SEND_SECONDS . ') FROM (SELECT "sent_at", "dispatched_at" FROM "email_message"'
-            . ' WHERE "status" = \'sent\' AND "sent_at" > now() - interval \'10 minutes\''
+            . ' WHERE "status" = \'sent\' AND "sent_at" > unix_time_precise() - 600'
             . ' ORDER BY "sent_at" DESC LIMIT 100) AS "recent"'
         ), 0, 0);
 

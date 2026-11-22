@@ -364,7 +364,8 @@ class SettingsController extends AbstractController
         HttpCode $status
     ) : Response
     {
-        $page = new ViewSettingsPage(Settings::get(), $section, $error, $submitted);
+        $cloudflareStatus = CloudflareNetworks::loadStatus();
+        $page = new ViewSettingsPage(Settings::get(), $cloudflareStatus, $section, $error, $submitted);
         return self::renderPage($response, "Settings: {$section->getPageSection()->getTitle()}", $page, $status);
     }
 

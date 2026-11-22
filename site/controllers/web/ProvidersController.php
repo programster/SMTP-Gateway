@@ -47,7 +47,8 @@ class ProvidersController extends AbstractController
     public function showProvider(Request $request, Response $response, array $args) : Response
     {
         $provider = ProvidersFormService::loadProvider((string)$args['name']);
-        $page = new ViewProviderPage($provider, ProviderRegistry::getConfig(), self::getProvidersVersionOrEmpty());
+        $config = ProviderRegistry::getConfig();
+        $page = new ViewProviderPage($provider, $config, self::loadActivity(), self::getProvidersVersionOrEmpty());
         return self::renderPage($response, $provider->getName(), $page);
     }
 
@@ -229,7 +230,8 @@ class ProvidersController extends AbstractController
             self::logChange('A provider\'s webhook token was generated', $name);
             $provider = ProvidersFormService::loadProvider($name);
             $version = self::getProvidersVersionOrEmpty();
-            $page = new ViewProviderPage($provider, ProviderRegistry::getConfig(), $version, $token);
+            $config = ProviderRegistry::getConfig();
+            $page = new ViewProviderPage($provider, $config, self::loadActivity(), $version, $token);
             $result = self::renderPage($response, $name, $page)->withHeader('Cache-Control', 'no-store');
         }
         catch (InvalidInputException | ConflictException | ConfigurationException $e)
@@ -410,6 +412,18 @@ class ProvidersController extends AbstractController
 
 
     /**
+     * Load what the provider pages show about how the providers are being used.
+     * @return ProviderActivity
+     */
+    private static function loadActivity() : ProviderActivity
+    {
+        $counts = ProviderStats::loadRecentCounts();
+        $unavailable = ProviderStatusRepository::loadUnavailableDetails();
+        return new ProviderActivity($counts, $unavailable, EmailTokenRepository::loadProviderLinks());
+    }
+
+
+    /**
      * Show the providers page: the providers, or the first provider to add on a fresh install, or what's wrong with
      * them, so it can be fixed.
      *
@@ -441,7 +455,9 @@ class ProvidersController extends AbstractController
             $config = ProviderRegistry::getConfig();
             $editorYaml = ($yaml !== '') ? $yaml : ProvidersConfigParser::toYaml($config, SecretOutput::MASKED);
             $editorVersion = ($version !== '') ? $version : SettingsFile::getSectionVersion(SettingsSection::PROVIDERS);
-            $page = new ViewProvidersPage($config, $editorYaml, $editorVersion, $error);
+            $activity = self::loadActivity();
+            $warning = SystemSenderWarning::describe($config);
+            $page = new ViewProvidersPage($config, $activity, $warning, $editorYaml, $editorVersion, $error);
         }
         catch (ProvidersNotConfiguredException)
         {

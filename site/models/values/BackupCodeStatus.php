@@ -13,15 +13,15 @@ readonly class BackupCodeStatus
     public const int RUNNING_LOW = 2;
 
     private int $m_numUnused;
-    private string $m_generatedAt;
+    private int $m_generatedAt;
 
 
     /**
      * @param int $numUnused - how many are still unused.
      *
-     * @param string $generatedAt - when they were generated, or an empty string if the account has none at all.
+     * @param int $generatedAt - when they were generated (a Unix timestamp), or 0 if the account has none at all.
      */
-    public function __construct(int $numUnused, string $generatedAt)
+    public function __construct(int $numUnused, int $generatedAt)
     {
         $this->m_numUnused = $numUnused;
         $this->m_generatedAt = $generatedAt;
@@ -30,7 +30,7 @@ readonly class BackupCodeStatus
 
     public function hasCodes() : bool
     {
-        return $this->m_generatedAt !== '';
+        return $this->m_generatedAt !== 0;
     }
 
 
@@ -42,5 +42,5 @@ readonly class BackupCodeStatus
 
     # Accessors
     public function getNumUnused() : int { return $this->m_numUnused; }
-    public function getGeneratedAt() : string { return $this->m_generatedAt; }
+    public function getGeneratedAt() : int { return $this->m_generatedAt; }
 }

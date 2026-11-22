@@ -15,20 +15,32 @@ class ViewTemplateHtmlShell extends AbstractView
 {
     private readonly string $m_title;
     private readonly AbstractView $m_page;
+    private readonly bool $m_isLoggedIn;
+    private readonly FlashMessage $m_flash;
 
 
-    public function __construct(string $title, AbstractView $page)
+    /**
+     * @param string $title - the page's title.
+     *
+     * @param AbstractView $page - the page to wrap.
+     *
+     * @param bool $isLoggedIn - whether someone is logged in, so gets the side panel rather than the plain header.
+     *
+     * @param FlashMessage $flash - the message to show above the page, which may be empty.
+     */
+    public function __construct(string $title, AbstractView $page, bool $isLoggedIn, FlashMessage $flash)
     {
         $this->m_title = $title;
         $this->m_page = $page;
+        $this->m_isLoggedIn = $isLoggedIn;
+        $this->m_flash = $flash;
     }
 
 
     protected function renderContent() : void
     {
-        $isLoggedIn = (session_status() === PHP_SESSION_ACTIVE && WebSession::isLoggedIn());
-        $flash = (session_status() === PHP_SESSION_ACTIVE) ? WebSession::takeFlash() : new FlashMessage('', false);
-
+        $isLoggedIn = $this->m_isLoggedIn;
+        $flash = $this->m_flash;
         $requestPath = parse_url((string)($_SERVER['REQUEST_URI'] ?? '/'), PHP_URL_PATH);
         $requestPath = is_string($requestPath) ? $requestPath : '/';
 ?>

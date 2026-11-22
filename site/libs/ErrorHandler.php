@@ -10,6 +10,7 @@
 declare(strict_types = 1);
 
 use Programster\Http\HttpCode;
+use Programster\PgsqlObjects\Exceptions\ExceptionNoSuchIdException;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Slim\Exception\HttpException;
@@ -54,7 +55,9 @@ final class ErrorHandler
         else
         {
             $page = new ViewErrorPage($apiException->getHttpStatus(), $apiException->getMessage());
-            $response->getBody()->write((string)new ViewTemplateHtmlShell('Error', $page));
+            $isLoggedIn = WebSession::isLoggedIn();
+            $flash = WebSession::takeFlash();
+            $response->getBody()->write((string)new ViewTemplateHtmlShell('Error', $page, $isLoggedIn, $flash));
             $response = $response->withHeader('Content-Type', 'text/html; charset=utf-8');
         }
 
@@ -77,6 +80,12 @@ final class ErrorHandler
         elseif ($exception instanceof NotFoundException)
         {
             $result = new ApiException(HttpCode::NOT_FOUND, ErrorCodeEnum::NOT_FOUND, $exception->getMessage());
+        }
+        elseif ($exception instanceof ExceptionNoSuchIdException)
+        {
+            // Its message names the ORM's class and the ID, so isn't shown. It was usually deleted a moment ago.
+            $message = 'That no longer exists.';
+            $result = new ApiException(HttpCode::NOT_FOUND, ErrorCodeEnum::NOT_FOUND, $message);
         }
         elseif ($exception instanceof AccountStateException)
         {

@@ -149,16 +149,18 @@ final class EmailTokenRepository
      */
     public static function loadAll(bool $includeRevoked = true) : EmailTokenCollection
     {
-        $where = $includeRevoked ? '' : 'WHERE "revoked_at" IS NULL';
-        $query = "SELECT \"id\" FROM \"email_token\" {$where} ORDER BY \"created_at\" DESC";
-        $rows = pg_fetch_all(ServiceFactory::getDb()->query($query));
-        $tokens = [];
+        $table = EmailTokenTable::getInstance();
 
-        foreach ($rows as $row)
-        {
-            $tokens[] = self::load($row['id']);
-        }
+        $tokens = $includeRevoked
+            ? $table->loadAll(CacheMode::IGNORE_CACHE)
+            : $table->loadWhereAnd(['revoked_at' => null], CacheMode::IGNORE_CACHE);
 
+        $compareNewestFirst = function (EmailToken $a, EmailToken $b) : int {
+            $order = $b->getCreatedAt() <=> $a->getCreatedAt();
+            return ($order !== 0) ? $order : strcmp((string)$b->getId(), (string)$a->getId());
+        };
+
+        usort($tokens, $compareNewestFirst);
         return new EmailTokenCollection(...$tokens);
     }
 
@@ -361,7 +363,7 @@ final class EmailTokenRepository
         }
 
         $revokeToken =
-            "UPDATE \"email_token\" SET \"revoked_at\" = now() WHERE \"id\" = {$id} AND \"revoked_at\" IS NULL";
+            "UPDATE \"email_token\" SET \"revoked_at\" = unix_time() WHERE \"id\" = {$id} AND \"revoked_at\" IS NULL";
 
         $cancelQueued =
             "UPDATE \"email_message\" SET \"status\" = 'cancelled'{$clearContent}"
@@ -394,7 +396,7 @@ final class EmailTokenRepository
      */
     public static function markUsed(EmailToken $emailToken, IpAddress $clientIp) : void
     {
-        $query = 'UPDATE "email_token" SET "last_used_at" = now(), "last_used_ip" = $1 WHERE "id" = $2';
+        $query = 'UPDATE "email_token" SET "last_used_at" = unix_time(), "last_used_ip" = $1 WHERE "id" = $2';
         ServiceFactory::getDb()->query($query, [(string)$clientIp, $emailToken->getId()]);
     }
 
@@ -407,7 +409,10 @@ final class EmailTokenRepository
     public static function loadRecentlyUsed(int $limit) : EmailTokenCollection
     {
         $emailTokens = [];
-        $query = 'SELECT "id" FROM "email_token" WHERE "last_used_at" IS NOT NULL ORDER BY "last_used_at" DESC LIMIT ';
+
+        $query =
+            'SELECT "id" FROM "email_token" WHERE "last_used_at" IS NOT NULL'
+            . ' ORDER BY "last_used_at" DESC, "id" DESC LIMIT ';
 
         foreach (pg_fetch_all(ServiceFactory::getDb()->query($query . $limit)) as $row)
         {

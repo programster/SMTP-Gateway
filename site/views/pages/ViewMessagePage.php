@@ -54,7 +54,7 @@ class ViewMessagePage extends Programster\AbstractView\AbstractView
 
         $removedNote = ($removedCount === 0) ? '' : (
             "Without its {$removedCount} attachment" . (($removedCount === 1) ? '' : 's') . ', removed '
-            . Time::format((string)$message->getAttachmentsRemovedAt()) . ', as attachments are '
+            . Time::format((int)$message->getAttachmentsRemovedAt()) . ', as attachments are '
             . $settings->describeAttachmentRetention() . ' (see Settings).'
         );
 
@@ -124,7 +124,9 @@ class ViewMessagePage extends Programster\AbstractView\AbstractView
             <td><?= Html::e(Time::format($attempt->getDispatchedAt())) ?></td>
             <td><?= Html::e($attempt->getProvider()) ?></td>
             <td><?= Html::e($attempt->getOutcome()->getLabel()) ?></td>
-            <td><?= Html::e(($attempt->getFinishedAt() === '') ? '-' : Time::format($attempt->getFinishedAt())) ?></td>
+            <td><?= Html::e(
+                ($attempt->getFinishedAt() === null) ? '-' : Time::format($attempt->getFinishedAt())
+            ) ?></td>
             <td><?= Html::e($attempt->getError()) ?></td>
         </tr>
     <?php endforeach; ?>

@@ -167,7 +167,7 @@ class ViewUsersPage extends Programster\AbstractView\AbstractView
         <?php /* @var $user AdminUser */ $id = $user->getId(); ?>
         <tr>
             <td><a class="mono" href="/admin/users/<?= Html::e(rawurlencode($id)) ?>"><?= Html::e($id) ?></a></td>
-            <td><?= Html::e(Time::format((string)$user->getStatusChangedAt())) ?></td>
+            <td><?= Html::e(Time::format((int)$user->getStatusChangedAt())) ?></td>
             <td><?= Html::e(Time::format($user->getCreatedAt())) ?></td>
             <td class="row-actions">
                 <a class="icon-button neutral" href="/admin/users/<?= Html::e(rawurlencode($id)) ?>/restore"

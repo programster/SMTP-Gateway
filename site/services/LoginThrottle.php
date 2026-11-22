@@ -36,17 +36,17 @@ final class LoginThrottle
     public static function attempt(IpAddress $clientIp, Closure $check) : bool
     {
         $source = self::getSource($clientIp);
-        $window = self::WINDOW_MINUTES;
-        $isNewWindow = "\"login_throttle\".\"window_started_at\" <= now() - make_interval(mins => {$window})";
-        $windowStart = "CASE WHEN {$isNewWindow} THEN now() ELSE \"login_throttle\".\"window_started_at\" END";
+        $window = self::WINDOW_MINUTES * 60;
+        $isNewWindow = "\"login_throttle\".\"window_started_at\" <= unix_time() - {$window}";
+        $windowStart = "CASE WHEN {$isNewWindow} THEN unix_time() ELSE \"login_throttle\".\"window_started_at\" END";
 
         $result = ServiceFactory::getDb()->query(
-            'INSERT INTO "login_throttle" ("source", "failures", "window_started_at") VALUES ($1, 1, now())'
+            'INSERT INTO "login_throttle" ("source", "failures", "window_started_at") VALUES ($1, 1, unix_time())'
             . ' ON CONFLICT ("source") DO UPDATE SET'
             . " \"failures\" = CASE WHEN {$isNewWindow} THEN 1 ELSE \"login_throttle\".\"failures\" + 1 END,"
             . " \"window_started_at\" = {$windowStart}"
-            . ' RETURNING "failures", ceil(extract(epoch FROM ("window_started_at"'
-            . " + make_interval(mins => {$window}) - now())) / 60) AS \"minutes_left\"",
+            . ' RETURNING "failures",'
+            . " ceil((\"window_started_at\" + {$window} - unix_time()) / 60.0) AS \"minutes_left\"",
             [$source]
         );
 

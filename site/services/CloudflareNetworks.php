@@ -141,7 +141,7 @@ final class CloudflareNetworks
     {
         $query = 'SELECT count(*) AS "count", max("fetched_at") AS "fetched_at" FROM "cloudflare_network"';
         $row = pg_fetch_all(ServiceFactory::getDb()->query($query))[0];
-        return new CloudflareNetworksStatus((int)$row['count'], (string)$row['fetched_at']);
+        return new CloudflareNetworksStatus((int)$row['count'], (int)$row['fetched_at']);
     }
 
 
@@ -149,7 +149,7 @@ final class CloudflareNetworks
     private static function store(IpNetworkCollection $networks) : void
     {
         $queries = [new Query('DELETE FROM "cloudflare_network"')];
-        $insert = 'INSERT INTO "cloudflare_network" ("network", "fetched_at") VALUES ($1, now())';
+        $insert = 'INSERT INTO "cloudflare_network" ("network", "fetched_at") VALUES ($1, unix_time())';
         $insert .= ' ON CONFLICT DO NOTHING';
 
         foreach ($networks as $network)

@@ -167,7 +167,7 @@ class ViewUserPage extends Programster\AbstractView\AbstractView
         <?php endif; ?>
         <?php if ($user->hasActiveMfaGrace()): ?>
             <p class="flash flash-warning">A grace period is active until
-                <?= Html::e(Time::format((string)$user->getMfaGraceUntil())) ?>. Their next password login gets in
+                <?= Html::e(Time::format((int)$user->getMfaGraceUntil())) ?>. Their next password login gets in
                 without a second factor, and replaces their old ones.</p>
             <form method="post" action="<?= Html::e("{$path}/mfa-grace/cancel") ?>" class="form-actions">
                 <?= new ViewCsrfField() ?>

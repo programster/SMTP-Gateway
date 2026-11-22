@@ -176,7 +176,7 @@ class ViewLogsPage extends Programster\AbstractView\AbstractView
     <?php foreach ($entries as $entry): ?>
         <?php /* @var $entry LogEntry */ ?>
         <tr class="clickable-row" data-level="<?= Html::e($entry->getLevel()) ?>">
-            <td><?= Html::e(Time::describeAgo($entry->getCreatedAt())) ?><br><span
+            <td><?= Html::e(Time::describeAgo((float)$entry->getCreatedAt())) ?><br><span
                 class="hint mono"><?= Html::e(Time::formatUnixTimestamp($entry->getCreatedAt())) ?></span></td>
             <td><span
                 class="badge badge-<?= Html::e($entry->getLevel()) ?>"><?= Html::e($entry->getLevel()) ?></span></td>

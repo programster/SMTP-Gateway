@@ -280,16 +280,16 @@ final class MessageDispatcher
     {
         $seconds = self::STUCK_AFTER_SECONDS;
 
-        $cutoff = "now() - make_interval(secs => {$seconds})";
+        $cutoff = "unix_time_precise() - {$seconds}";
 
         $result = ServiceFactory::getDb()->query(
-            "UPDATE \"email_message\" SET \"status\" = 'queued', \"next_attempt_at\" = now(), \"was_queued\" = true"
-            . " WHERE \"status\" = 'sending' AND \"dispatched_at\" < {$cutoff}"
+            "UPDATE \"email_message\" SET \"status\" = 'queued', \"next_attempt_at\" = unix_time(),"
+            . " \"was_queued\" = true WHERE \"status\" = 'sending' AND \"dispatched_at\" < {$cutoff}"
         );
 
         // Their attempts stay counted towards the providers' limits, as the providers may have had them.
         ServiceFactory::getDb()->query(
-            "UPDATE \"email_attempt\" SET \"outcome\" = 'interrupted', \"finished_at\" = now()"
+            "UPDATE \"email_attempt\" SET \"outcome\" = 'interrupted', \"finished_at\" = unix_time_precise()"
             . " WHERE \"outcome\" = 'sending' AND \"dispatched_at\" < {$cutoff}"
         );
 
@@ -376,7 +376,7 @@ final class MessageDispatcher
                 $escapedAttemptId = ServiceFactory::getDb()->escapeValue($attemptId);
 
                 $markSending =
-                    "UPDATE \"email_message\" SET \"status\" = 'sending', \"dispatched_at\" = now(),"
+                    "UPDATE \"email_message\" SET \"status\" = 'sending', \"dispatched_at\" = unix_time_precise(),"
                     . " \"provider\" = {$escapedProvider}, \"attempts\" = \"attempts\" + 1 WHERE \"id\" = {$id}";
 
                 $recordAttempt =
@@ -658,7 +658,7 @@ final class MessageDispatcher
         if ($remaining > 0)
         {
             ServiceFactory::getDb()->query(
-                "UPDATE \"email_message\" SET \"status\" = 'queued', \"next_attempt_at\" = now(),"
+                "UPDATE \"email_message\" SET \"status\" = 'queued', \"next_attempt_at\" = unix_time(),"
                 . " \"tried_providers\" = {$escapedTried}, \"last_error\" = {$escapedError} WHERE \"id\" = {$id}"
             );
 
@@ -679,7 +679,7 @@ final class MessageDispatcher
             ServiceFactory::getDb()->query(
                 "UPDATE \"email_message\" SET \"status\" = 'queued', \"was_queued\" = true,"
                 . " \"retry_round\" = {$round}, \"tried_providers\" = '[]', \"last_error\" = {$escapedError},"
-                . " \"next_attempt_at\" = now() + make_interval(secs => {$delay}) WHERE \"id\" = {$id}"
+                . " \"next_attempt_at\" = unix_time() + {$delay} WHERE \"id\" = {$id}"
             );
         }
     }
@@ -706,7 +706,7 @@ final class MessageDispatcher
         {
             $row = pg_fetch_all(ServiceFactory::getDb()->query(
                 'SELECT "status", "last_error", "retry_round", "dispatched_at" IS NOT NULL AS "was_picked_up",'
-                . " \"next_attempt_at\" <= now() AS \"is_due\" FROM \"email_message\" WHERE \"id\" = {$id}"
+                . " \"next_attempt_at\" <= unix_time() AS \"is_due\" FROM \"email_message\" WHERE \"id\" = {$id}"
             ))[0];
 
             $now = microtime(true);
@@ -805,7 +805,7 @@ final class MessageDispatcher
         $escapedError = ($error === '') ? 'NULL' : ServiceFactory::getDb()->escapeValue(mb_substr($error, 0, 1000));
 
         ServiceFactory::getDb()->query(
-            "UPDATE \"email_attempt\" SET \"outcome\" = {$escapedOutcome}, \"finished_at\" = now(),"
+            "UPDATE \"email_attempt\" SET \"outcome\" = {$escapedOutcome}, \"finished_at\" = unix_time_precise(),"
             . " \"error\" = {$escapedError} WHERE \"id\" = {$id}"
         );
     }
@@ -819,7 +819,8 @@ final class MessageDispatcher
         $clearContent = self::getClearContentOnFinishSql();
 
         ServiceFactory::getDb()->query(
-            "UPDATE \"email_message\" SET \"status\" = 'sent', \"sent_at\" = now(), \"provider\" = {$escapedProvider},"
+            "UPDATE \"email_message\" SET \"status\" = 'sent', \"sent_at\" = unix_time_precise(),"
+            . " \"provider\" = {$escapedProvider},"
             . " \"provider_message_id\" = NULLIF({$providerId}, ''), \"last_error\" = NULL{$clearContent}"
             . " WHERE \"id\" = {$id}"
         );
@@ -1000,8 +1001,8 @@ final class MessageDispatcher
             'SELECT * FROM (SELECT DISTINCT ON ("email_token_id") "id", "email_token_id", "recipient_count",'
             . ' "tried_providers", "sender_addresses", "priority", "created_at" FROM "email_message"'
             . ' WHERE "status" = \'queued\''
-            . ' AND "next_attempt_at" <= now() ORDER BY "email_token_id", "created_at") AS "oldest_per_key"'
-            . ' ORDER BY "priority" DESC, "created_at"'
+            . ' AND "next_attempt_at" <= unix_time() ORDER BY "email_token_id", "created_at", "id") AS "oldest_per_key"'
+            . ' ORDER BY "priority" DESC, "created_at", "id"'
         ));
 
         // Once an email is held back by the global limits, which every email shares, no lower priority email may use

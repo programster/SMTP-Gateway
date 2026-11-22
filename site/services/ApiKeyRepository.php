@@ -114,15 +114,14 @@ final class ApiKeyRepository
      */
     public static function loadAll() : ApiKeyCollection
     {
-        $apiKeys = [];
+        $apiKeys = ApiKeyTable::getInstance()->loadAll(CacheMode::IGNORE_CACHE);
 
-        $query = 'SELECT "id" FROM "api_key" ORDER BY "created_at" DESC';
+        $compareNewestFirst = function (ApiKey $a, ApiKey $b) : int {
+            $order = $b->getCreatedAt() <=> $a->getCreatedAt();
+            return ($order !== 0) ? $order : strcmp((string)$b->getId(), (string)$a->getId());
+        };
 
-        foreach (pg_fetch_all(ServiceFactory::getDb()->query($query)) as $row)
-        {
-            $apiKeys[] = self::load($row['id']);
-        }
-
+        usort($apiKeys, $compareNewestFirst);
         return new ApiKeyCollection(...$apiKeys);
     }
 
@@ -143,10 +142,35 @@ final class ApiKeyRepository
     }
 
 
+    /**
+     * Load the networks every API key can be used from, in one query, for showing them in a list.
+     * @return array<string, string[]> - each API key's ID, to its networks in their written form.
+     */
+    public static function loadAllowedNetworkStrings() : array
+    {
+        $networksByKey = [];
+
+        foreach (ApiKeyNetworkTable::getInstance()->loadAll(CacheMode::IGNORE_CACHE) as $record)
+        {
+            /* @var $record ApiKeyNetwork */
+            $networksByKey[$record->getApiKeyId()][] = new IpNetwork($record->getNetwork());
+        }
+
+        $strings = [];
+
+        foreach ($networksByKey as $apiKeyId => $networks)
+        {
+            $strings[$apiKeyId] = (new IpAllowList(...$networks))->toStrings();
+        }
+
+        return $strings;
+    }
+
+
     public static function revoke(ApiKey $apiKey) : void
     {
         $id = ServiceFactory::getDb()->escapeValue($apiKey->getId());
-        $query = "UPDATE \"api_key\" SET \"revoked_at\" = now() WHERE \"id\" = {$id} AND \"revoked_at\" IS NULL";
+        $query = "UPDATE \"api_key\" SET \"revoked_at\" = unix_time() WHERE \"id\" = {$id} AND \"revoked_at\" IS NULL";
         ServiceFactory::getDb()->query($query);
     }
 
@@ -159,7 +183,7 @@ final class ApiKeyRepository
      */
     public static function markUsed(ApiKey $apiKey, IpAddress $clientIp) : void
     {
-        $query = 'UPDATE "api_key" SET "last_used_at" = now(), "last_used_ip" = $1 WHERE "id" = $2';
+        $query = 'UPDATE "api_key" SET "last_used_at" = unix_time(), "last_used_ip" = $1 WHERE "id" = $2';
         ServiceFactory::getDb()->query($query, [(string)$clientIp, $apiKey->getId()]);
     }
 
@@ -172,7 +196,10 @@ final class ApiKeyRepository
     public static function loadRecentlyUsed(int $limit) : ApiKeyCollection
     {
         $apiKeys = [];
-        $query = 'SELECT "id" FROM "api_key" WHERE "last_used_at" IS NOT NULL ORDER BY "last_used_at" DESC LIMIT ';
+
+        $query =
+            'SELECT "id" FROM "api_key" WHERE "last_used_at" IS NOT NULL'
+            . ' ORDER BY "last_used_at" DESC, "id" DESC LIMIT ';
 
         foreach (pg_fetch_all(ServiceFactory::getDb()->query($query . $limit)) as $row)
         {

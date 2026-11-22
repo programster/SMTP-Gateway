@@ -224,7 +224,7 @@ final class SecurityKeyService
      */
     public static function recordUse(AdminWebauthnCredential $credential, int $counter) : bool
     {
-        $query = 'UPDATE "admin_webauthn_credential" SET "signature_counter" = $1, "last_used_at" = now()'
+        $query = 'UPDATE "admin_webauthn_credential" SET "signature_counter" = $1, "last_used_at" = unix_time()'
             . ' WHERE "id" = $2 AND ("signature_counter" < $1 OR ("signature_counter" = 0 AND $1 = 0))';
 
         $result = ServiceFactory::getDb()->query($query, [$counter, $credential->getId()]);
@@ -234,18 +234,15 @@ final class SecurityKeyService
 
     public static function loadCredentials(AdminUser $user) : AdminWebauthnCredentialCollection
     {
-        $id = ServiceFactory::getDb()->escapeValue($user->getId());
-        $credentials = [];
-        $query =
-            "SELECT \"id\" FROM \"admin_webauthn_credential\" WHERE \"admin_user_id\" = {$id}"
-            . ' ORDER BY "created_at"';
+        $wherePairs = ['admin_user_id' => $user->getId()];
+        $credentials = AdminWebauthnCredentialTable::getInstance()->loadWhereAnd($wherePairs, CacheMode::IGNORE_CACHE);
 
+        $compareOldestFirst = function (AdminWebauthnCredential $a, AdminWebauthnCredential $b) : int {
+            $order = $a->getCreatedAt() <=> $b->getCreatedAt();
+            return ($order !== 0) ? $order : strcmp((string)$a->getId(), (string)$b->getId());
+        };
 
-        foreach (pg_fetch_all(ServiceFactory::getDb()->query($query)) as $row)
-        {
-            $credentials[] = AdminWebauthnCredentialTable::getInstance()->load($row['id'], CacheMode::IGNORE_CACHE);
-        }
-
+        usort($credentials, $compareOldestFirst);
         return new AdminWebauthnCredentialCollection(...$credentials);
     }
 

@@ -9,6 +9,8 @@
 
 declare(strict_types = 1);
 
+use Programster\PgsqlObjects\Exceptions\ExceptionNoSuchIdException;
+
 
 final class MfaGraceService
 {
@@ -35,7 +37,7 @@ final class MfaGraceService
 
         $id = ServiceFactory::getDb()->escapeValue($user->getId());
         ServiceFactory::getDb()->query(
-            "UPDATE \"admin_user\" SET \"mfa_grace_until\" = now() + interval '1 hour' WHERE \"id\" = {$id}"
+            "UPDATE \"admin_user\" SET \"mfa_grace_until\" = unix_time() + 3600 WHERE \"id\" = {$id}"
         );
     }
 
@@ -46,11 +48,12 @@ final class MfaGraceService
      * @param AdminUser $user - the account.
      *
      * @return void
+     *
+     * @throws ExceptionNoSuchIdException - if the account no longer exists.
      */
     public static function cancel(AdminUser $user) : void
     {
-        $id = ServiceFactory::getDb()->escapeValue($user->getId());
-        ServiceFactory::getDb()->query("UPDATE \"admin_user\" SET \"mfa_grace_until\" = NULL WHERE \"id\" = {$id}");
+        AdminUserTable::getInstance()->updateById($user->getId(), ['mfa_grace_until' => null]);
     }
 
 
@@ -71,7 +74,7 @@ final class MfaGraceService
         $rows = pg_fetch_all(ServiceFactory::getDb()->query(
             'WITH "redeemed" AS (UPDATE "admin_user" SET "mfa_grace_until" = NULL, "totp_secret" = NULL,'
             . ' "totp_last_used_step" = NULL, "session_version" = "session_version" + 1'
-            . " WHERE \"id\" = {$id} AND \"status\" = 'active' AND \"mfa_grace_until\" > now() RETURNING \"id\"),"
+            . " WHERE \"id\" = {$id} AND \"status\" = 'active' AND \"mfa_grace_until\" > unix_time() RETURNING \"id\"),"
             . ' "removed_keys" AS (DELETE FROM "admin_webauthn_credential"'
             . ' WHERE "admin_user_id" IN (SELECT "id" FROM "redeemed")),'
             . ' "removed_codes" AS (DELETE FROM "admin_backup_code"'

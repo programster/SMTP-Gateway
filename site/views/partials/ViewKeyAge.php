@@ -17,9 +17,9 @@ class ViewKeyAge extends Programster\AbstractView\AbstractView
 
 
     /**
-     * @param string $createdAt - when it was created, as read from the database.
+     * @param int $createdAt - when it was created (a Unix timestamp).
      */
-    public function __construct(string $createdAt)
+    public function __construct(int $createdAt)
     {
         $this->m_days = Time::getDaysSince($createdAt);
     }

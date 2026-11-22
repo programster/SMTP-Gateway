@@ -42,8 +42,8 @@ function main() : void
 function cleanUp(EmailRetentionPolicy $retention, int $logDays) : void
 {
     $recordDays = $retention->getRecordDays();
-    $recordCutoff = "now() - make_interval(days => {$recordDays})";
-    $logCutoff = "now() - make_interval(days => {$logDays})";
+    $recordCutoff = "unix_time() - {$recordDays} * 86400";
+    $logCutoff = "unix_time() - {$logDays} * 86400";
     $db = ServiceFactory::getDb();
 
     $finished = "\"status\" NOT IN ('queued', 'sending')";
@@ -54,9 +54,9 @@ function cleanUp(EmailRetentionPolicy $retention, int $logDays) : void
         "rejected requests older than {$recordDays} days" =>
             "DELETE FROM \"rejected_request\" WHERE \"created_at\" < {$recordCutoff}",
         "logs older than {$logDays} days" =>
-            "DELETE FROM \"log\" WHERE \"created_at\" < extract(epoch FROM {$logCutoff})",
+            "DELETE FROM \"log\" WHERE \"created_at\" < {$logCutoff}",
         'failed login counts whose window ended over a day ago' =>
-            'DELETE FROM "login_throttle" WHERE "window_started_at" < now() - interval \'1 day\'',
+            'DELETE FROM "login_throttle" WHERE "window_started_at" < unix_time() - 86400',
     ];
 
     foreach ($queries as $description => $query)

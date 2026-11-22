@@ -24,16 +24,16 @@ class EmailMessage extends \Programster\PgsqlObjects\AbstractRecord
     private string $m_status;
     private bool $m_wasQueued;
     private int $m_attempts;
-    private string $m_nextAttemptAt;
-    private ?string $m_dispatchedAt;
-    private ?string $m_sentAt;
+    private int $m_nextAttemptAt;
+    private ?float $m_dispatchedAt;
+    private ?float $m_sentAt;
     private ?string $m_provider;
     private ?string $m_providerMessageId;
     private ?string $m_lastError;
-    private string $m_createdAt;
+    private int $m_createdAt;
     private string $m_triedProviders;
     private int $m_retryRound;
-    private ?string $m_attachmentsRemovedAt;
+    private ?int $m_attachmentsRemovedAt;
     private int $m_removedAttachmentCount;
     private int $m_priority;
 
@@ -60,16 +60,16 @@ class EmailMessage extends \Programster\PgsqlObjects\AbstractRecord
             'status' => function () : string { return $this->m_status; },
             'was_queued' => function () : bool { return $this->m_wasQueued; },
             'attempts' => function () : int { return $this->m_attempts; },
-            'next_attempt_at' => function () : string { return $this->m_nextAttemptAt; },
-            'dispatched_at' => function () : ?string { return $this->m_dispatchedAt; },
-            'sent_at' => function () : ?string { return $this->m_sentAt; },
+            'next_attempt_at' => function () : int { return $this->m_nextAttemptAt; },
+            'dispatched_at' => function () : ?float { return $this->m_dispatchedAt; },
+            'sent_at' => function () : ?float { return $this->m_sentAt; },
             'provider' => function () : ?string { return $this->m_provider; },
             'provider_message_id' => function () : ?string { return $this->m_providerMessageId; },
             'last_error' => function () : ?string { return $this->m_lastError; },
-            'created_at' => function () : string { return $this->m_createdAt; },
+            'created_at' => function () : int { return $this->m_createdAt; },
             'tried_providers' => function () : string { return $this->m_triedProviders; },
             'retry_round' => function () : int { return $this->m_retryRound; },
-            'attachments_removed_at' => function () : ?string { return $this->m_attachmentsRemovedAt; },
+            'attachments_removed_at' => function () : ?int { return $this->m_attachmentsRemovedAt; },
             'removed_attachment_count' => function () : int { return $this->m_removedAttachmentCount; },
             'priority' => function () : int { return $this->m_priority; },
         ];
@@ -92,16 +92,16 @@ class EmailMessage extends \Programster\PgsqlObjects\AbstractRecord
             'status' => function (string $value) : void { $this->m_status = $value; },
             'was_queued' => function (bool $value) : void { $this->m_wasQueued = $value; },
             'attempts' => function (int $value) : void { $this->m_attempts = $value; },
-            'next_attempt_at' => function (string $value) : void { $this->m_nextAttemptAt = $value; },
-            'dispatched_at' => function (?string $value) : void { $this->m_dispatchedAt = $value; },
-            'sent_at' => function (?string $value) : void { $this->m_sentAt = $value; },
+            'next_attempt_at' => function (int $value) : void { $this->m_nextAttemptAt = $value; },
+            'dispatched_at' => function (?float $value) : void { $this->m_dispatchedAt = $value; },
+            'sent_at' => function (?float $value) : void { $this->m_sentAt = $value; },
             'provider' => function (?string $value) : void { $this->m_provider = $value; },
             'provider_message_id' => function (?string $value) : void { $this->m_providerMessageId = $value; },
             'last_error' => function (?string $value) : void { $this->m_lastError = $value; },
-            'created_at' => function (string $value) : void { $this->m_createdAt = $value; },
+            'created_at' => function (int $value) : void { $this->m_createdAt = $value; },
             'tried_providers' => function (string $value) : void { $this->m_triedProviders = $value; },
             'retry_round' => function (int $value) : void { $this->m_retryRound = $value; },
-            'attachments_removed_at' => function (?string $value) : void { $this->m_attachmentsRemovedAt = $value; },
+            'attachments_removed_at' => function (?int $value) : void { $this->m_attachmentsRemovedAt = $value; },
             'removed_attachment_count' => function (int $value) : void { $this->m_removedAttachmentCount = $value; },
             'priority' => function (int $value) : void { $this->m_priority = $value; },
         ];
@@ -131,16 +131,16 @@ class EmailMessage extends \Programster\PgsqlObjects\AbstractRecord
     public function getStatus() : string { return $this->m_status; }
     public function wasQueued() : bool { return $this->m_wasQueued; }
     public function getAttempts() : int { return $this->m_attempts; }
-    public function getNextAttemptAt() : string { return $this->m_nextAttemptAt; }
-    public function getDispatchedAt() : ?string { return $this->m_dispatchedAt; }
-    public function getSentAt() : ?string { return $this->m_sentAt; }
+    public function getNextAttemptAt() : int { return $this->m_nextAttemptAt; }
+    public function getDispatchedAt() : ?float { return $this->m_dispatchedAt; }
+    public function getSentAt() : ?float { return $this->m_sentAt; }
     public function getProvider() : ?string { return $this->m_provider; }
     public function getProviderMessageId() : ?string { return $this->m_providerMessageId; }
     public function getLastError() : ?string { return $this->m_lastError; }
-    public function getCreatedAt() : string { return $this->m_createdAt; }
+    public function getCreatedAt() : int { return $this->m_createdAt; }
     public function getTriedProviders() : string { return $this->m_triedProviders; }
     public function getRetryRound() : int { return $this->m_retryRound; }
-    public function getAttachmentsRemovedAt() : ?string { return $this->m_attachmentsRemovedAt; }
+    public function getAttachmentsRemovedAt() : ?int { return $this->m_attachmentsRemovedAt; }
     public function getRemovedAttachmentCount() : int { return $this->m_removedAttachmentCount; }
     public function getPriority() : int { return $this->m_priority; }
 

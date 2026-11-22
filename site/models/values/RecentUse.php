@@ -12,7 +12,7 @@ final readonly class RecentUse
 {
     private string $m_name;
     private string $m_path;
-    private string $m_usedAt;
+    private int $m_usedAt;
     private string $m_ip;
 
 
@@ -21,12 +21,12 @@ final readonly class RecentUse
      *
      * @param string $path - its page, e.g. "/admin/users/<id>".
      *
-     * @param string $usedAt - when it was last used.
+     * @param int $usedAt - when it was last used (a Unix timestamp).
      *
      * @param string $ip - the IP address it was used from, or an empty string, if it was last used before they were
      * recorded.
      */
-    private function __construct(string $name, string $path, string $usedAt, string $ip)
+    private function __construct(string $name, string $path, int $usedAt, string $ip)
     {
         $this->m_name = $name;
         $this->m_path = $path;
@@ -38,7 +38,7 @@ final readonly class RecentUse
     public static function createForUser(AdminUser $user) : RecentUse
     {
         $path = '/admin/users/' . rawurlencode($user->getId());
-        $usedAt = (string)$user->getLastLoginAt();
+        $usedAt = (int)$user->getLastLoginAt();
         return new RecentUse($user->getEmail(), $path, $usedAt, (string)$user->getLastLoginIp());
     }
 
@@ -46,7 +46,7 @@ final readonly class RecentUse
     public static function createForApiKey(ApiKey $apiKey) : RecentUse
     {
         // API keys have no page of their own, so this is the page that lists them.
-        $usedAt = (string)$apiKey->getLastUsedAt();
+        $usedAt = (int)$apiKey->getLastUsedAt();
         return new RecentUse($apiKey->getName(), '/api-keys', $usedAt, (string)$apiKey->getLastUsedIp());
     }
 
@@ -54,7 +54,7 @@ final readonly class RecentUse
     public static function createForEmailToken(EmailToken $emailToken) : RecentUse
     {
         $path = '/email-tokens/' . rawurlencode($emailToken->getId());
-        $usedAt = (string)$emailToken->getLastUsedAt();
+        $usedAt = (int)$emailToken->getLastUsedAt();
         return new RecentUse($emailToken->getName(), $path, $usedAt, (string)$emailToken->getLastUsedIp());
     }
 
@@ -62,6 +62,6 @@ final readonly class RecentUse
     # Accessors
     public function getName() : string { return $this->m_name; }
     public function getPath() : string { return $this->m_path; }
-    public function getUsedAt() : string { return $this->m_usedAt; }
+    public function getUsedAt() : int { return $this->m_usedAt; }
     public function getIp() : string { return $this->m_ip; }
 }

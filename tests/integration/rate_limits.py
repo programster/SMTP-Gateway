@@ -14,7 +14,7 @@ web = WebClient.create_logged_in()
 
 def find_most_in_any_second(subject_pattern: str) -> tuple[int, int]:
     """Get how many emails with matching subjects were sent, and the most that were sent within any one second."""
-    query = f"SELECT extract(epoch FROM dispatched_at) FROM email_message WHERE subject LIKE '{subject_pattern}'"
+    query = f"SELECT dispatched_at FROM email_message WHERE subject LIKE '{subject_pattern}'"
     times = [float(value) for value in stack.sql(query).split()]
     most = 0
 

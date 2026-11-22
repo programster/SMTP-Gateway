@@ -177,7 +177,7 @@ readonly class EmailRetentionPolicy
      */
     public function getContentDueForDeletionSql() : string
     {
-        $cutoff = "now() - make_interval(days => {$this->getContentDays()})";
+        $cutoff = "unix_time_precise() - {$this->getContentDays()} * 86400";
         $older = self::FINISHED_WITH_CONTENT_SQL . ' AND ' . self::FINISHED_AT_SQL . " < {$cutoff}";
 
         return match ($this->m_content->getMode()) {
@@ -199,7 +199,7 @@ readonly class EmailRetentionPolicy
     public function getAttachmentsDueForRemovalSql() : string
     {
         $due = self::FINISHED_WITH_CONTENT_SQL . ' AND "attachments_removed_at" IS NULL';
-        $cutoff = "now() - make_interval(days => {$this->getAttachmentDays()})";
+        $cutoff = "unix_time_precise() - {$this->getAttachmentDays()} * 86400";
         $older = $due . ' AND ' . self::FINISHED_AT_SQL . " < {$cutoff}";
 
         $condition = match ($this->m_attachments->getMode()) {

@@ -10,15 +10,15 @@ declare(strict_types = 1);
 final readonly class CloudflareNetworksStatus
 {
     private int $m_count;
-    private string $m_fetchedAt;
+    private int $m_fetchedAt;
 
 
     /**
      * @param int $count - how many ranges are stored.
      *
-     * @param string $fetchedAt - when they were last fetched, or an empty string, if they never have been.
+     * @param int $fetchedAt - when they were last fetched (a Unix timestamp), or 0 if they never have been.
      */
-    public function __construct(int $count, string $fetchedAt)
+    public function __construct(int $count, int $fetchedAt)
     {
         $this->m_count = $count;
         $this->m_fetchedAt = $fetchedAt;
@@ -33,5 +33,5 @@ final readonly class CloudflareNetworksStatus
 
     # Accessors
     public function getCount() : int { return $this->m_count; }
-    public function getFetchedAt() : string { return $this->m_fetchedAt; }
+    public function getFetchedAt() : int { return $this->m_fetchedAt; }
 }

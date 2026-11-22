@@ -33,31 +33,31 @@ final class Stats
         $query = <<<SQL
             SELECT
                 (SELECT count(*) FROM "email_message"
-                    WHERE {$messageFilter} AND "created_at" > now() - interval '1 minute') AS "last_minute",
+                    WHERE {$messageFilter} AND "created_at" > unix_time() - 60) AS "last_minute",
                 (SELECT count(*) FROM "email_message"
-                    WHERE {$messageFilter} AND "created_at" > now() - interval '1 hour') AS "last_hour",
+                    WHERE {$messageFilter} AND "created_at" > unix_time() - 3600) AS "last_hour",
                 (SELECT count(*) FROM "email_message"
-                    WHERE {$messageFilter} AND "created_at" > now() - interval '24 hours') AS "last_24_hours",
+                    WHERE {$messageFilter} AND "created_at" > unix_time() - 86400) AS "last_24_hours",
                 (SELECT count(*) FROM "email_message"
-                    WHERE {$messageFilter} AND "created_at" > now() - interval '7 days') AS "last_7_days",
+                    WHERE {$messageFilter} AND "created_at" > unix_time() - 604800) AS "last_7_days",
                 (SELECT count(*) FROM "email_message" WHERE {$messageFilter} AND "status" = 'queued') AS "queued_now",
                 (SELECT count(*) FROM "email_message"
-                    WHERE {$messageFilter} AND "status" = 'failed' AND "created_at" > now() - interval '24 hours')
+                    WHERE {$messageFilter} AND "status" = 'failed' AND "created_at" > unix_time() - 86400)
                     AS "failed_last_24_hours",
                 (SELECT count(*) FROM "rejected_request"
-                    WHERE {$messageFilter} AND "created_at" > now() - interval '1 hour') AS "rejected_last_hour",
+                    WHERE {$messageFilter} AND "created_at" > unix_time() - 3600) AS "rejected_last_hour",
                 (SELECT count(*) FROM "rejected_request"
-                    WHERE {$messageFilter} AND "created_at" > now() - interval '24 hours') AS "rejected_last_24_hours",
+                    WHERE {$messageFilter} AND "created_at" > unix_time() - 86400) AS "rejected_last_24_hours",
                 (SELECT count(*) FROM "rejected_request"
-                    WHERE {$messageFilter} AND "created_at" > now() - interval '7 days') AS "rejected_last_7_days",
+                    WHERE {$messageFilter} AND "created_at" > unix_time() - 604800) AS "rejected_last_7_days",
                 (SELECT count(*) FROM "rejected_request"
-                    WHERE {$messageFilter} AND {$byService} AND "created_at" > now() - interval '24 hours')
+                    WHERE {$messageFilter} AND {$byService} AND "created_at" > unix_time() - 86400)
                     AS "rejected_by_service_last_24_hours",
                 (SELECT count(*) FROM "rejected_request"
-                    WHERE {$messageFilter} AND {$byProvider} AND "created_at" > now() - interval '24 hours')
+                    WHERE {$messageFilter} AND {$byProvider} AND "created_at" > unix_time() - 86400)
                     AS "refused_while_waiting_last_24_hours",
                 (SELECT count(*) FROM "email_message" AS "m"
-                    WHERE {$eventFilter} AND {$failedAfterQueueing} AND "m"."created_at" > now() - interval '24 hours')
+                    WHERE {$eventFilter} AND {$failedAfterQueueing} AND "m"."created_at" > unix_time() - 86400)
                     AS "failed_after_queueing_last_24_hours",
                 (SELECT count(*) FROM "email_message" AS "m" WHERE {$eventFilter} AND {$retrying}) AS "retrying_now",
                 "e".*
@@ -70,7 +70,7 @@ final class Stats
                     count(*) FILTER (WHERE "event_type" = 'spam_report') AS "spam_reports_last_7_days"
                 FROM "email_event" AS "ev"
                 LEFT JOIN "email_message" AS "m" ON "m"."id" = "ev"."email_message_id"
-                WHERE {$eventFilter} AND "ev"."occurred_at" > now() - interval '7 days'
+                WHERE {$eventFilter} AND "ev"."occurred_at" > unix_time() - 604800
             ) AS "e"
             SQL;
 
@@ -96,13 +96,13 @@ final class Stats
                 count("m"."id") AS "accepted",
                 count("m"."id") FILTER (WHERE "m"."was_queued") AS "queued"
             FROM generate_series(
-                date_trunc('hour', now()) - interval '23 hours',
-                date_trunc('hour', now()),
-                interval '1 hour'
+                (unix_time() / 3600) * 3600 - 82800,
+                (unix_time() / 3600) * 3600,
+                3600
             ) AS "h"("hour_start")
             LEFT JOIN "email_message" AS "m"
                 ON "m"."created_at" >= "h"."hour_start"
-                AND "m"."created_at" < "h"."hour_start" + interval '1 hour'{$tokenFilter}
+                AND "m"."created_at" < "h"."hour_start" + 3600{$tokenFilter}
             GROUP BY "h"."hour_start"
             ORDER BY "h"."hour_start"
             SQL;
@@ -111,7 +111,7 @@ final class Stats
 
         foreach (pg_fetch_all(ServiceFactory::getDb()->query($query)) as $row)
         {
-            $hourStart = new DateTimeImmutable($row['hour_start']);
+            $hourStart = Time::toDateTime((int)$row['hour_start']);
             $volumes[] = new HourlyVolume($hourStart, (int)$row['accepted'], (int)$row['queued']);
         }
 
@@ -175,7 +175,7 @@ final class Stats
         $where = implode(' AND ', $conditions);
         $query =
             "SELECT \"m\".\"id\" FROM \"email_message\" AS \"m\" WHERE {$where}"
-            . " ORDER BY \"m\".\"created_at\" DESC LIMIT {$limit}";
+            . " ORDER BY \"m\".\"created_at\" DESC, \"m\".\"id\" DESC LIMIT {$limit}";
 
         $messages = [];
 
@@ -197,16 +197,15 @@ final class Stats
      */
     public static function loadEvents(EmailMessage $message) : EmailEventCollection
     {
-        $id = ServiceFactory::getDb()->escapeValue($message->getId());
-        $events = [];
+        $wherePairs = ['email_message_id' => $message->getId()];
+        $events = EmailEventTable::getInstance()->loadWhereAnd($wherePairs, CacheMode::IGNORE_CACHE);
 
-        $query = "SELECT \"id\" FROM \"email_event\" WHERE \"email_message_id\" = {$id} ORDER BY \"occurred_at\"";
+        $compareOldestFirst = function (EmailEvent $a, EmailEvent $b) : int {
+            $order = $a->getOccurredAt() <=> $b->getOccurredAt();
+            return ($order !== 0) ? $order : strcmp((string)$a->getId(), (string)$b->getId());
+        };
 
-        foreach (pg_fetch_all(ServiceFactory::getDb()->query($query)) as $row)
-        {
-            $events[] = EmailEventTable::getInstance()->load($row['id'], CacheMode::IGNORE_CACHE);
-        }
-
+        usort($events, $compareOldestFirst);
         return new EmailEventCollection(...$events);
     }
 
@@ -224,18 +223,19 @@ final class Stats
         $attempts = [];
 
         $query =
-            'SELECT "provider", "dispatched_at", coalesce("finished_at"::text, \'\') AS "finished_at", "outcome",'
+            'SELECT "provider", "dispatched_at", "finished_at", "outcome",'
             . " coalesce(\"error\", '') AS \"error\" FROM \"email_attempt\" WHERE \"email_message_id\" = {$id}"
-            . ' ORDER BY "dispatched_at"';
+            . ' ORDER BY "dispatched_at", "id"';
 
         foreach (pg_fetch_all(ServiceFactory::getDb()->query($query)) as $row)
         {
             $outcome = AttemptOutcome::from($row['outcome']);
+            $finishedAt = ($row['finished_at'] === null) ? null : (float)$row['finished_at'];
 
             $attempts[] = new EmailAttempt(
                 $row['provider'],
-                $row['dispatched_at'],
-                $row['finished_at'],
+                (float)$row['dispatched_at'],
+                $finishedAt,
                 $outcome,
                 $row['error']
             );
@@ -272,7 +272,9 @@ final class Stats
         $windowCondition = $window->getSqlCondition('"created_at"');
         $where = "{$tokenCondition} AND {$origin->getSqlCondition()} AND {$windowCondition}";
 
-        $query = "SELECT \"id\" FROM \"rejected_request\" WHERE {$where} ORDER BY \"created_at\" DESC LIMIT {$limit}";
+        $query =
+            "SELECT \"id\" FROM \"rejected_request\" WHERE {$where}"
+            . " ORDER BY \"created_at\" DESC, \"id\" DESC LIMIT {$limit}";
 
         foreach (pg_fetch_all(ServiceFactory::getDb()->query($query)) as $row)
         {

@@ -15,7 +15,7 @@ new_password = 'A-brand-new-password-2'
 stack.clear_mailpits()
 # Only one reset email is sent per account every 5 minutes, so any earlier one (e.g. the priority suite's) is moved
 # out of the way.
-stack.sql("UPDATE password_reset_token SET created_at = now() - interval '10 minutes'")
+stack.sql("UPDATE password_reset_token SET created_at = unix_time() - 600")
 # The log's IDs are UUIDv7s, which sort by time, so later entries are those after this one. On a fresh stack the log
 # may still be empty, so then every entry counts, as every UUIDv7 sorts after the nil UUID.
 log_start = stack.sql('SELECT id FROM log ORDER BY id DESC LIMIT 1') or '00000000-0000-0000-0000-000000000000'
@@ -118,11 +118,11 @@ suite.check('and logs out the other', second.request('GET', '/').get_status() ==
 
 # An expired link.
 stack.clear_mailpits()
-stack.sql("UPDATE password_reset_token SET created_at = now() - interval '10 minutes'")
+stack.sql("UPDATE password_reset_token SET created_at = unix_time() - 600")
 ask_for_reset(anonymous, stack.ADMIN_EMAIL)
 time.sleep(2)
 expired_path = find_reset_path()
-stack.sql("UPDATE password_reset_token SET expires_at = now() - interval '1 second' WHERE used_at IS NULL")
+stack.sql("UPDATE password_reset_token SET expires_at = unix_time() - 1 WHERE used_at IS NULL")
 suite.check('expired link refused', anonymous.request('GET', expired_path).get_status() == 400)
 
 # The command line reset.

@@ -341,7 +341,7 @@ suite.check('what wasn\'t sent is broken down, each with a line saying what it i
 has_help = 'data-dialog="not-sent-help"' in page and 'Each email is counted once, however many' in page
 suite.check('and a help dialog explaining each in full', has_help and '/js/HelpDialogsOnPage.js' in page)
 rejected = int(stack.sql("SELECT count(*) FROM rejected_request WHERE reason <> 'provider_rejected'"
-                         " AND created_at > now() - interval '24 hours'"))
+                         " AND created_at > unix_time() - 86400"))
 tile = re.search(r'tile-value">([\d,]+)</span><span\s+class="tile-label">Rejected by this service', page)
 suite.check('the requests this service turned away are counted', tile is not None
             and int(tile.group(1).replace(',', '')) == rejected, (tile and tile.group(1), rejected))
@@ -397,8 +397,8 @@ recorded = stack.sql(f"SELECT last_login_ip IS NOT NULL FROM admin_user WHERE id
 suite.check('a login records where it was from', recorded == 't')
 suite.check('the users page shows it', re.search(r'from\s+<span class="mono">', web.get('/admin/users')) is not None)
 suite.check('so does the API keys page', re.search(r'from\s+<span class="mono">', web.get('/api-keys')) is not None)
-stack.sql("UPDATE api_key SET created_at = now() - interval '300 days' WHERE name = 'restricted'")
-stack.sql("UPDATE api_key SET created_at = now() - interval '400 days' WHERE name = 'e2e'")
+stack.sql("UPDATE api_key SET created_at = unix_time() - 300 * 86400 WHERE name = 'restricted'")
+stack.sql("UPDATE api_key SET created_at = unix_time() - 400 * 86400 WHERE name = 'e2e'")
 page = web.get('/api-keys')
 suite.check('each API key\'s age is shown in days', '<th>Age</th>' in page and 'class="key-age' in page)
 suite.check('in yellow from 9 months', 'age-warning" title="Nearly a year old">300 days</span>' in page)

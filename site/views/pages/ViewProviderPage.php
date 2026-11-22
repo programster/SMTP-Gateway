@@ -13,6 +13,7 @@ class ViewProviderPage extends Programster\AbstractView\AbstractView
 {
     private readonly ProviderDefinition $m_provider;
     private readonly ProvidersConfig $m_config;
+    private readonly ProviderActivity $m_activity;
     private readonly string $m_version;
     private readonly string $m_newWebhookToken;
 
@@ -22,6 +23,8 @@ class ViewProviderPage extends Programster\AbstractView\AbstractView
      *
      * @param ProvidersConfig $config - every provider, to say where this one is in the order.
      *
+     * @param ProviderActivity $activity - how the providers are being used.
+     *
      * @param string $version - the version of the providers, for removing it.
      *
      * @param string $newWebhookToken - a webhook token that's just been generated, to show this once, or an empty
@@ -30,6 +33,7 @@ class ViewProviderPage extends Programster\AbstractView\AbstractView
     public function __construct(
         ProviderDefinition $provider,
         ProvidersConfig $config,
+        ProviderActivity $activity,
         string $version,
         string $newWebhookToken = ''
     )
@@ -37,6 +41,7 @@ class ViewProviderPage extends Programster\AbstractView\AbstractView
         $this->m_newWebhookToken = $newWebhookToken;
         $this->m_provider = $provider;
         $this->m_config = $config;
+        $this->m_activity = $activity;
         $this->m_version = $version;
     }
 
@@ -46,11 +51,11 @@ class ViewProviderPage extends Programster\AbstractView\AbstractView
         $provider = $this->m_provider;
         $name = $provider->getName();
         $path = '/providers/' . rawurlencode($name);
-        $counts = ProviderStats::loadRecentCounts();
+        $counts = $this->m_activity->getRecentCounts();
         $noneSent = ['last_minute' => 0, 'last_hour' => 0, 'last_24_hours' => 0, 'recipients_last_24_hours' => 0];
         $sent = $counts[$name] ?? $noneSent;
-        $unavailable = ProviderStatusRepository::loadUnavailableDetails();
-        $links = EmailTokenRepository::loadProviderLinks();
+        $unavailable = $this->m_activity->getUnavailable();
+        $links = $this->m_activity->getTokenLinks();
         $removal = ProviderRemovalNotice::createForProvider($provider, $this->m_config, $links);
         $linked = $links->filterLinkedTo($provider->getId());
         $strandedIfDisabled = $links->filterStrandedWithout($provider->getId(), $this->m_config);

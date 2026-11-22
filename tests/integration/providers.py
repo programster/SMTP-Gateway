@@ -113,8 +113,8 @@ save_config(original)
 # Overflow: the primary is limited to 2 emails a minute, so the next 2 go to the secondary.
 stack.clear_mailpits()
 # Earlier sends are moved out of the way, so they don't count towards the limit.
-stack.sql("UPDATE email_message SET dispatched_at = dispatched_at - interval '1 hour' WHERE dispatched_at IS NOT NULL")
-stack.sql("UPDATE email_attempt SET dispatched_at = dispatched_at - interval '1 hour'")
+stack.sql("UPDATE email_message SET dispatched_at = dispatched_at - 3600 WHERE dispatched_at IS NOT NULL")
+stack.sql("UPDATE email_attempt SET dispatched_at = dispatched_at - 3600")
 config = copy.deepcopy(original)
 config['providers'][0]['rate_limits'] = [{'unit': 'emails', 'max': 2, 'period_seconds': 60}]
 save_config(config)
@@ -167,7 +167,7 @@ try:
     reply = send('primary-down')
     is_moved_on = reply.is_sent() and find_outcome('primary-down') == 'mailpit-secondary/sent'
     suite.check('primary unreachable: the secondary sends, and the client is told', is_moved_on, reply)
-    query = "SELECT count(*) FROM provider_status WHERE provider = 'mailpit' AND unavailable_until > now()"
+    query = "SELECT count(*) FROM provider_status WHERE provider = 'mailpit' AND unavailable_until > unix_time()"
     suite.check('the primary is marked unavailable', stack.sql(query) == '1')
     statuses = call_api('GET', '/providers', auth).get_json()['status']
     is_shown = any(status['name'] == 'mailpit' and status['available'] is False for status in statuses)
@@ -184,7 +184,7 @@ finally:
     stack.start_services('mailpit', 'mailpit-secondary')
 
 stack.sql('DELETE FROM provider_status')
-stack.sql("UPDATE email_message SET next_attempt_at = now() WHERE subject = 'both-down'")
+stack.sql("UPDATE email_message SET next_attempt_at = unix_time() WHERE subject = 'both-down'")
 
 
 def is_sent_after_all() -> bool:
@@ -227,7 +227,7 @@ def are_all_parallel_sent() -> bool:
 
 
 stack.wait_until(are_all_parallel_sent, 20)
-query = "SELECT extract(epoch FROM dispatched_at) FROM email_message WHERE subject LIKE 'parallel-%'"
+query = "SELECT dispatched_at FROM email_message WHERE subject LIKE 'parallel-%'"
 times = [float(value) for value in stack.sql(query).split()]
 most = max(len([other for other in times if start <= other < start + 1.0]) for start in times)
 suite.check('all 16 sent, never more than 2 in any second', len(times) == 16 and most <= 2, (len(times), most))
@@ -326,8 +326,8 @@ suite.check('once it\'s enabled again, the queued email is sent through it', is_
 
 # A higher priority token waiting for room under its own provider doesn't hold up a lower priority one that can use
 # another provider.
-stack.sql("UPDATE email_message SET dispatched_at = dispatched_at - interval '1 hour' WHERE dispatched_at IS NOT NULL")
-stack.sql("UPDATE email_attempt SET dispatched_at = dispatched_at - interval '1 hour'")
+stack.sql("UPDATE email_message SET dispatched_at = dispatched_at - 3600 WHERE dispatched_at IS NOT NULL")
+stack.sql("UPDATE email_attempt SET dispatched_at = dispatched_at - 3600")
 config = copy.deepcopy(original)
 config['providers'][0]['rate_limits'] = [{'unit': 'emails', 'max': 1, 'period_seconds': 60}]
 save_config(config)
@@ -346,7 +346,7 @@ suite.check('nor is an unrestricted one, which can use the other provider', is_t
 outcome = find_outcome('high-waiting')
 suite.check('and the high priority email still waits for its own', outcome == '/queued', outcome)
 save_config(original)
-stack.sql("UPDATE email_attempt SET dispatched_at = dispatched_at - interval '1 hour'")
+stack.sql("UPDATE email_attempt SET dispatched_at = dispatched_at - 3600")
 
 # Removing a provider says which tokens were linked to it, and drops their links. One left with none stays
 # restricted, to none, rather than being allowed every provider.
@@ -380,7 +380,7 @@ def is_removed_one_sent() -> bool:
     return find_outcome('only-secondary-removed').endswith('/sent')
 
 
-stack.sql("UPDATE email_message SET next_attempt_at = now() WHERE subject = 'only-secondary-removed'")
+stack.sql("UPDATE email_message SET next_attempt_at = unix_time() WHERE subject = 'only-secondary-removed'")
 is_sent = stack.wait_until(is_removed_one_sent, 20)
 suite.check('and its queued email is then sent', is_sent, find_outcome('only-secondary-removed'))
 

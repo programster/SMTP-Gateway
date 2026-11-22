@@ -14,11 +14,11 @@ class ViewRevokedAge extends Programster\AbstractView\AbstractView
 
 
     /**
-     * @param string $createdAt - when it was created, as read from the database.
+     * @param int $createdAt - when it was created (a Unix timestamp).
      *
-     * @param string $revokedAt - when it was revoked, as read from the database.
+     * @param int $revokedAt - when it was revoked (a Unix timestamp).
      */
-    public function __construct(string $createdAt, string $revokedAt)
+    public function __construct(int $createdAt, int $revokedAt)
     {
         $this->m_days = Time::getDaysBetween($createdAt, $revokedAt);
     }

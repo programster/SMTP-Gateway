@@ -12,6 +12,10 @@ class ViewApiKeysPage extends Programster\AbstractView\AbstractView
 {
     private readonly ApiKeyCollection $m_active;
     private readonly ApiKeyCollection $m_revoked;
+
+    /** @var array<string, string[]> */
+    private readonly array $m_allowedNetworks;
+
     private readonly bool $m_isShowingRevoked;
     private readonly array $m_values;
     private readonly string $m_error;
@@ -20,6 +24,9 @@ class ViewApiKeysPage extends Programster\AbstractView\AbstractView
     /**
      * @param ApiKeyCollection $apiKeys - every API key, active and revoked.
      *
+     * @param array<string, string[]> $allowedNetworks - each API key's ID, to the networks it can be used from (see
+     * ApiKeyRepository::loadAllowedNetworkStrings()).
+     *
      * @param bool $isShowingRevoked - whether the Revoked tab is the one open.
      *
      * @param array<string, string> $values - the form's values: "name", and the allowed IP addresses' rows,
@@ -27,7 +34,13 @@ class ViewApiKeysPage extends Programster\AbstractView\AbstractView
      *
      * @param string $error - why the form was invalid, or an empty string.
      */
-    public function __construct(ApiKeyCollection $apiKeys, bool $isShowingRevoked, array $values, string $error)
+    public function __construct(
+        ApiKeyCollection $apiKeys,
+        array $allowedNetworks,
+        bool $isShowingRevoked,
+        array $values,
+        string $error
+    )
     {
         $active = [];
         $revoked = [];
@@ -47,6 +60,7 @@ class ViewApiKeysPage extends Programster\AbstractView\AbstractView
 
         $this->m_active = new ApiKeyCollection(...$active);
         $this->m_revoked = new ApiKeyCollection(...$revoked);
+        $this->m_allowedNetworks = $allowedNetworks;
         $this->m_isShowingRevoked = $isShowingRevoked;
         $this->m_values = $values;
         $this->m_error = $error;
@@ -148,7 +162,7 @@ class ViewApiKeysPage extends Programster\AbstractView\AbstractView
     </thead>
     <tbody>
     <?php foreach ($this->m_revoked as $apiKey): ?>
-        <?php /* @var $apiKey ApiKey */ $revokedAt = (string)$apiKey->getRevokedAt(); ?>
+        <?php /* @var $apiKey ApiKey */ $revokedAt = (int)$apiKey->getRevokedAt(); ?>
         <tr>
             <td><?php $this->renderName($apiKey); ?></td>
             <td class="mono"><?= Html::e($apiKey->getId()) ?></td>
@@ -169,10 +183,9 @@ class ViewApiKeysPage extends Programster\AbstractView\AbstractView
     // A key's name, with the IP addresses it can be used from under it.
     private function renderName(ApiKey $apiKey) : void
     {
+        $networks = $this->m_allowedNetworks[$apiKey->getId()] ?? [];
 ?>
-<?= Html::e($apiKey->getName()) ?><br><span class="hint mono"><?= Html::e(
-    implode(', ', ApiKeyRepository::loadAllowedNetworks($apiKey)->toStrings())
-) ?></span>
+<?= Html::e($apiKey->getName()) ?><br><span class="hint mono"><?= Html::e(implode(', ', $networks)) ?></span>
 <?php
     }
 }

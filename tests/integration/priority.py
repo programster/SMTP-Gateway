@@ -55,7 +55,7 @@ high_key = EmailToken(high['token'])
 replies = [send_email(low_key, f'prio-low-{number}') for number in range(4)]
 replies.append(send_email(high_key, 'prio-high'))
 # Only one reset email is sent per account every 5 minutes, so any earlier one is moved out of the way.
-stack.sql("UPDATE password_reset_token SET created_at = now() - interval '10 minutes'")
+stack.sql("UPDATE password_reset_token SET created_at = unix_time() - 600")
 web.post_form('/forgot-password', '/forgot-password', {'email': stack.ADMIN_EMAIL})
 suite.check('all but the first told queued', all(reply.is_queued() for reply in replies[1:]), replies)
 
@@ -71,7 +71,7 @@ expected = ['prio-low-0', 'Reset your password', 'prio-high', 'prio-low-1', 'pri
 suite.check('order: the service\'s own, then high, then the rest of low', order == expected, order)
 
 gaps = stack.sql(
-    'SELECT round(min(gap)) FROM (SELECT extract(epoch FROM dispatched_at - lag(dispatched_at)'
+    'SELECT round(min(gap)) FROM (SELECT (dispatched_at - lag(dispatched_at)'
     f' OVER (ORDER BY dispatched_at)) AS gap FROM email_message WHERE {ours}) AS gaps WHERE gap IS NOT NULL'
 )
 

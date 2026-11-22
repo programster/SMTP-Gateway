@@ -38,9 +38,9 @@ enum TimeWindow : string
 
 
     /**
-     * Get the SQL condition that a time column is within it, e.g. "created_at" > now() - interval '1 hour'.
+     * Get the SQL condition that a time column is within it, e.g. "created_at" > unix_time() - 3600.
      *
-     * @param string $column - the column, escaped, e.g. '"created_at"'.
+     * @param string $column - the column, a bigint Unix timestamp, escaped, e.g. '"created_at"'.
      *
      * @return string - the condition, which is "TRUE" for ANY_TIME.
      */
@@ -48,12 +48,12 @@ enum TimeWindow : string
     {
         return match ($this) {
             TimeWindow::ANY_TIME => 'TRUE',
-            TimeWindow::LAST_MINUTE => "{$column} > now() - interval '1 minute'",
-            TimeWindow::LAST_HOUR => "{$column} > now() - interval '1 hour'",
-            TimeWindow::LAST_24_HOURS => "{$column} > now() - interval '24 hours'",
-            TimeWindow::LAST_7_DAYS => "{$column} > now() - interval '7 days'",
-            TimeWindow::LAST_30_DAYS => "{$column} > now() - interval '30 days'",
-            TimeWindow::LAST_365_DAYS => "{$column} > now() - interval '365 days'",
+            TimeWindow::LAST_MINUTE => "{$column} > unix_time() - 60",
+            TimeWindow::LAST_HOUR => "{$column} > unix_time() - 3600",
+            TimeWindow::LAST_24_HOURS => "{$column} > unix_time() - 86400",
+            TimeWindow::LAST_7_DAYS => "{$column} > unix_time() - 604800",
+            TimeWindow::LAST_30_DAYS => "{$column} > unix_time() - 2592000",
+            TimeWindow::LAST_365_DAYS => "{$column} > unix_time() - 31536000",
         };
     }
 }

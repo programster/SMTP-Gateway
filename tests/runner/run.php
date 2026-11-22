@@ -48,7 +48,8 @@ function createSuites(bool $isLoadTesting) : SuiteCollection
         'ResourceAdvisorTest', 'NavigationTest', 'TokenTest',
         'DocumentationTest', 'ProviderFormTest', 'ClientIpTest', 'RateLimitReplyTest', 'PasswordPolicyTest',
         'BackupCodeTest', 'EmailContentTest', 'PasswordHashTest', 'ProviderRestrictionTest',
-        'ProviderSendersTest', 'Smtp2GoTest', 'RegexToPostgresConverterTest', 'AccountWritesTest'
+        'ProviderSendersTest', 'Smtp2GoTest', 'RegexToPostgresConverterTest', 'AccountWritesTest',
+        'UnixTimeTest'
     );
 
     $suites = new SuiteCollection(
