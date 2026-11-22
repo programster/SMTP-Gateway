@@ -22,7 +22,7 @@
         "programster/pgsql-lib": "^3.3.0-alpha2@alpha",
         "programster/pgsql-logger": "^3.0.0-alpha1@alpha",
         "programster/pgsql-migrations": "^1.2",
-        "programster/pgsql-objects": "^5.0.0-alpha8@alpha",
+        "programster/pgsql-objects": "^5.0.0-alpha9@alpha",
         "programster/swagger": "^4.0",
         "slim/psr7": "^1.5",
         "slim/slim": "4.*",

@@ -9,6 +9,8 @@ declare(strict_types = 1);
 
 use Programster\PgsqlLib\PgsqlLib;
 use Programster\PgsqlObjects\CacheMode;
+use Programster\PgsqlObjects\SortBy;
+use Programster\PgsqlObjects\SortOrder;
 
 
 final class Stats
@@ -198,14 +200,8 @@ final class Stats
     public static function loadEvents(EmailMessage $message) : EmailEventCollection
     {
         $wherePairs = ['email_message_id' => $message->getId()];
-        $events = EmailEventTable::getInstance()->loadWhereAnd($wherePairs, CacheMode::IGNORE_CACHE);
-
-        $compareOldestFirst = function (EmailEvent $a, EmailEvent $b) : int {
-            $order = $a->getOccurredAt() <=> $b->getOccurredAt();
-            return ($order !== 0) ? $order : strcmp((string)$a->getId(), (string)$b->getId());
-        };
-
-        usort($events, $compareOldestFirst);
+        $oldestFirst = new SortBy('occurred_at', SortOrder::ASC);
+        $events = EmailEventTable::getInstance()->loadWhereAnd($wherePairs, CacheMode::IGNORE_CACHE, $oldestFirst);
         return new EmailEventCollection(...$events);
     }
 

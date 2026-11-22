@@ -12,6 +12,8 @@ use Programster\PgsqlLib\PgsqlLib;
 use Programster\PgsqlLib\Query;
 use Programster\PgsqlObjects\CacheMode;
 use Programster\PgsqlObjects\OrmTransaction;
+use Programster\PgsqlObjects\SortBy;
+use Programster\PgsqlObjects\SortOrder;
 
 
 final class AdminUserRepository
@@ -252,14 +254,9 @@ final class AdminUserRepository
             }
         }
 
-        $users = AdminUserTable::getInstance()->loadWhereAnd(['status' => $statuses], CacheMode::IGNORE_CACHE);
-
-        $compareByEmail = function (AdminUser $a, AdminUser $b) : int {
-            $order = strcmp($a->getEmail(), $b->getEmail());
-            return ($order !== 0) ? $order : strcmp((string)$a->getId(), (string)$b->getId());
-        };
-
-        usort($users, $compareByEmail);
+        $wherePairs = ['status' => $statuses];
+        $byEmail = new SortBy('email', SortOrder::ASC);
+        $users = AdminUserTable::getInstance()->loadWhereAnd($wherePairs, CacheMode::IGNORE_CACHE, $byEmail);
         return new AdminUserCollection(...$users);
     }
 
@@ -271,15 +268,8 @@ final class AdminUserRepository
     public static function loadArchived() : AdminUserCollection
     {
         $wherePairs = ['status' => AccountStatus::ARCHIVED->value];
-        $users = AdminUserTable::getInstance()->loadWhereAnd($wherePairs, CacheMode::IGNORE_CACHE);
-
-        // One with no time goes first, as NULLs do in a descending sort in PostgreSQL.
-        $compareNewestFirst = function (AdminUser $a, AdminUser $b) : int {
-            $order = ($b->getStatusChangedAt() ?? PHP_INT_MAX) <=> ($a->getStatusChangedAt() ?? PHP_INT_MAX);
-            return ($order !== 0) ? $order : strcmp((string)$b->getId(), (string)$a->getId());
-        };
-
-        usort($users, $compareNewestFirst);
+        $newestFirst = new SortBy('status_changed_at', SortOrder::DESC);
+        $users = AdminUserTable::getInstance()->loadWhereAnd($wherePairs, CacheMode::IGNORE_CACHE, $newestFirst);
         return new AdminUserCollection(...$users);
     }
 

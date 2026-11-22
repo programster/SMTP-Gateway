@@ -16,6 +16,8 @@ use lbuchs\WebAuthn\WebAuthn;
 use lbuchs\WebAuthn\WebAuthnException;
 use Programster\CoreLibs\StringLib;
 use Programster\PgsqlObjects\CacheMode;
+use Programster\PgsqlObjects\SortBy;
+use Programster\PgsqlObjects\SortOrder;
 
 
 final class SecurityKeyService
@@ -235,14 +237,9 @@ final class SecurityKeyService
     public static function loadCredentials(AdminUser $user) : AdminWebauthnCredentialCollection
     {
         $wherePairs = ['admin_user_id' => $user->getId()];
-        $credentials = AdminWebauthnCredentialTable::getInstance()->loadWhereAnd($wherePairs, CacheMode::IGNORE_CACHE);
-
-        $compareOldestFirst = function (AdminWebauthnCredential $a, AdminWebauthnCredential $b) : int {
-            $order = $a->getCreatedAt() <=> $b->getCreatedAt();
-            return ($order !== 0) ? $order : strcmp((string)$a->getId(), (string)$b->getId());
-        };
-
-        usort($credentials, $compareOldestFirst);
+        $oldestFirst = new SortBy('created_at', SortOrder::ASC);
+        $table = AdminWebauthnCredentialTable::getInstance();
+        $credentials = $table->loadWhereAnd($wherePairs, CacheMode::IGNORE_CACHE, $oldestFirst);
         return new AdminWebauthnCredentialCollection(...$credentials);
     }
 

@@ -11,6 +11,8 @@ declare(strict_types = 1);
 use Programster\PgsqlLib\Query;
 use Programster\PgsqlObjects\CacheMode;
 use Programster\PgsqlObjects\OrmTransaction;
+use Programster\PgsqlObjects\SortBy;
+use Programster\PgsqlObjects\SortOrder;
 
 
 final class EmailTokenRepository
@@ -150,17 +152,12 @@ final class EmailTokenRepository
     public static function loadAll(bool $includeRevoked = true) : EmailTokenCollection
     {
         $table = EmailTokenTable::getInstance();
+        $newestFirst = new SortBy('created_at', SortOrder::DESC);
 
         $tokens = $includeRevoked
-            ? $table->loadAll(CacheMode::IGNORE_CACHE)
-            : $table->loadWhereAnd(['revoked_at' => null], CacheMode::IGNORE_CACHE);
+            ? $table->loadAll(CacheMode::IGNORE_CACHE, $newestFirst)
+            : $table->loadWhereAnd(['revoked_at' => null], CacheMode::IGNORE_CACHE, $newestFirst);
 
-        $compareNewestFirst = function (EmailToken $a, EmailToken $b) : int {
-            $order = $b->getCreatedAt() <=> $a->getCreatedAt();
-            return ($order !== 0) ? $order : strcmp((string)$b->getId(), (string)$a->getId());
-        };
-
-        usort($tokens, $compareNewestFirst);
         return new EmailTokenCollection(...$tokens);
     }
 

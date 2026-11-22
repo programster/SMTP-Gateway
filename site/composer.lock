@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "2057847daef14d13ab8f0144b3f8bee2",
+    "content-hash": "559a638e861c79870d4cbb99646f9b33",
     "packages": [
         {
             "name": "brick/math",
@@ -2133,16 +2133,16 @@
         },
         {
             "name": "programster/pgsql-objects",
-            "version": "5.0.0-alpha8",
+            "version": "5.0.0-alpha9",
             "source": {
                 "type": "git",
                 "url": "https://github.com/programster/package-pgsql-objects.git",
-                "reference": "0f9bae4bd36ef836caf203667b086a93e5197f83"
+                "reference": "48621d1320c4e2becde4665110a4d79479ba3ee4"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/programster/package-pgsql-objects/zipball/0f9bae4bd36ef836caf203667b086a93e5197f83",
-                "reference": "0f9bae4bd36ef836caf203667b086a93e5197f83",
+                "url": "https://api.github.com/repos/programster/package-pgsql-objects/zipball/48621d1320c4e2becde4665110a4d79479ba3ee4",
+                "reference": "48621d1320c4e2becde4665110a4d79479ba3ee4",
                 "shasum": ""
             },
             "require": {
@@ -2190,9 +2190,9 @@
             ],
             "support": {
                 "issues": "https://github.com/programster/package-pgsql-objects/issues",
-                "source": "https://github.com/programster/package-pgsql-objects/tree/5.0.0-alpha8"
+                "source": "https://github.com/programster/package-pgsql-objects/tree/5.0.0-alpha9"
             },
-            "time": "2026-11-22T14:06:21+00:00"
+            "time": "2026-11-22T17:37:33+00:00"
         },
         {
             "name": "programster/swagger",

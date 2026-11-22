@@ -8,6 +8,8 @@ declare(strict_types = 1);
 
 use Programster\PgsqlObjects\CacheMode;
 use Programster\PgsqlObjects\OrmTransaction;
+use Programster\PgsqlObjects\SortBy;
+use Programster\PgsqlObjects\SortOrder;
 
 
 final class ApiKeyRepository
@@ -114,14 +116,8 @@ final class ApiKeyRepository
      */
     public static function loadAll() : ApiKeyCollection
     {
-        $apiKeys = ApiKeyTable::getInstance()->loadAll(CacheMode::IGNORE_CACHE);
-
-        $compareNewestFirst = function (ApiKey $a, ApiKey $b) : int {
-            $order = $b->getCreatedAt() <=> $a->getCreatedAt();
-            return ($order !== 0) ? $order : strcmp((string)$b->getId(), (string)$a->getId());
-        };
-
-        usort($apiKeys, $compareNewestFirst);
+        $newestFirst = new SortBy('created_at', SortOrder::DESC);
+        $apiKeys = ApiKeyTable::getInstance()->loadAll(CacheMode::IGNORE_CACHE, $newestFirst);
         return new ApiKeyCollection(...$apiKeys);
     }
 
