@@ -107,7 +107,7 @@ $responses = [
         [
             'webhooks' => [
                 [
-                    'url' => WebhookBasicAuth::createUrl($webhookUrl, $secret), 'type' => 'transactional',
+                    'url' => createWebhookUrlWithSecret($webhookUrl, $secret), 'type' => 'transactional',
                     'events' => ['delivered', 'hardBounce', 'softBounce'],
                 ],
             ],

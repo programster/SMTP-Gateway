@@ -116,37 +116,6 @@ readonly class ProvidersConfig
 
 
     /**
-     * Find a provider by its id.
-     *
-     * @param ProviderId $id - the provider's id.
-     *
-     * @return ProviderDefinition
-     *
-     * @throws NotFoundException - if there's no provider with that id.
-     */
-    public function getProviderById(ProviderId $id) : ProviderDefinition
-    {
-        $found = null;
-
-        foreach ($this->m_providers as $provider)
-        {
-            /* @var $provider ProviderDefinition */
-            if ($found === null && $provider->getId()->equals($id))
-            {
-                $found = $provider;
-            }
-        }
-
-        if ($found === null)
-        {
-            throw new NotFoundException("There's no provider with the id {$id} in settings.yaml.");
-        }
-
-        return $found;
-    }
-
-
-    /**
      * Get every provider's id, in order.
      * @return ProviderIdCollection
      */

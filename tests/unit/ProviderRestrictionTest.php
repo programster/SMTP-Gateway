@@ -225,7 +225,12 @@ $suite->check('and only those', !str_contains($linkedToSecondary, 'provider test
 $stranded = $links->filterStrandedWithout($secondaryId, $stackConfig)->describeNames();
 $isStranded = str_contains($stranded, 'provider test: secondary');
 $suite->check('a token with only that provider would be left with none', $isStranded, $stranded);
-$secondary = $stackConfig->getProviderById($secondaryId);
+
+$isSecondaryProvider = function (ProviderDefinition $provider) use ($secondaryId) : bool {
+    return $provider->getId()->equals($secondaryId);
+};
+
+$secondary = array_find(iterator_to_array($stackConfig->getProviders()), $isSecondaryProvider);
 $notice = ProviderRemovalNotice::createForProvider($secondary, $stackConfig, $links)->getMessage();
 $isNamed = str_contains($notice, '"provider test: secondary"');
 $suite->check('the removal notice names the tokens linked to it', $isNamed, $notice);

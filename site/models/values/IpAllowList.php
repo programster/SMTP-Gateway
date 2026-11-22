@@ -44,29 +44,6 @@ readonly class IpAllowList implements IpRestrictionInterface
 
 
     /**
-     * Create the allow list from the written form used in the web interface: one network per line, or separated
-     * by commas. Blank lines are ignored.
-     *
-     * @param string $text - the networks, e.g. "10.0.0.0/8\n192.168.1.20".
-     *
-     * @return IpAllowList
-     *
-     * @throws InvalidInputException - if a network is invalid, or there are none.
-     */
-    public static function createFromText(string $text) : IpAllowList
-    {
-        $networks = [];
-
-        foreach (preg_split('/[\s,]+/', $text, -1, PREG_SPLIT_NO_EMPTY) as $part)
-        {
-            $networks[] = new IpNetwork($part);
-        }
-
-        return new IpAllowList(...$networks);
-    }
-
-
-    /**
      * Check whether an address is within any of the allowed networks.
      *
      * @param IpAddress $address - the address to check.

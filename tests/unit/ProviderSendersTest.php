@@ -187,7 +187,7 @@ foreach ($overlaps as [$first, $second, $expected])
 }
 
 // The sender checks only check a provider for the senders it takes.
-$takes = AddressRuleSet::createFromText('*@programster.org');
+$takes = new AddressRuleSet(AddressRule::createFromString('*@programster.org'));
 $checker = new SenderRestrictedChecker(new FailedSenderChecker('restricted', 'unreachable'), $takes);
 $levelOf = function (SenderCheckCollection $checks) : string {
     return $checks->toArray()[0]->getLevel()->value;

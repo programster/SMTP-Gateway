@@ -69,23 +69,6 @@ final class WebhookBasicAuth
 
 
     /**
-     * Get the address to give the provider for its webhook, with the secret in it.
-     *
-     * @param string $webhookUrl - the webhook's address (see ProviderWebhookUrl), e.g.
-     * "https://smtp.example.org/webhooks/postmark".
-     *
-     * @param string $secret - the secret.
-     *
-     * @return string - e.g. "https://webhook:<secret>@smtp.example.org/webhooks/postmark".
-     */
-    public static function createUrl(string $webhookUrl, string $secret) : string
-    {
-        $credentials = self::USERNAME . ':' . rawurlencode($secret) . '@';
-        return preg_replace('#^(https?://)#i', '${1}' . $credentials, $webhookUrl, 1);
-    }
-
-
-    /**
      * Get the password in an address (e.g. "https://user:password@host/"), if it has one.
      *
      * @param string $url - the address.

@@ -43,29 +43,6 @@ readonly class AddressRuleSet implements AddressRestrictionInterface
 
 
     /**
-     * Create the rules from the written form used in the web interface: one rule per line, or separated by commas.
-     * Blank lines are ignored. See AddressRule::createFromString() for the form of each rule.
-     *
-     * @param string $text - the rules, e.g. "*@example.org\nsomeone@example.com".
-     *
-     * @return AddressRuleSet
-     *
-     * @throws InvalidInputException - if a rule is invalid, or there are none.
-     */
-    public static function createFromText(string $text) : AddressRuleSet
-    {
-        $rules = [];
-
-        foreach (preg_split('/[\s,]+/', $text, -1, PREG_SPLIT_NO_EMPTY) as $part)
-        {
-            $rules[] = AddressRule::createFromString($part);
-        }
-
-        return new AddressRuleSet(...$rules);
-    }
-
-
-    /**
      * Check whether any of the rules allows an address.
      *
      * @param EmailAddress $address - the address to check.

@@ -308,7 +308,13 @@ $suite->check('a rejected API key can\'t be checked at all', $isRejectedKey, $re
 
 $mailcow = CustomSenderChecker::fetch('mailcow', $dns, '10.0.0.5', '');
 $checks = new SenderChecks($dns, $checker, $mailcow);
-$rules = AddressRuleSet::createFromText("*@good.test\nme@single.test\n*@broken.test");
+
+$rules = new AddressRuleSet(
+    AddressRule::createFromString('*@good.test'),
+    AddressRule::createFromString('me@single.test'),
+    AddressRule::createFromString('*@broken.test')
+);
+
 $groups = $checks->checkSenders($rules, ['*@good.test' => ['Website', 'Billing']]);
 $groups = $groups->merge(new SenderCheckGroupCollection($checks->checkAnySender('Newsletter')));
 $response = $groups->toResponseArray()['groups'];

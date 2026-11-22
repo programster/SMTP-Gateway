@@ -13,7 +13,7 @@ require_once __DIR__ . '/TestSuite.php';
 $suite = new TestSuite('Queue estimator');
 
 $policy = new EmailTokenPolicy(
-    IpAllowList::createFromText('0.0.0.0/0'),
+    new IpAllowList(new IpNetwork('0.0.0.0/0')),
     new AnyAddress(),
     new AnyAddress(),
     new AnyAddress(),

@@ -29,7 +29,7 @@ $suite->check('the log table\'s times keep their fraction', str_contains($logTim
 $db->query('SELECT pg_advisory_lock(727274101)');
 
 $policy = new EmailTokenPolicy(
-    IpAllowList::createFromText('0.0.0.0/0'),
+    new IpAllowList(new IpNetwork('0.0.0.0/0')),
     new AnyAddress(),
     new AnyAddress(),
     new AnyAddress(),

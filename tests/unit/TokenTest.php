@@ -103,7 +103,7 @@ $suite->check('a generated ID is the table\'s', TokenKind::API_KEY->isId($genera
 
 // Creating them, and checking them.
 $policy = new EmailTokenPolicy(
-    IpAllowList::createFromText('0.0.0.0/0'),
+    new IpAllowList(new IpNetwork('0.0.0.0/0')),
     new AnyAddress(),
     new AnyAddress(),
     new AnyAddress(),
@@ -146,7 +146,7 @@ $wrongUsername = function () use ($token, $ip, $another) : void {
     EmailTokenAuthenticator::authenticateSmtpLogin($another->getId(), $token->getPlaintext(), $ip);
 };
 
-$createdApiKey = ApiKeyRepository::create('token test', IpAllowList::createFromText('0.0.0.0/0'));
+$createdApiKey = ApiKeyRepository::create('token test', new IpAllowList(new IpNetwork('0.0.0.0/0')));
 
 $apiKeyGiven = function () use ($createdApiKey, $ip) : void {
     EmailTokenAuthenticator::authenticate($createdApiKey->getToken()->getPlaintext(), $ip, MessageSource::API);

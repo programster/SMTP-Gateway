@@ -189,7 +189,7 @@ $suite->check('a webhook with another password is an error', $isWrong, $wrongPas
 
 $credentialsInUrl = $webhook;
 $credentialsInUrl['HttpAuth'] = null;
-$credentialsInUrl['Url'] = WebhookBasicAuth::createUrl($webhookUrl, $secret);
+$credentialsInUrl['Url'] = createWebhookUrlWithSecret($webhookUrl, $secret);
 $inUrlHooks = ['/webhooks' => [200, ['Webhooks' => [$credentialsInUrl]]]];
 $inUrl = $describe($createChecker($inUrlHooks, true, $secret)->checkAccount());
 $passed = str_contains($inUrl, 'ok: The webhook is set up');

@@ -131,3 +131,19 @@ final class FakeHttpClient implements ClientInterface
     # Accessors
     public function getRequests() : array { return $this->m_requests; }
 }
+
+
+/**
+ * Get a webhook's address with its secret in it, as a provider's API reports one that was set up that way.
+ *
+ * @param string $webhookUrl - the webhook's address, e.g. "https://smtp.example.org/webhooks/postmark".
+ *
+ * @param string $secret - the secret.
+ *
+ * @return string - e.g. "https://webhook:<secret>@smtp.example.org/webhooks/postmark".
+ */
+function createWebhookUrlWithSecret(string $webhookUrl, string $secret) : string
+{
+    $credentials = WebhookBasicAuth::USERNAME . ':' . rawurlencode($secret) . '@';
+    return preg_replace('#^(https?://)#i', '${1}' . $credentials, $webhookUrl, 1);
+}

@@ -74,7 +74,7 @@ $suite->check($name, $isReplaced, $prepared->toString());
 
 $dns = new FakeDnsResolver([], []);
 $webhookUrl = 'https://smtp.example.org/webhooks/mailjet';
-$callbackUrl = WebhookBasicAuth::createUrl($webhookUrl, $secret);
+$callbackUrl = createWebhookUrlWithSecret($webhookUrl, $secret);
 
 $responses = [
     '/v3/REST/dns' => [
